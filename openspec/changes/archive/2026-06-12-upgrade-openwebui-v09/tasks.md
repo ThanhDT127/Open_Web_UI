@@ -26,14 +26,14 @@
 - [x] 4.1 Cap nhat `Dockerfile.openwebui` sang `open-webui:v0.9.5`
 - [x] 4.2 Danh gia co can them env vars moi cho hardening nhu `AIOHTTP_CLIENT_ALLOW_REDIRECTS`, `IFRAME_CSP`, `TERMINAL_PROXY_HEADERS`, `CUSTOM_API_KEY_HEADER` hay khong
 - [x] 4.3 Build Open WebUI image tren staging
-- [ ] 4.4 Khoi dong staging va theo doi migration/log startup
+- [x] 4.4 Khoi dong staging va theo doi migration/log startup
 
 ## 5. Staging verification
 
 - [x] 5.1 Test login/logout va session flow
-- [ ] 5.2 Test chat completion cho tat ca providers
+- [x] 5.2 Test chat completion cho tat ca providers
 - [x] 5.3 Test streaming, usage tracking, va dashboard analytics
-- [ ] 5.4 Test RAG upload/query voi Docling + PGVector
+- [x] 5.4 Test RAG upload/query voi Docling + PGVector
 - [x] 5.5 Test web search qua SearXNG, bao gom search co nhieu ngon ngu neu can
 - [x] 5.6 Test custom tools/functions/filters, bao gom export flow
 - [x] 5.7 Test persisted chats, attachments, file preview, va Admin Panel
@@ -41,10 +41,10 @@
 
 ## 6. Production rollout
 
-- [ ] 6.1 Chot cua so maintenance, tranh rolling update
+- [x] 6.1 Chot cua so maintenance, tranh rolling update
 - [x] 6.2 Build va deploy Open WebUI production trong mot dot dong thoi
 - [x] 6.3 Theo doi logs de xac nhan migration thanh cong va khong co crash async/runtime
-- [ ] 6.4 Chay smoke test production ngay sau deploy
+- [x] 6.4 Chay smoke test production ngay sau deploy
 
 ## 7. Rollback va hau kiem
 

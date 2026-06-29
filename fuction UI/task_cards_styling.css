@@ -1,0 +1,95 @@
+/* Task Cards Styling for OpenWebUI Landing Page */
+
+/* Container of suggestions */
+div.chat-suggestions,
+.chat-suggestions-container,
+[class*="chat-suggestions"] {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 1.25rem !important;
+    max-width: 800px !important;
+    margin: 2rem auto !important;
+    padding: 0 1rem !important;
+}
+
+/* Individual card styling */
+div.chat-suggestions button,
+.chat-suggestions-container button,
+[class*="chat-suggestions"] button,
+.suggestion-card {
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 16px !important;
+    padding: 1.5rem !important;
+    text-align: left !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    cursor: pointer !important;
+    min-height: 140px !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+
+/* Dark mode overrides (OpenWebUI standard) */
+.dark div.chat-suggestions button,
+.dark .chat-suggestions-container button {
+    background: rgba(15, 23, 42, 0.4) !important;
+    border-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Hover effects with dynamic micro-animations & premium gradients */
+div.chat-suggestions button:hover,
+.chat-suggestions-container button:hover,
+[class*="chat-suggestions"] button:hover,
+.suggestion-card:hover {
+    transform: translateY(-4px) !important;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(168, 85, 247, 0.12) 100%) !important;
+    border-color: rgba(99, 102, 241, 0.3) !important;
+    box-shadow: 0 12px 24px -10px rgba(99, 102, 241, 0.4) !important;
+}
+
+/* Subtle background accent glow on hover */
+div.chat-suggestions button::before,
+.chat-suggestions-container button::before {
+    content: "" !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100 !important;
+    height: 100% !important;
+    background: radial-gradient(800px circle at var(--x, 0px) var(--y, 0px), rgba(255,255,255,0.06), transparent 40%) !important;
+    z-index: 1 !important;
+    pointer-events: none !important;
+}
+
+/* Icon / Header section in card */
+div.chat-suggestions button .title,
+.chat-suggestions-container button .title {
+    font-size: 1.1rem !important;
+    font-weight: 600 !important;
+    color: #f8fafc !important;
+    margin-bottom: 0.5rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.75rem !important;
+}
+
+/* Content / Description section in card */
+div.chat-suggestions button .content,
+.chat-suggestions-container button .content {
+    font-size: 0.875rem !important;
+    color: #94a3b8 !important;
+    line-height: 1.4 !important;
+}
+
+/* Mobile responsive layout */
+@media (max-width: 640px) {
+    div.chat-suggestions,
+    .chat-suggestions-container {
+        grid-template-columns: 1fr !important;
+        gap: 1rem !important;
+    }
+}

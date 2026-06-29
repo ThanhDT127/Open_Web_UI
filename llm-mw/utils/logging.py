@@ -225,6 +225,8 @@ def audit_from_request(
             "video_count": getattr(request.state, "mw_video_count", None),
             "error_type": getattr(request.state, "mw_error_type", None),
             "error_message": getattr(request.state, "mw_error_message", None),
+            "auth_source": getattr(request.state, "mw_auth_source", None),
+            "openwebui_user_id": getattr(request.state, "mw_openwebui_user_id", None),
         }
         
         write_audit_line(data)

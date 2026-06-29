@@ -38,6 +38,9 @@ RAG (Retrieval-Augmented Generation) là kỹ thuật cho phép LLM trả lời 
 | 05  | Search          | Hybrid (BM25 + Vector)                                           | Kết hợp keyword search + semantic search                        |
 | 06  | Index           | HNSW (Hierarchical Navigable Small World)                        | Tìm kiếm approximate nearest neighbors                          |
 
+> [!IMPORTANT]
+> **Cơ chế Embedding qua Cloud API**: Quá trình tạo vector embeddings cho tài liệu (RAG) **không thực hiện tại chỗ (local)**. Thay vào đó, văn bản trích xuất được gửi qua Middleware đến Gemini API (Cloud) dưới sự kiểm soát chặt chẽ của Middleware (giúp thực hiện giám sát hạn ngạch - quota control, ghi nhật ký kiểm toán - audit logs, và mã hóa dữ liệu truyền tải). Bản thân các vector embeddings kết quả được đưa trở lại lưu trữ hoàn toàn on-premise trong cơ sở dữ liệu PostgreSQL + PGVector cục bộ.
+
 ---
 
 ## 2. Chi tiết kỹ thuật

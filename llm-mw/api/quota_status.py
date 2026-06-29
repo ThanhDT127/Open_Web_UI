@@ -3,7 +3,7 @@ Quota status API endpoint.
 Lightweight endpoint for Open WebUI Filter to query user quota usage.
 """
 
-from fastapi import Request, Query
+from fastapi import Request, Query, HTTPException
 from fastapi.responses import JSONResponse
 
 from core.alerting import get_user_quota_status, load_alert_config, save_alert_config
@@ -11,34 +11,24 @@ from config import ADMIN_KEY, logger
 
 
 async def get_quota_status(request: Request, user_id: str = Query(None, description="User ID to check")):
-    """
-    GET /v1/_mw/quota-status?user_id=xxx
-    
-    Lightweight endpoint — no admin auth required.
-    Returns only percentage and remaining amount (no sensitive details).
-    Called by Open WebUI Filter Function on every response.
-    
-    Supports two auth modes:
-    1. Query param: ?user_id=xxx (simple, no auth)
-    2. Bearer token: Authorization header with subkey (resolves user from subkey)
-    """
-    # If no user_id provided, try to extract from Bearer token
-    if not user_id:
-        auth = request.headers.get("Authorization", "")
-        if auth.startswith("Bearer "):
-            subkey = auth.split(" ", 1)[1].strip()
-            try:
-                from core.auth import find_user
-                user = find_user(subkey)
-                if user:
-                    user_id = user.get("user_id")
-            except Exception:
-                pass
-    
-    if not user_id:
-        return JSONResponse(status_code=400, content={"error": "user_id query param or Bearer token required"})
-    
-    return JSONResponse(content=get_user_quota_status(user_id))
+    """Return self quota, or arbitrary user quota for authenticated admins."""
+    from core.auth import require_user
+    from utils.auth_guard import require_admin_or_session
+
+    try:
+        require_admin_or_session(request)
+        if not user_id:
+            raise HTTPException(400, "Admin lookup requires user_id")
+        return JSONResponse(content=get_user_quota_status(user_id))
+    except HTTPException as admin_error:
+        if admin_error.status_code != 403:
+            raise
+
+    user = require_user(request)
+    own_user_id = user.get("user_id")
+    if user_id and user_id != own_user_id:
+        raise HTTPException(403, "Users may only retrieve their own quota")
+    return JSONResponse(content=get_user_quota_status(own_user_id))
 
 
 async def get_alert_config(request: Request):

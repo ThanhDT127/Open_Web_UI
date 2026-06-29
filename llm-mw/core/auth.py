@@ -42,12 +42,13 @@ def _db_available() -> bool:
 
 def _load_users_db() -> List[Dict[str, Any]]:
     """Load all users from mw_users table, returning same format as JSON."""
+    from config import DEFAULT_ALLOWED_MODELS
     from core.db import db_conn
     with db_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT user_id, subkey, subkey_hash, active, allowed_models,
-                   used_tokens, used_cost_usd, quota, alerts_sent
+            SELECT user_id, role, openwebui_user_id, subkey_hash, active,
+                   allowed_models, used_tokens, used_cost_usd, quota, alerts_sent
             FROM mw_users
         """)
         rows = cur.fetchall()
@@ -57,14 +58,16 @@ def _load_users_db() -> List[Dict[str, Any]]:
     for row in rows:
         user = {
             "user_id": row[0],
-            "subkey": row[1],
-            "subkey_hash": row[2],
-            "active": row[3],
-            "allowed_models": row[4] if row[4] else ["*"],
-            "used_tokens": row[5] or 0,
-            "used_cost_usd": row[6] or 0.0,
-            "quota": row[7] if row[7] else {},
-            "alerts_sent": row[8] if row[8] else {},
+            "role": row[1] or "user",
+            "openwebui_user_id": row[2],
+            "subkey": None,
+            "subkey_hash": row[3],
+            "active": row[4],
+            "allowed_models": row[5] if row[5] else DEFAULT_ALLOWED_MODELS,
+            "used_tokens": row[6] or 0,
+            "used_cost_usd": row[7] or 0.0,
+            "quota": row[8] if row[8] else {},
+            "alerts_sent": row[9] if row[9] else {},
         }
         users.append(user)
     return users
@@ -72,17 +75,28 @@ def _load_users_db() -> List[Dict[str, Any]]:
 
 def _save_users_db(users: List[Dict[str, Any]]):
     """Save all users to mw_users table (upsert each user)."""
+    from config import DEFAULT_ALLOWED_MODELS
     from core.db import db_conn
     with db_conn() as conn:
         cur = conn.cursor()
         for u in users:
+            subkey = u.get("subkey")
+            subkey_hash = u.get("subkey_hash")
+            if not subkey_hash and subkey:
+                subkey_hash = hash_subkey(subkey)
+
+            allowed_models = u.get("allowed_models")
+            if not allowed_models:
+                allowed_models = DEFAULT_ALLOWED_MODELS
+
             cur.execute("""
                 INSERT INTO mw_users
-                    (user_id, subkey, subkey_hash, active, allowed_models,
+                    (user_id, role, openwebui_user_id, subkey_hash, active, allowed_models,
                      used_tokens, used_cost_usd, quota, alerts_sent, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
                 ON CONFLICT (user_id) DO UPDATE SET
-                    subkey = EXCLUDED.subkey,
+                    role = EXCLUDED.role,
+                    openwebui_user_id = EXCLUDED.openwebui_user_id,
                     subkey_hash = EXCLUDED.subkey_hash,
                     active = EXCLUDED.active,
                     allowed_models = EXCLUDED.allowed_models,
@@ -93,10 +107,11 @@ def _save_users_db(users: List[Dict[str, Any]]):
                     updated_at = now()
             """, (
                 u.get("user_id"),
-                u.get("subkey"),
-                u.get("subkey_hash"),
+                "user" if u.get("role") == "manager" else u.get("role", "user"),
+                u.get("openwebui_user_id"),
+                subkey_hash,
                 u.get("active", True),
-                json.dumps(u.get("allowed_models", ["*"])),
+                json.dumps(allowed_models),
                 u.get("used_tokens", 0),
                 u.get("used_cost_usd", 0.0),
                 json.dumps(u.get("quota", {})),
@@ -106,34 +121,37 @@ def _save_users_db(users: List[Dict[str, Any]]):
 
 
 def _find_user_db(subkey: str) -> Optional[Dict[str, Any]]:
-    """Find user by subkey hash or plaintext subkey in DB."""
+    """Find user by subkey hash in DB."""
     subkey_hash_val = hash_subkey(subkey)
     from core.db import db_conn
     with db_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT user_id, subkey, subkey_hash, active, allowed_models,
-                   used_tokens, used_cost_usd, quota, alerts_sent
+            SELECT user_id, role, openwebui_user_id, subkey_hash, active,
+                   allowed_models, used_tokens, used_cost_usd, quota, alerts_sent
             FROM mw_users
-            WHERE subkey_hash = %s OR subkey = %s
+            WHERE subkey_hash = %s
             LIMIT 1
-        """, (subkey_hash_val, subkey))
+        """, (subkey_hash_val,))
         row = cur.fetchone()
         cur.close()
 
     if not row:
         return None
 
+    from config import DEFAULT_ALLOWED_MODELS
     return {
         "user_id": row[0],
-        "subkey": row[1],
-        "subkey_hash": row[2],
-        "active": row[3],
-        "allowed_models": row[4] if row[4] else ["*"],
-        "used_tokens": row[5] or 0,
-        "used_cost_usd": row[6] or 0.0,
-        "quota": row[7] if row[7] else {},
-        "alerts_sent": row[8] if row[8] else {},
+        "role": row[1] or "user",
+        "openwebui_user_id": row[2],
+        "subkey": None,
+        "subkey_hash": row[3],
+        "active": row[4],
+        "allowed_models": row[5] if row[5] else DEFAULT_ALLOWED_MODELS,
+        "used_tokens": row[6] or 0,
+        "used_cost_usd": row[7] or 0.0,
+        "quota": row[8] if row[8] else {},
+        "alerts_sent": row[9] if row[9] else {},
     }
 
 
@@ -144,23 +162,52 @@ def _load_users_file() -> List[Dict[str, Any]]:
     if not os.path.exists(USERS_FILE):
         return []
     with open(USERS_FILE, "r", encoding="utf-8-sig") as f:
-        return json.load(f)
+        users = json.load(f)
+        for user in users:
+            if user.get("role") not in ("admin", "user"):
+                user["role"] = "user"
+        return users
 
 
 def _save_users_file(users: List[Dict[str, Any]]):
     """Save users to users.json file."""
+    for user in users:
+        if user.get("role") not in ("admin", "user"):
+            user["role"] = "user"
     with open(USERS_FILE, "w", encoding="utf-8") as f:
         json.dump(users, f, indent=2, ensure_ascii=False)
 
 
 def _find_user_file(subkey: str) -> Optional[Dict[str, Any]]:
-    """Find user by subkey in JSON file."""
+    """Find user by subkey hash in JSON file."""
     subkey_hash_val = hash_subkey(subkey)
-    for u in _load_users_file():
-        if u.get("subkey_hash") == subkey_hash_val:
-            return u
-        if u.get("subkey") == subkey:
-            return u
+    from config import DEFAULT_ALLOWED_MODELS
+    users = _load_users_file()
+    updated = False
+    matched_user = None
+
+    for u in users:
+        user_hash = u.get("subkey_hash")
+        if user_hash == subkey_hash_val:
+            matched_user = u
+            break
+        elif not user_hash and u.get("subkey") == subkey:
+            u["subkey_hash"] = subkey_hash_val
+            u["subkey"] = None
+            matched_user = u
+            updated = True
+            break
+
+    if matched_user:
+        if not matched_user.get("allowed_models"):
+            matched_user["allowed_models"] = DEFAULT_ALLOWED_MODELS
+        matched_user["subkey"] = None
+        if updated:
+            try:
+                _save_users_file(users)
+            except Exception:
+                pass
+        return matched_user
     return None
 
 
@@ -253,7 +300,7 @@ def require_user(request: Request) -> Dict[str, Any]:
       - 401: Invalid sub-key (not found in DB)
       - 403: User account is deactivated
     """
-    from config import logger
+    from config import logger, OPENWEBUI_SERVICE_KEY
 
     auth = request.headers.get("Authorization", "")
     client_ip = request.client.host if request.client else "unknown"
@@ -267,7 +314,13 @@ def require_user(request: Request) -> Dict[str, Any]:
         raise HTTPException(401, "Missing sub-key")
 
     subkey = auth.split(" ", 1)[1].strip()
-    user = find_user(subkey)
+    forwarded_id = request.headers.get("X-OpenWebUI-User-Id", "").strip()
+    if forwarded_id and subkey == OPENWEBUI_SERVICE_KEY and OPENWEBUI_SERVICE_KEY:
+        user = get_user_by_openwebui_id(forwarded_id)
+        auth_source = "openwebui_service"
+    else:
+        user = find_user(subkey)
+        auth_source = "direct_subkey"
 
     if not user:
         # Log first 8 chars of hashed subkey for debugging (safe to log)
@@ -286,6 +339,8 @@ def require_user(request: Request) -> Dict[str, Any]:
         raise HTTPException(403, "User account is deactivated")
 
     request.state.mw_user_id = user.get("user_id")
+    request.state.mw_auth_source = auth_source
+    request.state.mw_openwebui_user_id = user.get("openwebui_user_id")
     return user
 
 
@@ -298,6 +353,10 @@ def assert_model_allowed(user: Dict[str, Any], model: str):
     allowed_models = user.get("allowed_models", [])
     if allowed_models == ["*"]:
         return  # Wildcard: all models allowed
+
+    # If the model itself is explicitly allowed, let it pass
+    if model in allowed_models:
+        return
 
     # Auto-model check: allow if user has access to any model in that provider's tiers
     from core.smart_routing import PROVIDER_TIERS
@@ -330,6 +389,17 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     for u in _load_users_file():
         if u.get("user_id") == user_id:
             return u
+    return None
+
+
+def get_user_by_openwebui_id(openwebui_user_id: str) -> Optional[Dict[str, Any]]:
+    """Resolve a canonical Open WebUI UUID to its middleware quota record."""
+    if _db_available():
+        from core.db import get_user_by_openwebui_id_db
+        return get_user_by_openwebui_id_db(openwebui_user_id)
+    for user in _load_users_file():
+        if user.get("openwebui_user_id") == openwebui_user_id:
+            return user
     return None
 
 
@@ -495,7 +565,9 @@ def update_user_admin_fields(
     allowed_models=None,
     quota_limits: Optional[Dict[str, Any]] = None,
     subkey_hash=None,
-    clear_subkey: bool = False,
+    role=None,
+    openwebui_user_id=None,
+    update_openwebui_mapping: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """Update mutable admin fields without replacing concurrent usage."""
     if _db_available():
@@ -506,7 +578,9 @@ def update_user_admin_fields(
             allowed_models=allowed_models,
             quota_limits=quota_limits,
             subkey_hash=subkey_hash,
-            clear_subkey=clear_subkey,
+            role=role,
+            openwebui_user_id=openwebui_user_id,
+            update_openwebui_mapping=update_openwebui_mapping,
         )
 
     with _lock:
@@ -516,12 +590,14 @@ def update_user_admin_fields(
         updates = {}
         if active is not None:
             updates["active"] = active
+        if role is not None:
+            updates["role"] = role
+        if update_openwebui_mapping:
+            updates["openwebui_user_id"] = openwebui_user_id
         if allowed_models is not None:
             updates["allowed_models"] = allowed_models
         if subkey_hash is not None:
             updates["subkey_hash"] = subkey_hash
-        if clear_subkey:
-            updates["subkey"] = None
         for key, value in (quota_limits or {}).items():
             updates[f"quota.{key}"] = value
         _update_user_in_file(user_id, updates)

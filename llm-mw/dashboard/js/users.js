@@ -69,9 +69,9 @@ export async function loadUsers() {
                 ? '<span class="badge badge-active">🟢 Active</span>'
                 : '<span class="badge badge-inactive">🔴 Inactive</span>';
 
-            const roleBadge = role === 'admin' ? '<span class="badge badge-admin">admin</span>'
-                : role === 'manager' ? '<span class="badge badge-manager">manager</span>'
-                    : '<span class="badge badge-user">user</span>';
+            const roleBadge = role === 'admin'
+                ? '<span class="badge badge-admin">admin</span>'
+                : '<span class="badge badge-user">user</span>';
 
             const uid = encodeURIComponent(u.user_id);
 

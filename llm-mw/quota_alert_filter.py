@@ -17,9 +17,9 @@ class Filter:
     Gọi Middleware API kiểm tra % quota đã dùng.
     Nếu ≥80% → thêm dòng cảnh báo vào cuối response.
     
-    v2.0.1:
-    - Hỗ trợ Bearer user subkey auth hoặc query param user_id
-    - Logic mapping user_id cải thiện: thử name → email → id
+    v2.1.0:
+    - Uses the Open WebUI service credential with the authenticated user UUID
+    - Does not fall back to untrusted name, email, or query parameters
     - Skip nếu middleware đã inject warning (tránh trùng lặp)
     """
 
@@ -41,12 +41,12 @@ class Filter:
             description="Ngưỡng cảnh báo đỏ (%) - mặc định 95%"
         )
         use_bearer_auth: bool = Field(
-            default=False,
-            description="Sử dụng Bearer user subkey để middleware tự xác định user, thay vì query param user_id"
+            default=True,
+            description="Authenticate quota lookup with the configured Open WebUI service credential"
         )
         bearer_token: str = Field(
             default="",
-            description="Bearer token nếu use_bearer_auth=True. Giá trị này phải là user subkey, không phải admin key."
+            description="Open WebUI service credential used for trusted forwarded user identity"
         )
 
     def __init__(self):
@@ -82,15 +82,15 @@ class Filter:
 
         try:
             # Lấy user_id từ Open WebUI user info
-            # Thử nhiều field: name (thường match middleware user_id), email, id (UUID)
+            # Only the authenticated Open WebUI UUID is accepted for service identity.
             user_name = __user__.get("name", "")
             user_email = __user__.get("email", "")
             user_id_uuid = __user__.get("id", "")
             
             # Thử từng identifier cho đến khi tìm thấy user trong middleware
             result_data = None
-            for candidate_id in [user_name, user_email, user_id_uuid]:
-                if not candidate_id and not self.valves.use_bearer_auth:
+            for candidate_id in [user_id_uuid]:
+                if not candidate_id:
                     continue
                 try:
                     req_headers = {}
@@ -98,8 +98,9 @@ class Filter:
                     
                     if self.valves.use_bearer_auth and self.valves.bearer_token:
                         req_headers["Authorization"] = f"Bearer {self.valves.bearer_token}"
+                        req_headers["X-OpenWebUI-User-Id"] = candidate_id
                     else:
-                        req_params["user_id"] = candidate_id
+                        return body
                     
                     resp = requests.get(
                         f"{self.valves.middleware_url}/v1/_mw/quota-status",

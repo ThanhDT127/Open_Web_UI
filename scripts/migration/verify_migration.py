@@ -25,7 +25,7 @@ SQLITE_DB = PROJECT_ROOT / "openwebui_data" / "webui.db"
 PG_HOST = os.getenv("PG_HOST", "localhost")
 PG_PORT = os.getenv("PG_PORT", "5432")
 PG_USER = os.getenv("POSTGRES_USER", "openwebui_user")
-PG_PASSWORD = os.getenv("POSTGRES_PASSWORD", "YOUR_DB_PASSWORD")
+PG_PASSWORD = os.getenv("POSTGRES_PASSWORD", "")
 PG_DATABASE = os.getenv("POSTGRES_DB", "openwebui")
 
 

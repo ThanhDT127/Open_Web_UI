@@ -87,6 +87,8 @@ def init_audit_state(
     request.state.mw_endpoint = endpoint
     request.state.mw_model = model
     request.state.mw_purpose = purpose  # NEW: Track request purpose/context
+    request.state.mw_auth_source = getattr(request.state, "mw_auth_source", "direct_subkey")
+    request.state.mw_openwebui_user_id = getattr(request.state, "mw_openwebui_user_id", None)
     
     # Default status is "ok" (will be changed if error occurs)
     request.state.mw_status = "ok"

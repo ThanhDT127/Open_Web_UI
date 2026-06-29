@@ -1,0 +1,38 @@
+{
+  "mcpServers": {
+    "office365": {
+      "command": "/app/.venv/bin/python",
+      "args": [
+        "/app/scripts/office365_mcp.py"
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp"
+      ]
+    },
+    "fetch": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-fetch"
+      ]
+    },
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://mcp_readonly_user:${MCP_POSTGRES_PASSWORD}@postgres:5432/middleware"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    }
+  }
+}

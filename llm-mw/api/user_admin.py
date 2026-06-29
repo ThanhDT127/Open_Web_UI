@@ -78,8 +78,8 @@ def _scrub_user(user: Dict[str, Any]) -> Dict[str, Any]:
 # Request/Response models
 class CreateUserRequest(BaseModel):
     user_id: str
-    role: str = "user"  # admin | manager | user
-    allowed_models: List[str] = ["*"]
+    role: str = "user"  # admin | user
+    allowed_models: Optional[List[str]] = None
     limit_tokens: int = 0  # 0 = unlimited
     limit_cost_usd: float = 0.0
     limit_image_requests: int = 0
@@ -94,6 +94,10 @@ class UpdateUserRequest(BaseModel):
     limit_tokens: Optional[int] = None
     limit_cost_usd: Optional[float] = None
     limit_image_requests: Optional[int] = None
+
+
+class MapOpenWebUIUserRequest(BaseModel):
+    openwebui_user_id: Optional[str] = None
 
 
 # ============================================================================
@@ -132,22 +136,26 @@ async def create_user(request: Request):
         raise HTTPException(400, f"Invalid request: {e}")
     
     # Validate role
-    if req.role not in ["admin", "manager", "user"]:
-        raise HTTPException(400, "Invalid role. Must be: admin, manager, or user")
+    if req.role not in ["admin", "user"]:
+        raise HTTPException(400, "Invalid role. Must be: admin or user")
     
     with _user_lock:
         # Generate subkey
         subkey = _generate_subkey()
         subkey_hash = hash_subkey(subkey)
         
-        # Create user object (store both subkey + hash for DB and JSON sync)
+        from config import DEFAULT_ALLOWED_MODELS
+        allowed = req.allowed_models
+        if not allowed:
+            allowed = DEFAULT_ALLOWED_MODELS
+
+        # Create user object (do NOT save raw subkey in DB/JSON)
         new_user = {
             "user_id": req.user_id,
             "role": req.role,
-            "subkey": subkey,
             "subkey_hash": subkey_hash,
             "active": True,
-            "allowed_models": req.allowed_models,
+            "allowed_models": allowed,
             "used_tokens": 0,
             "used_cost_usd": 0.0,
             "quota": {
@@ -201,7 +209,7 @@ async def update_user(request: Request, user_id: str):
     except Exception as e:
         raise HTTPException(400, f"Invalid request: {e}")
 
-    if req.role is not None and req.role not in ["admin", "manager", "user"]:
+    if req.role is not None and req.role not in ["admin", "user"]:
         raise HTTPException(400, "Invalid role")
 
     quota_limits = {
@@ -228,13 +236,10 @@ async def update_user(request: Request, user_id: str):
         active=req.active,
         allowed_models=req.allowed_models,
         quota_limits=quota_limits,
+        role=req.role,
     )
     if not committed_user:
         raise HTTPException(404, f"User {user_id} not found")
-    if req.role is not None:
-        # Role persistence is handled by the separate unified-user change.
-        committed_user["role"] = req.role
-
     _write_admin_audit(
         actor="admin_session", action="update_user", target_user=user_id,
         changes=changes, status="ok", request=request,
@@ -245,69 +250,38 @@ async def update_user(request: Request, user_id: str):
         "user": _scrub_user(committed_user),
         "changes": changes,
     }
-    
-    with _user_lock:
-        users = load_users()
-        
-        # Find user
-        user = next((u for u in users if u["user_id"] == user_id), None)
-        if not user:
-            raise HTTPException(404, f"User {user_id} not found")
-        
-        changes = {}
-        
-        # Update role
-        if req.role is not None:
-            if req.role not in ["admin", "manager", "user"]:
-                raise HTTPException(400, "Invalid role")
-            user["role"] = req.role
-            changes["role"] = req.role
-        
-        # Update active
-        if req.active is not None:
-            user["active"] = req.active
-            changes["active"] = req.active
-        
-        # Update allowed models
-        if req.allowed_models is not None:
-            user["allowed_models"] = req.allowed_models
-            changes["allowed_models"] = req.allowed_models
-        
-        # Update quota limits
-        if req.limit_tokens is not None:
-            user["quota"]["limit_tokens"] = req.limit_tokens
-            changes["limit_tokens"] = req.limit_tokens
-        
-        if req.limit_cost_usd is not None:
-            user["quota"]["limit_cost_usd"] = req.limit_cost_usd
-            changes["limit_cost_usd"] = req.limit_cost_usd
-        
-        if req.limit_image_requests is not None:
-            user["quota"]["limit_image_requests"] = req.limit_image_requests
-            changes["limit_image_requests"] = req.limit_image_requests
-        
-        if not changes:
-            return {"message": "No changes provided"}
-        
-        save_users(users)
-        
-        # Audit trail
-        _write_admin_audit(
-            actor="admin_session",
-            action="update_user",
-            target_user=user_id,
-            changes=changes,
-            status="ok",
-            request=request
-        )
-        
-        logger.info(f"Updated user: {user_id} - {changes}")
-        
-        return {
-            "message": "User updated successfully",
-            "user": _scrub_user(user),
-            "changes": changes
-        }
+
+
+def reconciliation_report(request: Request):
+    """Return a read-only identity reconciliation report."""
+    from utils.auth_guard import require_admin_or_session
+    from core.identity import build_reconciliation_report
+    require_admin_or_session(request)
+    return build_reconciliation_report()
+
+
+async def map_openwebui_user(request: Request, user_id: str):
+    """Explicitly confirm, change, or clear an Open WebUI identity mapping."""
+    from utils.auth_guard import require_admin_or_session
+    from core.identity import set_user_mapping
+    require_admin_or_session(request)
+    try:
+        req = MapOpenWebUIUserRequest(**(await request.json()))
+        if req.openwebui_user_id:
+            user = set_user_mapping(user_id, req.openwebui_user_id)
+        else:
+            user = update_user_admin_fields(
+                user_id, openwebui_user_id=None, update_openwebui_mapping=True,
+            )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if not user:
+        raise HTTPException(404, f"User {user_id} not found")
+    _write_admin_audit(
+        actor="admin_session", action="map_openwebui_user", target_user=user_id,
+        changes={"openwebui_user_id": req.openwebui_user_id}, status="ok", request=request,
+    )
+    return {"message": "Mapping updated", "user": _scrub_user(user)}
 
 
 async def rotate_user_key(request: Request, user_id: str):
@@ -320,7 +294,7 @@ async def rotate_user_key(request: Request, user_id: str):
 
     new_subkey = _generate_subkey()
     committed_user = update_user_admin_fields(
-        user_id, subkey_hash=hash_subkey(new_subkey), clear_subkey=True,
+        user_id, subkey_hash=hash_subkey(new_subkey),
     )
     if not committed_user:
         raise HTTPException(404, f"User {user_id} not found")
@@ -334,43 +308,6 @@ async def rotate_user_key(request: Request, user_id: str):
         "subkey": new_subkey,
         "warning": "Save this subkey securely. The old key is now invalid.",
     }
-    
-    with _user_lock:
-        users = load_users()
-        
-        user = next((u for u in users if u["user_id"] == user_id), None)
-        if not user:
-            raise HTTPException(404, f"User {user_id} not found")
-        
-        # Generate new subkey
-        new_subkey = _generate_subkey()
-        new_hash = hash_subkey(new_subkey)
-        
-        # Update user
-        user["subkey_hash"] = new_hash
-        # Remove plaintext if exists (migration compat)
-        user.pop("subkey", None)
-        
-        save_users(users)
-        
-        # Audit trail
-        _write_admin_audit(
-            actor="admin_session",
-            action="rotate_key",
-            target_user=user_id,
-            changes={"key_rotated": True},
-            status="ok",
-            request=request
-        )
-        
-        logger.info(f"Rotated key for user: {user_id}")
-        
-        return {
-            "message": "Key rotated successfully",
-            "user_id": user_id,
-            "subkey": new_subkey,  # ⚠️ Only returned once!
-            "warning": "Save this subkey securely. The old key is now invalid."
-        }
 
 
 async def disable_user(request: Request, user_id: str):
@@ -389,33 +326,6 @@ async def disable_user(request: Request, user_id: str):
         changes={"active": False}, status="ok", request=request,
     )
     return {"message": f"User {user_id} disabled successfully", "user": _scrub_user(user)}
-    
-    with _user_lock:
-        users = load_users()
-        
-        user = next((u for u in users if u["user_id"] == user_id), None)
-        if not user:
-            raise HTTPException(404, f"User {user_id} not found")
-        
-        user["active"] = False
-        save_users(users)
-        
-        # Audit trail
-        _write_admin_audit(
-            actor="admin_session",
-            action="disable_user",
-            target_user=user_id,
-            changes={"active": False},
-            status="ok",
-            request=request
-        )
-        
-        logger.info(f"Disabled user: {user_id}")
-        
-        return {
-            "message": f"User {user_id} disabled successfully",
-            "user": _scrub_user(user)
-        }
 
 
 async def enable_user(request: Request, user_id: str):
@@ -434,33 +344,6 @@ async def enable_user(request: Request, user_id: str):
         changes={"active": True}, status="ok", request=request,
     )
     return {"message": f"User {user_id} enabled successfully", "user": _scrub_user(user)}
-    
-    with _user_lock:
-        users = load_users()
-        
-        user = next((u for u in users if u["user_id"] == user_id), None)
-        if not user:
-            raise HTTPException(404, f"User {user_id} not found")
-        
-        user["active"] = True
-        save_users(users)
-        
-        # Audit trail
-        _write_admin_audit(
-            actor="admin_session",
-            action="enable_user",
-            target_user=user_id,
-            changes={"active": True},
-            status="ok",
-            request=request
-        )
-        
-        logger.info(f"Enabled user: {user_id}")
-        
-        return {
-            "message": f"User {user_id} enabled successfully",
-            "user": _scrub_user(user)
-        }
 
 
 async def delete_user_endpoint(request: Request, user_id: str):

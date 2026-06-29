@@ -143,6 +143,8 @@ async def create_embeddings(request: Request):
     write_audit_line({
         "ts": datetime.now(timezone.utc).isoformat(),
         "user": user_id,
+        "auth_source": getattr(request.state, "mw_auth_source", None),
+        "openwebui_user_id": getattr(request.state, "mw_openwebui_user_id", None),
         "model": model,
         "endpoint": "embeddings",
         "rid": rid,

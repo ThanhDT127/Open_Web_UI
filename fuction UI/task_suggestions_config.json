@@ -1,0 +1,22 @@
+[
+  {
+    "title": "📂 Hỏi tài liệu (RAG Local)",
+    "description": "Tra cứu, tổng hợp và phân tích thông tin chính xác từ các tài liệu nội bộ (PDF, DOCX, Excel) đã đăng tải.",
+    "prompt": "[Tác vụ: Hỏi tài liệu] Tôi muốn tra cứu thông tin trong tài liệu đã tải lên. Hãy phân tích nguồn và trả lời câu hỏi sau:"
+  },
+  {
+    "title": "🌐 Nghiên cứu Web (Deep Research)",
+    "description": "Tìm kiếm chuyên sâu đa bước (multi-hop) trên Internet, cào dữ liệu nguồn và tổng hợp báo cáo chi tiết kèm trích dẫn.",
+    "prompt": "[Tác vụ: Nghiên cứu web] Tôi cần thực hiện một nghiên cứu chi tiết về chủ đề sau. Hãy chạy tìm kiếm đa bước và lập báo cáo:"
+  },
+  {
+    "title": "📊 Phân tích File (Code Sandbox)",
+    "description": "Tải lên tệp Excel, CSV để thực hiện tính toán, vẽ biểu đồ trực quan và phân tích dữ liệu trong môi trường sandbox an toàn.",
+    "prompt": "[Tác vụ: Phân tích file] Tôi đã tải lên tệp dữ liệu. Hãy viết và chạy mã Python để phân tích các chỉ số sau và vẽ biểu đồ:"
+  },
+  {
+    "title": "📝 Tạo biểu mẫu (Form Generator)",
+    "description": "Soạn thảo văn bản, hợp đồng, biểu mẫu hành chính hoặc báo cáo chuyên nghiệp theo form chuẩn doanh nghiệp.",
+    "prompt": "[Tác vụ: Tạo biểu mẫu] Hãy giúp tôi soạn thảo một biểu mẫu chuẩn cho nội dung sau:"
+  }
+]

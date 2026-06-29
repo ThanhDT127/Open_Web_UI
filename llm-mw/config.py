@@ -70,7 +70,18 @@ LITELLM_KEY = os.getenv("LITELLM_KEY", "").strip()
 ADMIN_KEY = os.getenv("ADMIN_KEY", "").strip()
 JWT_SECRET = os.getenv("JWT_SECRET", "default-jwt-secret-CHANGE-IN-PRODUCTION").strip()
 MW_SECRET = os.getenv("MW_SECRET", "default-secret-CHANGE-IN-PRODUCTION").strip()
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://openwebui_user:YOUR_DB_PASSWORD@localhost:5432/middleware").strip()
+OPENWEBUI_SERVICE_KEY = os.getenv("OPENWEBUI_SERVICE_KEY", "").strip()
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+DEFAULT_ALLOWED_MODELS_ENV = os.getenv("DEFAULT_ALLOWED_MODELS", "openai-auto,gemini-auto,grok-auto,claude-auto,deepseek-auto").strip()
+if DEFAULT_ALLOWED_MODELS_ENV.startswith("["):
+    try:
+        import json as _json
+        DEFAULT_ALLOWED_MODELS = _json.loads(DEFAULT_ALLOWED_MODELS_ENV)
+    except Exception:
+        DEFAULT_ALLOWED_MODELS = ["openai-auto", "gemini-auto", "grok-auto", "claude-auto", "deepseek-auto"]
+else:
+    DEFAULT_ALLOWED_MODELS = [m.strip() for m in DEFAULT_ALLOWED_MODELS_ENV.split(",") if m.strip()]
 
 # ============================================================================
 # LOGGING SETUP

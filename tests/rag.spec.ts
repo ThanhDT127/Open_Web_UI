@@ -5,8 +5,12 @@
  */
 import { test, expect } from '@playwright/test';
 
-const ADMIN_EMAIL = process.env.TEST_ADMIN_EMAIL || 'admin@example.com';
-const ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD || 'Testcus1234';
+const ADMIN_EMAIL = process.env.TEST_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD;
+
+if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+    throw new Error("Missing required environment variables for test execution: TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD");
+}
 
 // Helper function to login
 async function loginAsAdmin(page: any) {
