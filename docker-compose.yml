@@ -92,6 +92,7 @@ services:
       - MW_SECRET=${MW_SECRET}
       - OPENWEBUI_SERVICE_KEY=${SUBKEY_ADMIN}
       - MW_PUBLIC_URL=${MW_PUBLIC_URL:-https://your-domain.example.com}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - DATABASE_URL=postgresql://openwebui_user:${POSTGRES_PASSWORD:?Required}@postgres:5432/middleware
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Required}
@@ -108,6 +109,7 @@ services:
       - ./llm-mw/prices.json:/app/data/prices.json:ro
       - ./llm-mw/data/alert_config.json:/app/data/alert_config.json
       - ./llm-mw/data/system_alerts.json:/app/data/system_alerts.json
+      - ./llm-mw/dashboard:/app/dashboard
       - ./logs:/app/../logs
     # Port closed — accessed through Nginx
     # ports:
@@ -179,6 +181,14 @@ services:
     container_name: openwebui-docling
     environment:
       - UVICORN_WORKERS=1
+      - DOCLING_SERVE_MAX_SYNC_WAIT=600
+      - DOCLING_SERVE_LOG_LEVEL=DEBUG
+      - DOCLING_SERVE_DEFAULT_OCR_ENGINE=paddleocr
+      - DOCLING_SERVE_DEFAULT_OCR_LANGS=vi,en
+      - DOCLING_SERVE_OCR_LANGS=vi,en
+      - OCR_LANGS=vi,en
+      - PADDLE_LANG=vi
+      - DOCLING_SERVE_IMAGE_EXPORT=true
     healthcheck:
       test: [ "CMD-SHELL", "curl --fail http://localhost:5001/health || exit 1" ]
       interval: 30s
@@ -188,7 +198,7 @@ services:
     restart: unless-stopped
     deploy:
       resources:
-        limits: { memory: 2G, cpus: '2' }
+        limits: { memory: 4G, cpus: '6' }
     networks:
       - openwebui-network
 
@@ -210,10 +220,16 @@ services:
 
       # Embeddings using Gemini via LiteLLM (openai-compatible)
       - RAG_EMBEDDING_ENGINE=openai
-      - RAG_EMBEDDING_MODEL=gemini-embedding-001
+      - RAG_EMBEDDING_MODEL=gemini-embedding-2
       # Embedding connects through middleware for cost tracking & quota control
       - RAG_EMBEDDING_OPENAI_API_BASE_URL=http://middleware:5000/v1
       - RAG_EMBEDDING_OPENAI_API_KEY=${SUBKEY_ADMIN}
+
+      # Reranking using Cohere via LiteLLM
+      - RAG_RERANKING_ENGINE=external
+      - RAG_EXTERNAL_RERANKER_URL=http://middleware:5000/v1/rerank
+      - RAG_RERANKING_MODEL=cohere/rerank-v3.5
+      - RAG_RERANKING_OPENAI_API_KEY=${SUBKEY_ADMIN}
 
       # RAG Configuration
       - ENABLE_RAG=true
@@ -225,7 +241,7 @@ services:
       - RAG_FILE_MAX_COUNT=20
 
       # Embedding batch size (reduced for Gemini API rate limits)
-      - RAG_EMBEDDING_BATCH_SIZE=50
+      - RAG_EMBEDDING_BATCH_SIZE=1
 
       # LLM Connection via Middleware
       - OPENAI_API_BASE_URL=http://middleware:5000/v1
@@ -240,7 +256,8 @@ services:
 
       # Document Extraction Engine — Docling (replaces Tika)
       - CONTENT_EXTRACTION_ENGINE=docling
-      - DOCLING_API_BASE_URL=http://docling:5001
+      - DOCLING_SERVER_URL=http://middleware:5000/docling-proxy
+      - DOCLING_PARAMS={"image_export_mode":"referenced"}
 
       # Timezone
       - TZ=Asia/Ho_Chi_Minh

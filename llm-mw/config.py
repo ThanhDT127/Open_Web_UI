@@ -83,17 +83,27 @@ if DEFAULT_ALLOWED_MODELS_ENV.startswith("["):
 else:
     DEFAULT_ALLOWED_MODELS = [m.strip() for m in DEFAULT_ALLOWED_MODELS_ENV.split(",") if m.strip()]
 
+
+
 # ============================================================================
 # LOGGING SETUP
 # ============================================================================
 
-# Main logger (middleware.log)
+# Main logger (middleware.log + stdout)
 logger = logging.getLogger("llm_mw")
 if not logger.handlers:
     logger.setLevel(logging.INFO)
-    _h = RotatingFileHandler(MW_LOG_FILE, maxBytes=5_000_000, backupCount=5, encoding="utf-8")
-    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(_h)
+    
+    # 1. File Handler
+    _fh = RotatingFileHandler(MW_LOG_FILE, maxBytes=5_000_000, backupCount=5, encoding="utf-8")
+    _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(_fh)
+    
+    # 2. Console Handler (for Docker logs)
+    import sys
+    _ch = logging.StreamHandler(sys.stdout)
+    _ch.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logger.addHandler(_ch)
 
 # Detail logger (middleware.requests.log - JSON format)
 detail_logger = logging.getLogger("llm_mw_detail")
@@ -152,3 +162,12 @@ SENSITIVE_KEYS = {
     "subkey",
     "subkey_hash",
 }
+
+# RAG Image Injection Configuration
+from utils.helpers import env_truthy
+MW_RAG_IMAGE_INJECT = env_truthy("MW_RAG_IMAGE_INJECT", default=True)
+try:
+    MW_RAG_IMAGE_MAX = int(os.getenv("MW_RAG_IMAGE_MAX", "3"))
+except ValueError:
+    MW_RAG_IMAGE_MAX = 3
+

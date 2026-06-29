@@ -1,10 +1,18 @@
 import { defineConfig, devices } from '@playwright/test';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+/**
+ * Read environment variables from file.
+ * https://github.com/motdotla/dotenv
+ */
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 export default defineConfig({
     testDir: '.',
-    timeout: 60000,
+    timeout: 180000,
     expect: {
-        timeout: 10000
+        timeout: 5000
     },
     fullyParallel: false,
     forbidOnly: !!process.env.CI,
@@ -15,7 +23,10 @@ export default defineConfig({
         ['list']
     ],
     use: {
-        baseURL: process.env.BASE_URL || 'http://localhost:3000',
+        baseURL: process.env.BASE_URL || 'https://localhost:3000',
+        ignoreHTTPSErrors: true,
+        actionTimeout: 5000,
+        navigationTimeout: 15000,
         trace: 'on-first-retry',
         screenshot: 'only-on-failure',
         video: 'retain-on-failure',

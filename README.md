@@ -204,6 +204,17 @@ llm-mw/
 └── data/                # Runtime configs
 ```
 
+### Kiểm thử (Testing)
+
+Dự án sử dụng **Playwright** cho kiểm thử tự động E2E:
+
+```bash
+cd tests
+npx playwright test rag.spec.ts    # Chạy test RAG functional
+npx playwright test auth.spec.ts   # Chạy test Authentication
+npx playwright show-report         # Xem báo cáo chi tiết
+```
+
 ---
 
 ## 🔒 Bảo mật

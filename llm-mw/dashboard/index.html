@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Middleware Dashboard</title>
-    <link rel="stylesheet" href="/dashboard/css/dashboard.css">
+    <link rel="stylesheet" href="/dashboard/css/dashboard.css?v=1.0.2">
 </head>
 
 <body>
@@ -167,7 +167,12 @@
             <div class="chart-row-3">
                 <div class="chart-container small">
                     <div class="chart-title">🍩 Request Types</div>
-                    <canvas id="requestTypeChart"></canvas>
+                    <div class="chart-content-wrapper">
+                        <div class="canvas-wrapper">
+                            <canvas id="requestTypeChart"></canvas>
+                        </div>
+                        <div id="requestTypeLegend" class="custom-legend"></div>
+                    </div>
                 </div>
                 <div class="chart-container" style="flex:2">
                     <div class="chart-title">📈 Requests Over Time</div>
@@ -222,7 +227,12 @@
             <div class="chart-table-row">
                 <div class="chart-container small">
                     <div class="chart-title">🍩 Cost by User</div>
-                    <canvas id="userCostChart"></canvas>
+                    <div class="chart-content-wrapper">
+                        <div class="canvas-wrapper">
+                            <canvas id="userCostChart"></canvas>
+                        </div>
+                        <div id="userCostLegend" class="custom-legend"></div>
+                    </div>
                 </div>
                 <div class="table-container" style="flex:2">
                     <table>
@@ -276,7 +286,12 @@
             <div class="chart-table-row">
                 <div class="chart-container small">
                     <div class="chart-title">🍩 Cost by Model</div>
-                    <canvas id="modelCostChart"></canvas>
+                    <div class="chart-content-wrapper">
+                        <div class="canvas-wrapper">
+                            <canvas id="modelCostChart"></canvas>
+                        </div>
+                        <div id="modelCostLegend" class="custom-legend"></div>
+                    </div>
                 </div>
                 <div class="table-container" style="flex:2">
                     <table>
