@@ -7,7 +7,7 @@
 <div align="left">
   <a href="#built-with"><img src="https://img.shields.io/badge/Stack-Docker_Compose-blue?style=flat-square&logo=docker" alt="Stack" /></a>
   <a href="#system-architecture"><img src="https://img.shields.io/badge/Services-8_Containers-green?style=flat-square&logo=git" alt="Services" /></a>
-  <a href="litellm/litellm_config.yaml"><img src="https://img.shields.io/badge/AI_Models-20_Providers-purple?style=flat-square&logo=openai" alt="Models" /></a>
+  <a href="litellm/litellm_config.yaml"><img src="https://img.shields.io/badge/AI_Models-20_Models-purple?style=flat-square&logo=openai" alt="Models" /></a>
   <a href="docs/"><img src="https://img.shields.io/badge/Docs-17_Documents-orange?style=flat-square&logo=read-the-docs" alt="Docs" /></a>
   <a href="tests/"><img src="https://img.shields.io/badge/Tests-Playwright_E2E-red?style=flat-square&logo=playwright" alt="Tests" /></a>
 </div>
@@ -76,27 +76,24 @@
 Sự kết hợp giữa 8 services được cô lập hoàn toàn trong mạng Docker internal:
 
 ```mermaid
-graph TD
-    Client[User Browser] -- HTTPS Port: 51122 --> Nginx[Nginx Reverse Proxy :3000]
+graph LR
+    User[User Browser] -->|HTTPS: 51122| Nginx[Nginx Reverse Proxy]
     
     subgraph Docker Internal Network
-        Nginx -- Web Traffic --> WebUI[Open WebUI :8080]
-        Nginx -- Admin & API --> MW[LLM Middleware :5000]
+        Nginx -->|Web Traffic| WebUI[Open WebUI :8080]
+        Nginx -->|Admin & API| MW[LLM Middleware :5000]
         
-        WebUI -- Vector/RAG Queries --> DB[(PostgreSQL + pgvector :5432)]
-        WebUI -- LLM Requests --> MW
-        WebUI -- Web Search --> SearXNG[SearXNG Engine :8080]
+        WebUI -->|RAG Vector Queries| DB[(PostgreSQL + pgvector :5432)]
+        WebUI -->|Web Search| SearXNG[SearXNG Engine :8080]
+        WebUI -->|LLM Requests| MW
         
-        SearXNG -- Cache --> Redis[(Redis Cache :6379)]
+        SearXNG -->|Search Cache| Redis[(Redis Cache :6379)]
         
-        MW -- Routing & Fallbacks --> LiteLLM[LiteLLM Proxy :4000]
-        MW -- Auth & Quotas --> DB
+        MW -->|Auth & Quotas| DB
+        MW -->|LLM Routing| LiteLLM[LiteLLM Proxy :4000]
     end
     
-    LiteLLM -- API Calls --> OpenAI[OpenAI API]
-    LiteLLM -- API Calls --> Gemini[Google Gemini / Vertex AI]
-    LiteLLM -- API Calls --> Anthropic[Anthropic API]
-    LiteLLM -- API Calls --> xAI[xAI API]
+    LiteLLM -->|API Calls| Providers[Cloud AI Providers<br>OpenAI, Gemini, Anthropic, xAI]
 ```
 
 > 📄 **Xem chi tiết tài liệu thiết kế hệ thống tại:** [docs/03-architecture.md](docs/03-architecture.md)
