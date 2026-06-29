@@ -76,20 +76,20 @@
 Sự kết hợp giữa 8 services được cô lập hoàn toàn trong mạng Docker internal:
 
 ```mermaid
-graph LR
+graph TD
     User[User Browser] -->|HTTPS: 51122| Nginx[Nginx Reverse Proxy]
     
     subgraph Docker Internal Network
-        Nginx -->|Web Traffic| WebUI[Open WebUI :8080]
+        Nginx -->|Web UI| WebUI[Open WebUI :8080]
         Nginx -->|Admin & API| MW[LLM Middleware :5000]
         
-        WebUI -->|RAG Vector Queries| DB[(PostgreSQL + pgvector :5432)]
-        WebUI -->|Web Search| SearXNG[SearXNG Engine :8080]
         WebUI -->|LLM Requests| MW
+        WebUI -->|Web Search| SearXNG[SearXNG Engine :8080]
+        WebUI -->|RAG Vector Queries| DB[(PostgreSQL + pgvector :5432)]
         
-        SearXNG -->|Search Cache| Redis[(Redis Cache :6379)]
+        SearXNG -->|Search Cache| Redis[(Redis :6379)]
         
-        MW -->|Auth & Quotas| DB
+        MW -->|Auth & Quota Check| DB
         MW -->|LLM Routing| LiteLLM[LiteLLM Proxy :4000]
     end
     
