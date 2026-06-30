@@ -102,6 +102,9 @@ export async function loadUsers() {
 
         // Load cross-database sync status table
         await loadSyncStatus();
+
+        // Load cross-database sync status table
+        await loadSyncStatus();
     } catch (err) {
         console.error('Failed to load users:', err);
         tbody.innerHTML = '<tr><td colspan="9" class="error-msg">Error: ' + err.message + '</td></tr>';
@@ -340,16 +343,12 @@ export async function loadSyncStatus() {
             return;
         }
 
-        // Sort by status priority (mismatch -> pending_ow_approval -> pending_sync -> orphan_middleware -> synced)
-        const weight = { 'mismatch': 4, 'pending_ow_approval': 3, 'pending_sync': 2, 'orphan_middleware': 1, 'synced': 0 };
-        users.sort((a, b) => (weight[b.status] || 0) - (weight[a.status] || 0));
-
         tbody.innerHTML = users.map(u => {
             const email = u.email || '';
             const name = u.name || '';
             const owRole = u.ow_role || 'n/a';
             const mwActive = u.mw_active !== null ? (u.mw_active ? '🟢 Active' : '🔴 Inactive') : 'n/a';
-
+            
             // Mask subkey if it exists
             const rawSubkey = u.subkey || '';
             const maskedSubkey = rawSubkey ? rawSubkey.slice(0, 8) + '...' + rawSubkey.slice(-8) : 'n/a';
@@ -364,26 +363,16 @@ export async function loadSyncStatus() {
                 statusBadge = '<span class="badge badge-danger" style="background:#ef4444">⚠️ Mismatch</span>';
             } else if (u.status === 'orphan_middleware') {
                 statusBadge = '<span class="badge badge-inactive" style="background:#64748b">👻 Orphan MW</span>';
-            } else if (u.status === 'pending_ow_approval') {
-                statusBadge = '<span class="badge badge-warning" style="background:#64748b;color:#fff">⌛ OW Approval Needed</span>';
             }
 
             const uid = encodeURIComponent(email);
-
+            
             // Render sync action button
             let actionBtn = '';
-            if (u.status === 'pending_ow_approval') {
-                actionBtn = `<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>Requires Role</button>`;
-            } else if (u.status !== 'synced') {
+            if (u.status !== 'synced') {
                 actionBtn = `<button class="btn btn-sm btn-primary" onclick="window.dashboardAPI.syncUserNow('${uid}')">Sync Now</button>`;
             } else {
                 actionBtn = `<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>Synced</button>`;
-            }
-
-            // Special override for 'admin' system account
-            if (email === 'admin') {
-                statusBadge = '<span class="badge badge-active" style="background:#4f46e5">🔑 Dashboard Manager</span>';
-                actionBtn = '<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>System Only</button>';
             }
 
             return `<tr>
@@ -391,6 +380,7 @@ export async function loadSyncStatus() {
                 <td>${name}</td>
                 <td><span class="badge" style="background:#334155">${owRole}</span></td>
                 <td>${mwActive}</td>
+                <td><code title="${rawSubkey}">${maskedSubkey}</code></td>
                 <td>${statusBadge}</td>
                 <td>${actionBtn}</td>
             </tr>`;
@@ -398,7 +388,7 @@ export async function loadSyncStatus() {
 
     } catch (err) {
         console.error('Failed to load sync status:', err);
-        tbody.innerHTML = '<tr><td colspan="6" class="error-msg">Error: ' + err.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="error-msg">Error: ' + err.message + '</td></tr>';
     }
 }
 

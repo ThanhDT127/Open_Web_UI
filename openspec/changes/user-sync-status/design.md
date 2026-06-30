@@ -25,28 +25,17 @@ Hệ thống đang cấu hình đăng ký tài khoản cục bộ (Local Signup)
   - Giúp viết các câu truy vấn JOIN trực tiếp hoặc kiểm tra nhanh mà không cần fork/sửa mã nguồn gốc của Open WebUI để mở thêm API.
   - Option B (API Bridge) sẽ yêu cầu sửa đổi sâu backend Open WebUI, tăng độ phức tạp khi nâng cấp bảo trì.
 
-### Quyết định 2: Tích hợp Lazy Provisioning với tính năng Đồng bộ Chủ động (Proactive Sync)
-- **Giải pháp**: Hệ thống cung cấp hai phương thức đồng bộ tài khoản:
-  1. **Lazy Provisioning (Bị động)**: Middleware tự động tạo tài khoản, sinh subkey và cấp Quota mặc định (VD: $2) tại thời điểm người dùng chat lần đầu tiên (chỉ áp dụng nếu Admin đã duyệt `role = user` bên Open WebUI).
-  2. **Proactive Sync (Chủ động)**: Admin sử dụng nút "Sync Now" trên bảng điều khiển User Sync Status để chủ động đẩy tài khoản sang Middleware *trước khi* người dùng bắt đầu chat.
+### Quyết định 2: Sử dụng luồng Lazy Provisioning (On-demand) kết hợp với Cơ chế Duyệt thủ công hiện tại
+- **Giải pháp**: Middleware tự động đồng bộ tài khoản tại thời điểm người dùng phát sinh request đầu tiên, nhưng **chỉ thực hiện đối với các tài khoản đã được Admin phê duyệt** (cột `role` là `user` hoặc `admin` bên Open WebUI). Các tài khoản mới đăng ký đang ở trạng thái `pending` hoặc bị khóa `banned` sẽ bị Middleware chặn ngay từ luồng xác thực.
 - **Lý do lựa chọn**:
-  - Tính linh hoạt cao: Proactive Sync cho phép Admin chủ động phân bổ Quota cao hơn (VD: $10 cho khách VIP) trước khi người dùng thực sự sử dụng hệ thống. Còn Lazy Provisioning đóng vai trò như một màng lưới an toàn (safety net) tự động hóa cho các người dùng thông thường, tiết kiệm thao tác thủ công.
-  - Tiết kiệm tài nguyên: Dữ liệu (Subkey, Quota) chỉ được tạo ra khi thực sự cần thiết hoặc khi có chủ đích của Admin, ngăn chặn rác dữ liệu từ các tài khoản đăng ký ảo hoặc chưa duyệt.
-
-### Quyết định 3: Thiết kế UI/UX Dashboard theo mô hình "Điều hướng sự chú ý" (Attention Directing)
-- **Giải pháp**:
-  - **Lược bỏ thông tin kỹ thuật**: Bảng dữ liệu không thiết kế các cột như `Subkey Hash`, `Middleware Subkey` hay nút `Rotate Key` tại giao diện chính, tuân thủ nguyên tắc Hộp đen (Blackbox).
-  - **Giao diện co giãn (Scalable UI)**: Thiết kế Scrollable Container (giới hạn chiều cao) và Sticky Header (tiêu đề bám dính) cho tất cả các bảng.
-  - **Thuật toán sắp xếp thông minh (Smart Sorting)**: Bảng Quota mặc định sắp xếp giảm dần theo **Tỷ lệ % Quota đã sử dụng**. Bảng Sync Status mặc định sắp xếp theo **Trọng số Ưu tiên lỗi**: `mismatch` (4) > `pending_ow_approval` (3) > `pending_sync` (2) > `orphan_middleware` (1) > `synced` (0).
-- **Lý do lựa chọn**:
-  - Giảm tải nhận thức (Cognitive Load), giúp Admin tập trung vào các tài khoản rủi ro (sắp hết hạn mức) hoặc các lỗi hệ thống cần xử lý ngay lập tức.
-  - Đảm bảo bố cục trang hiển thị luôn ổn định ngay cả khi hệ thống mở rộng lên đến hàng ngàn người dùng.
+  - Tối ưu luồng quản lý: Admin chỉ cần phê duyệt tài khoản một lần duy nhất trên giao diện Open WebUI; khi người dùng thực hiện chat lần đầu sau khi duyệt, Middleware sẽ tự động khởi tạo subkey và quota mà không cần Admin thao tác thủ công trên Middleware DB.
+  - Sẵn sàng cho tương lai: Dễ dàng chuyển dịch sang tự động hóa 100% khi cấu hình SSO/AD trong tương lai (khi đó `DEFAULT_USER_ROLE` sẽ được cấu hình thành `user`).
+  - Tiết kiệm tài nguyên: Tránh tạo dữ liệu rác cho các tài khoản đăng ký nhưng chưa được duyệt hoặc chưa bao giờ sử dụng.
+  - Giảm thiểu overhead IO quét toàn bộ bảng định kỳ.
 
 ## Risks / Trade-offs
 
-- **[Trade-off] Rủi ro phân bổ sai Quota với luồng Lazy Provisioning**: Nếu Admin muốn cấp Quota đặc biệt cho một khách VIP nhưng quên sử dụng Proactive Sync trước, người đó sẽ bị hệ thống tự động gán mức Quota mặc định ($2) khi chat lần đầu.
-  - *Mitigation*: Bảng "User Management" sử dụng thuật toán sắp xếp đẩy các tài khoản sắp cạn Quota lên đầu, giúp Admin nhanh chóng phát hiện và điều chỉnh lại Quota nếu người dùng VIP vô tình chạm ngưỡng $2 mặc định.
 - **[Risk] Nâng cấp Open WebUI làm thay đổi cấu trúc bảng `"user"`** → khiến truy vấn kiểm tra chéo của Middleware bị lỗi.
-  - *Mitigation*: Cố định phiên bản Open WebUI. Middleware chạy kiểm tra cấu trúc bảng (`email`, `role`, `name`) lúc startup; log CRITICAL và vô hiệu hóa đồng bộ nếu không khớp.
-- **[Risk] Xung đột ghi đồng thời (Race Condition)**: Khi luồng Lazy Provisioning nhận nhiều request chat từ một user cùng một lúc.
-  - *Mitigation*: Sử dụng `INSERT INTO mw_users ... ON CONFLICT (user_id) DO NOTHING` kèm theo Thread Lock ở mức FastAPI.
+  - *Mitigation*: Cố định phiên bản Open WebUI ở `v0.9.5`. Đồng thời, Middleware sẽ chạy một câu lệnh SQL kiểm tra sự tồn tại của các cột cần thiết (`email`, `role`, `name` của bảng `"user"`) tại thời điểm startup; nếu không khớp cấu trúc mong đợi, Middleware sẽ ghi log lỗi CRITICAL và tạm ngừng chức năng đồng bộ chéo.
+- **[Risk] Xung đột ghi đồng thời (Race Condition) khi người dùng mới gửi nhiều request chat cùng lúc** → dẫn đến ghi trùng lặp user trong `mw_users`.
+  - *Mitigation*: Sử dụng cấu trúc `INSERT INTO mw_users ... ON CONFLICT (user_id) DO NOTHING` ở mức DB, đồng thời bao bọc bằng Thread Lock ở mức ứng dụng FastAPI của Middleware.
