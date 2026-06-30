@@ -104,6 +104,8 @@ services:
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       - OFFICE365_CLIENT_ID=${OFFICE365_CLIENT_ID:-}
       - OFFICE365_CLIENT_SECRET=${OFFICE365_CLIENT_SECRET:-}
+      - MW_RAG_IMAGE_INJECT=True
+      - MW_RAG_IMAGE_MAX=3
     volumes:
       - ./llm-mw/users.json:/app/data/users.json
       - ./llm-mw/prices.json:/app/data/prices.json:ro
@@ -218,12 +220,9 @@ services:
       - PGVECTOR_CREATE_EXTENSION=true
       - PGVECTOR_INDEX_METHOD=hnsw
 
-      # Embeddings using Gemini via LiteLLM (openai-compatible)
-      - RAG_EMBEDDING_ENGINE=openai
-      - RAG_EMBEDDING_MODEL=gemini-embedding-2
-      # Embedding connects through middleware for cost tracking & quota control
-      - RAG_EMBEDDING_OPENAI_API_BASE_URL=http://middleware:5000/v1
-      - RAG_EMBEDDING_OPENAI_API_KEY=${SUBKEY_ADMIN}
+     # Embeddings using Local Sentence Transformers
+      - RAG_EMBEDDING_ENGINE=
+      - RAG_EMBEDDING_MODEL=AITeamVN/Vietnamese_Embedding
 
       # Reranking using Cohere via LiteLLM
       - RAG_RERANKING_ENGINE=external
@@ -240,8 +239,8 @@ services:
       - RAG_FILE_MAX_SIZE=500
       - RAG_FILE_MAX_COUNT=20
 
-      # Embedding batch size (reduced for Gemini API rate limits)
-      - RAG_EMBEDDING_BATCH_SIZE=1
+    # Embedding batch size (optimized for CPU sentence-transformers)  
+      - RAG_EMBEDDING_BATCH_SIZE=100
 
       # LLM Connection via Middleware
       - OPENAI_API_BASE_URL=http://middleware:5000/v1
@@ -342,6 +341,7 @@ services:
         condition: service_healthy
     networks:
       - openwebui-network
+
 
   # Nginx Reverse Proxy + HTTPS
   nginx:
