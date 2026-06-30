@@ -1,4 +1,36 @@
 model_list:
+  - model_name: llama-3.1-8b-instant
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: "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"
+      
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: "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"
+
+  - model_name: gpt-oss-20b
+    litellm_params:
+      model: groq/openai/gpt-oss-20b
+      api_key: "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"
+
+server_settings:
+  host: "0.0.0.0"
+  port: 4000
+  api_base: "/v1"
+  telemetry: false
+
+general_settings:
+  enable_spend_logging: true
+  verbose: true
+  master_key: "super_admin_key_123"
+  log_level: "info"
+
+logging:
+  file: "D:\\ktlt\\Works\\Open_Web_UI\\litellm\\litellm.log"
+  level: INFO
+
+model_list:
   # ============================================================
   # OPENAI CHAT MODELS (3)
   # ============================================================
@@ -39,6 +71,7 @@ model_list:
 
   # Gemini 2.5 Flash via OpenRouter
   - model_name: chat-gemini-2.5-flash
+    litellm_params:
       model: vertex_ai/gemini-2.5-flash
       vertex_project: os.environ/VERTEX_PROJECT
       vertex_location: os.environ/VERTEX_LOCATION
