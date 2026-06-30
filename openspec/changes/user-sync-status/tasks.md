@@ -15,12 +15,10 @@
 - [ ] 3.2 Viết API đối chiếu tài khoản `/v1/_mw/admin/users/sync-status` trả về danh sách các user bị lệch đồng bộ
 - [ ] 3.3 Tích hợp logic kiểm tra trạng thái khóa tài khoản (`active = false` bên Open WebUI) trong luồng xác thực tin nhắn
 
-## 4. Thiết kế & Xây dựng Dashboard Quản trị Thông minh
+## 4. Xây dựng Giao diện Dashboard cho Admin
 
 - [ ] 4.1 Thêm giao diện tab/view "Sync Status" bên trong trang quản lý Users của Admin Dashboard
-- [ ] 4.2 Triển khai tính năng "Proactive Sync" (Nút Sync Now) cho phép Admin chủ động đồng bộ trước người dùng
-- [ ] 4.3 Triển khai kiến trúc hiển thị mở rộng: Bọc các bảng dữ liệu bằng CSS Scrollable Container và Sticky Header
-- [ ] 4.4 Cài đặt thuật toán điều hướng sự chú ý (Smart Sorting): Sắp xếp bảng Quota theo % sử dụng, bảng Sync theo trọng số lỗi hệ thống
+- [ ] 4.2 Triển khai nút bấm "Sync Now" trên giao diện để Admin thực hiện đồng bộ cưỡng bức tài khoản bị lệch
 
 ## 5. Viết Test & Xác minh
 

@@ -23,6 +23,7 @@ logger = logging.getLogger("llm_mw")
 
 _pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
 _ow_pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
+_ow_pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
 
 
 def _parse_dsn(database_url: str) -> dict:
@@ -73,6 +74,7 @@ def init_pool(database_url: str, minconn: int = 2, maxconn: int = 10):
     Creates the target database if it doesn't exist, then creates tables.
     """
     global _pool, _ow_pool
+    global _pool, _ow_pool
     if _pool is not None:
         return
 
@@ -115,14 +117,27 @@ def init_pool(database_url: str, minconn: int = 2, maxconn: int = 10):
     except Exception as e:
         logger.error("Failed to initialize Open WebUI DB pool: %s", str(e))
 
+    # Initialize openwebui read-only connection pool on the same host/port
+    try:
+        _ow_pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=minconn,
+            maxconn=maxconn,
+            host=params["host"],
+            port=params["port"],
+            user=params["user"],
+            password=params["password"],
+            dbname="openwebui",
+        )
+        logger.info("Open WebUI DB pool initialized: %s@%s:%s/openwebui (min=%d, max=%d)",
+                    params["user"], params["host"], params["port"], minconn, maxconn)
+    except Exception as e:
+        logger.error("Failed to initialize Open WebUI DB pool: %s", str(e))
+
     # Create tables
     _create_tables()
 
     # Auto-migrate from JSON if tables are empty
     _auto_migrate_if_empty()
-
-    # One-time backfill of historical audit rows
-    _backfill_audit_openwebui_ids()
 
     # Verify Open WebUI schema
     check_ow_schema()
@@ -180,40 +195,6 @@ def db_ow_conn():
         raise
     finally:
         put_ow_conn(conn)
-
-
-def fetch_final_audit_entries(start_dt, end_dt) -> list:
-    """One row per request from mw_audit_log: the latest entry per rid.
-
-    A request is logged multiple times over its lifecycle (pending -> ok /
-    reconciled / error); every consumer that counts "requests" must count each
-    rid exactly once, from its final state. This is the single definition of
-    that rule — analytics, group analytics and report export all go through it.
-    Rows without a rid are treated as individual requests.
-    """
-    with db_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT DISTINCT ON (COALESCE(NULLIF(rid, ''), id::text))
-                   user_id, model, tokens_total, cost_usd, ts, status, latency_ms
-            FROM mw_audit_log
-            WHERE ts >= %s AND ts <= %s
-            ORDER BY COALESCE(NULLIF(rid, ''), id::text), ts DESC, id DESC
-        """, (start_dt, end_dt))
-        rows = cur.fetchall()
-        cur.close()
-    return [
-        {
-            "user_id": r[0],
-            "model": r[1],
-            "tokens_total": int(r[2] or 0),
-            "cost_usd": float(r[3] or 0.0),
-            "ts": r[4],
-            "status": r[5] or "ok",
-            "latency_ms": float(r[6]) if r[6] is not None else None,
-        }
-        for r in rows
-    ]
 
 
 def check_ow_schema() -> bool:
@@ -492,7 +473,10 @@ def _auto_migrate_if_empty():
         else:
             # Always sync missing users and prices from JSON (ON CONFLICT DO NOTHING)
             logger.info("DB has %d users — syncing missing users and prices from JSON...", user_count)
+            # Always sync missing users and prices from JSON (ON CONFLICT DO NOTHING)
+            logger.info("DB has %d users — syncing missing users and prices from JSON...", user_count)
             _import_users(conn, cur, BACKUP_DATA_DIR, DATA_DIR)
+            _import_prices(conn, cur, BACKUP_DATA_DIR, DATA_DIR)
             _import_prices(conn, cur, BACKUP_DATA_DIR, DATA_DIR)
 
         # Backfill subkey_hash for users with plaintext subkey but no hash
@@ -502,6 +486,7 @@ def _auto_migrate_if_empty():
 
 
 def _backfill_subkey_hashes(conn, cur):
+<<<<<<< HEAD
     """Generate subkey_hash for users who have plaintext subkey but NULL hash, then drop subkey column."""
     # Check if 'subkey' column exists
     cur.execute("""
@@ -517,10 +502,17 @@ def _backfill_subkey_hashes(conn, cur):
 
     # Use centralized hash_subkey() to avoid duplicating MW_SECRET logic
     from core.auth import hash_subkey
+=======
+    """Generate subkey_hash for users who have plaintext subkey but NULL hash."""
+    from config import MW_SECRET
+    import hmac
+    import hashlib
+>>>>>>> 62aac74 (feat(core): implement user sync status and lazy provisioning)
 
     cur.execute("SELECT user_id, subkey FROM mw_users WHERE subkey IS NOT NULL AND subkey != '' AND subkey_hash IS NULL")
     rows = cur.fetchall()
 
+<<<<<<< HEAD
     if rows:
         for user_id, subkey in rows:
             subkey_hash = hash_subkey(subkey)
@@ -528,6 +520,19 @@ def _backfill_subkey_hashes(conn, cur):
             logger.info("Backfilled subkey_hash for user: %s", user_id)
         conn.commit()
         logger.info("Backfilled subkey_hash for %d users", len(rows))
+=======
+    if not rows:
+        return
+
+    for user_id, subkey in rows:
+        subkey_hash = hmac.new(
+            MW_SECRET.encode("utf-8"),
+            subkey.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+        cur.execute("UPDATE mw_users SET subkey_hash = %s WHERE user_id = %s", (subkey_hash, user_id))
+        logger.info("Backfilled subkey_hash for user: %s", user_id)
+>>>>>>> 62aac74 (feat(core): implement user sync status and lazy provisioning)
 
     # Safely drop the subkey column now
     cur.execute("ALTER TABLE mw_users DROP COLUMN IF EXISTS subkey")
