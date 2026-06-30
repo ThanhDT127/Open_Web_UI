@@ -11,7 +11,7 @@ from typing import Dict, Any, Optional, List
 from fastapi import HTTPException, Request
 from threading import Lock
 
-from config import USERS_FILE, MW_SECRET
+from config import USERS_FILE, MW_SECRET, logger
 
 # Thread lock for user operations (backward compat)
 _lock = Lock()
@@ -256,6 +256,39 @@ def require_user(request: Request) -> Dict[str, Any]:
         )
         raise HTTPException(401, "Invalid sub-key")
 
+    # Sync block: check if user has been deactivated/banned in Open WebUI
+    if _db_available() and user.get("user_id"):
+        from core.db import db_ow_conn, db_conn
+        try:
+            with db_ow_conn() as conn:
+                cur = conn.cursor()
+                cur.execute('SELECT role FROM "user" WHERE email = %s LIMIT 1', (user["user_id"],))
+                row = cur.fetchone()
+                cur.close()
+            if row:
+                role = row[0]
+                if role not in ("user", "admin"):
+                    # User is banned/pending in Open WebUI! Invalidate Middleware DB state.
+                    with db_conn() as conn:
+                        cur = conn.cursor()
+                        cur.execute("UPDATE mw_users SET active = false, updated_at = now() WHERE user_id = %s", (user["user_id"],))
+                        cur.close()
+                    # Also update JSON backup
+                    try:
+                        users = _load_users_file()
+                        for u in users:
+                            if u.get("user_id") == user["user_id"]:
+                                u["active"] = False
+                                break
+                        _save_users_file(users)
+                    except Exception:
+                        pass
+                    # Update local state
+                    user["active"] = False
+                    logger.info("auth: user %s has been deactivated due to role change in Open WebUI (role=%s)", user["user_id"], role)
+        except Exception as e:
+            logger.warning("auth: failed to verify Open WebUI active status for user %s: %s", user["user_id"], str(e))
+
     if not user.get("active", True):
         logger.warning(
             "auth_fail reason=user_inactive user_id=%s path=%s client_ip=%s",
@@ -296,18 +329,140 @@ def get_lock() -> Lock:
 
 # ─── Single-user O(1) API ─────────────────────────────────────
 
+def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Check if user exists and is active in Open WebUI database, and if so,
+    automatically provision them in the Middleware database with default quota.
+    Safe against race conditions using _lock.
+    """
+    from core.db import db_ow_conn, db_conn, _ow_pool
+    from datetime import datetime, timezone
+    import secrets
+
+    # Check if DB is available (required for cross-DB sync)
+    if _ow_pool is None:
+        return None
+
+    # Step 1: Check if user exists and is active (role is 'user' or 'admin') in Open WebUI
+    role, name = None, None
+    try:
+        with db_ow_conn() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT role, name FROM "user" WHERE email = %s LIMIT 1', (user_id,))
+            row = cur.fetchone()
+            cur.close()
+            if row:
+                role, name = row[0], row[1]
+    except Exception as e:
+        logger.error("lazy_provision: failed to check Open WebUI DB for user %s: %s", user_id, str(e))
+        return None
+
+    if not role or role not in ("user", "admin"):
+        logger.info("lazy_provision: user %s not found or not active in Open WebUI (role=%s)", user_id, role)
+        return None
+
+    # Step 2: Use lock to serialize insertion and avoid duplicate keys
+    with _lock:
+        # Check if user was provisioned by another thread in the meantime
+        from core.db import get_user_by_id_db
+        existing = get_user_by_id_db(user_id)
+        if existing:
+            return existing
+
+        # Generate new subkey and hash
+        subkey = f"sk_{secrets.token_urlsafe(32)}"
+        subkey_hash = hash_subkey(subkey)
+
+        # Set default quota
+        quota = {
+            "period": "monthly",
+            "timezone": "Asia/Bangkok",
+            "limit_tokens": 0,
+            "limit_cost_usd": 2.0,
+            "limit_image_requests": 0,
+            "period_start": int(datetime.now(timezone.utc).timestamp() * 1000),
+            "used_tokens": 0,
+            "used_cost_usd": 0.0,
+            "used_image_requests": 0
+        }
+
+        try:
+            with db_conn() as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    INSERT INTO mw_users (user_id, subkey, subkey_hash, active, allowed_models, quota)
+                    VALUES (%s, %s, %s, true, '["*"]'::jsonb, %s)
+                    ON CONFLICT (user_id) DO UPDATE SET
+                        subkey = COALESCE(mw_users.subkey, EXCLUDED.subkey),
+                        subkey_hash = COALESCE(mw_users.subkey_hash, EXCLUDED.subkey_hash),
+                        active = true
+                    RETURNING user_id, subkey, subkey_hash, active, allowed_models, quota
+                """, (user_id, subkey, subkey_hash, json.dumps(quota)))
+                row = cur.fetchone()
+                cur.close()
+                
+            if row:
+                logger.info("lazy_provision: successfully provisioned user %s", user_id)
+                # Also save to JSON file backup
+                try:
+                    users = _load_users_file()
+                    if not any(u.get("user_id") == user_id for u in users):
+                        new_user = {
+                            "user_id": user_id,
+                            "role": "user",
+                            "subkey": subkey,
+                            "subkey_hash": subkey_hash,
+                            "active": True,
+                            "allowed_models": ["*"],
+                            "used_tokens": 0,
+                            "used_cost_usd": 0.0,
+                            "quota": quota
+                        }
+                        users.append(new_user)
+                        _save_users_file(users)
+                except Exception as fe:
+                    logger.warning("lazy_provision: failed to update JSON backup for user %s: %s", user_id, str(fe))
+
+                return {
+                    "user_id": row[0],
+                    "subkey": row[1],
+                    "subkey_hash": row[2],
+                    "active": row[3],
+                    "allowed_models": row[4] if row[4] else ["*"],
+                    "used_tokens": 0,
+                    "used_cost_usd": 0.0,
+                    "quota": row[5] if row[5] else {},
+                    "alerts_sent": {}
+                }
+        except Exception as e:
+            logger.error("lazy_provision: failed to insert user %s: %s", user_id, str(e))
+            return None
+
+    return None
+
+
 def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     """
     Get a single user by user_id. O(1) indexed query.
     Uses DB if available, falls back to JSON file linear search.
+    If not found and database is available, attempts Lazy Provisioning.
     """
     if _db_available():
         from core.db import get_user_by_id_db
-        return get_user_by_id_db(user_id)
-    # File fallback: linear search (unavoidable without index)
-    for u in _load_users_file():
-        if u.get("user_id") == user_id:
-            return u
+        user = get_user_by_id_db(user_id)
+        if user:
+            return user
+        
+        # Lazy provision if email contains '@'
+        if "@" in user_id:
+            user = lazy_provision_user(user_id)
+            if user:
+                return user
+    else:
+        # File fallback: linear search (unavoidable without index)
+        for u in _load_users_file():
+            if u.get("user_id") == user_id:
+                return u
     return None
 
 

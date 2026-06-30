@@ -485,3 +485,199 @@ def get_admin_audit(
         "audit_trail": entries[:100],  # Last 100 events
         "total": len(entries)
     }
+
+
+def get_users_sync_status(request: Request):
+    """
+    GET /v1/_mw/admin/users/sync-status
+    Retrieve user sync status comparing Open WebUI and Middleware database.
+    """
+    from utils.auth_guard import require_admin_or_session
+    require_admin_or_session(request)
+
+    from core.auth import _db_available
+    if not _db_available():
+        raise HTTPException(400, "Database connection not available (running in file-only mode)")
+
+    from core.db import db_ow_conn, db_conn
+
+    # 1. Query Open WebUI users
+    ow_users = []
+    try:
+        with db_ow_conn() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT email, name, role FROM "user"')
+            rows = cur.fetchall()
+            for r in rows:
+                ow_users.append({
+                    "email": r[0],
+                    "name": r[1],
+                    "role": r[2]
+                })
+            cur.close()
+    except Exception as e:
+        logger.error("get_users_sync_status: failed to query Open WebUI: %s", str(e))
+        raise HTTPException(500, f"Failed to query Open WebUI database: {str(e)}")
+
+    # 2. Query Middleware users
+    mw_users_list = []
+    try:
+        with db_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT user_id, active, subkey FROM mw_users")
+            rows = cur.fetchall()
+            for r in rows:
+                mw_users_list.append({
+                    "user_id": r[0],
+                    "active": r[1],
+                    "subkey": r[2]
+                })
+            cur.close()
+    except Exception as e:
+        logger.error("get_users_sync_status: failed to query Middleware: %s", str(e))
+        raise HTTPException(500, f"Failed to query Middleware database: {str(e)}")
+
+    # 3. Match and calculate sync status
+    ow_map = {u["email"]: u for u in ow_users}
+    mw_map = {u["user_id"]: u for u in mw_users_list}
+
+    all_emails = set(ow_map.keys()).union(mw_map.keys())
+
+    sync_list = []
+    for email in all_emails:
+        ow_u = ow_map.get(email)
+        mw_u = mw_map.get(email)
+
+        name = ow_u["name"] if ow_u else email.split("@")[0]
+        ow_role = ow_u["role"] if ow_u else None
+        mw_active = mw_u["active"] if mw_u else None
+        subkey = mw_u["subkey"] if mw_u else None
+
+        if ow_u and not mw_u:
+            if ow_role in ("user", "admin"):
+                status = "pending_sync"
+            else:
+                status = "synced"  # pending/banned in OW, and doesn't exist in MW (this is correct/synced)
+        elif not ow_u and mw_u:
+            status = "orphan_middleware"
+        else:
+            # Exists in both
+            ow_is_active = (ow_role in ("user", "admin"))
+            if ow_is_active == mw_active:
+                status = "synced"
+            else:
+                status = "mismatch"
+
+        sync_list.append({
+            "email": email,
+            "name": name,
+            "ow_role": ow_role,
+            "mw_active": mw_active,
+            "subkey": subkey,
+            "status": status
+        })
+
+    # Sort: mismatch and orphan first, then pending_sync, then synced
+    sync_list.sort(key=lambda x: (
+        0 if x["status"] in ("mismatch", "orphan_middleware") else 1 if x["status"] == "pending_sync" else 2,
+        x["email"]
+    ))
+
+    return {"users": sync_list}
+
+
+async def sync_user_now(request: Request):
+    """
+    POST /v1/_mw/admin/users/sync-now
+    Force synchronization of a specific user.
+    """
+    from utils.auth_guard import require_admin_or_session
+    require_admin_or_session(request)
+
+    try:
+        body = await request.json()
+        user_id = body.get("user_id")
+    except Exception:
+        raise HTTPException(400, "Invalid JSON body")
+
+    if not user_id:
+        raise HTTPException(400, "user_id is required")
+
+    from core.auth import lazy_provision_user, _db_available
+    if not _db_available():
+        raise HTTPException(400, "Database connection not available")
+
+    from core.db import db_conn, db_ow_conn
+
+    # Check if user exists in Open WebUI
+    role, name = None, None
+    try:
+        with db_ow_conn() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT role, name FROM "user" WHERE email = %s LIMIT 1', (user_id,))
+            row = cur.fetchone()
+            cur.close()
+            if row:
+                role, name = row[0], row[1]
+    except Exception as e:
+        raise HTTPException(500, f"Open WebUI DB error: {str(e)}")
+
+    if not role:
+        raise HTTPException(404, f"User {user_id} not found in Open WebUI")
+
+    # Audit log changes
+    changes = {}
+
+    if role in ("user", "admin"):
+        # Provision/Activate
+        user = lazy_provision_user(user_id)
+        if not user:
+            # If already exists, make sure it is activated
+            try:
+                with db_conn() as conn:
+                    cur = conn.cursor()
+                    cur.execute("UPDATE mw_users SET active = true, updated_at = now() WHERE user_id = %s", (user_id,))
+                    cur.close()
+                changes["active"] = True
+            except Exception as e:
+                raise HTTPException(500, f"Failed to activate user: {str(e)}")
+        else:
+            changes["provisioned"] = True
+            changes["active"] = True
+    else:
+        # Banned/pending in Open WebUI, force deactivate in Middleware
+        try:
+            with db_conn() as conn:
+                cur = conn.cursor()
+                cur.execute("UPDATE mw_users SET active = false, updated_at = now() WHERE user_id = %s", (user_id,))
+                cur.close()
+            # Sync to JSON backup
+            try:
+                from core.auth import _load_users_file, _save_users_file
+                users = _load_users_file()
+                for u in users:
+                    if u.get("user_id") == user_id:
+                        u["active"] = False
+                        break
+                _save_users_file(users)
+            except Exception:
+                pass
+            changes["active"] = False
+        except Exception as e:
+            raise HTTPException(500, f"Failed to deactivate user: {str(e)}")
+
+    # Audit trail
+    _write_admin_audit(
+        actor="admin_session",
+        action="sync_user",
+        target_user=user_id,
+        changes=changes,
+        status="ok",
+        request=request
+    )
+
+    return {
+        "status": "ok",
+        "message": f"Successfully synchronized user {user_id}",
+        "changes": changes
+    }

@@ -87,6 +87,9 @@ export async function loadUsers() {
                 </td>
             </tr>`;
         }).join('');
+
+        // Load cross-database sync status table
+        await loadSyncStatus();
     } catch (err) {
         console.error('Failed to load users:', err);
         tbody.innerHTML = '<tr><td colspan="10" class="error-msg">Error: ' + err.message + '</td></tr>';
@@ -306,4 +309,91 @@ function _showSubkeyModal(subkey, userId) {
     const copyBtn = document.querySelector('#subkeyModal .btn-sm');
     if (copyBtn) copyBtn.textContent = '📋 Copy';
     document.getElementById('subkeyModal').style.display = 'flex';
+}
+
+export async function loadSyncStatus() {
+    const tbody = document.getElementById('syncTable');
+    if (!tbody) return;
+    try {
+        const res = await mwFetch('/v1/_mw/admin/users/sync-status');
+        if (!res || !res.ok) {
+            tbody.innerHTML = '<tr><td colspan="7" class="error-msg">Failed to load sync status</td></tr>';
+            return;
+        }
+        const data = await res.json();
+        const users = data.users || [];
+        if (users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="no-data">No accounts found in databases</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = users.map(u => {
+            const email = u.email || '';
+            const name = u.name || '';
+            const owRole = u.ow_role || 'n/a';
+            const mwActive = u.mw_active !== null ? (u.mw_active ? '🟢 Active' : '🔴 Inactive') : 'n/a';
+            
+            // Mask subkey if it exists
+            const rawSubkey = u.subkey || '';
+            const maskedSubkey = rawSubkey ? rawSubkey.slice(0, 8) + '...' + rawSubkey.slice(-8) : 'n/a';
+
+            // Badges
+            let statusBadge = '';
+            if (u.status === 'synced') {
+                statusBadge = '<span class="badge badge-active" style="background:#10b981">✓ Synced</span>';
+            } else if (u.status === 'pending_sync') {
+                statusBadge = '<span class="badge badge-warning" style="background:#f59e0b;color:#000">⏳ Pending Sync</span>';
+            } else if (u.status === 'mismatch') {
+                statusBadge = '<span class="badge badge-danger" style="background:#ef4444">⚠️ Mismatch</span>';
+            } else if (u.status === 'orphan_middleware') {
+                statusBadge = '<span class="badge badge-inactive" style="background:#64748b">👻 Orphan MW</span>';
+            }
+
+            const uid = encodeURIComponent(email);
+            
+            // Render sync action button
+            let actionBtn = '';
+            if (u.status !== 'synced') {
+                actionBtn = `<button class="btn btn-sm btn-primary" onclick="window.dashboardAPI.syncUserNow('${uid}')">Sync Now</button>`;
+            } else {
+                actionBtn = `<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>Synced</button>`;
+            }
+
+            return `<tr>
+                <td class="user-id">${email}</td>
+                <td>${name}</td>
+                <td><span class="badge" style="background:#334155">${owRole}</span></td>
+                <td>${mwActive}</td>
+                <td><code title="${rawSubkey}">${maskedSubkey}</code></td>
+                <td>${statusBadge}</td>
+                <td>${actionBtn}</td>
+            </tr>`;
+        }).join('');
+
+    } catch (err) {
+        console.error('Failed to load sync status:', err);
+        tbody.innerHTML = '<tr><td colspan="7" class="error-msg">Error: ' + err.message + '</td></tr>';
+    }
+}
+
+export async function syncUserNow(userId) {
+    userId = decodeURIComponent(userId);
+    if (!confirm(`Force synchronize and align status for user ${userId}?`)) return;
+
+    try {
+        const res = await mwFetch('/v1/_mw/admin/users/sync-now', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: userId })
+        });
+        if (res && res.ok) {
+            updateStatus('ok', `User ${userId} synced successfully ✓`);
+            // Reload tables
+            await loadUsers();
+        } else {
+            const err = await res.json().catch(() => ({}));
+            alert(`Failed to sync: ${err.error || 'Unknown error'}`);
+        }
+    } catch (err) {
+        alert(`Error: ${err.message}`);
+    }
 }
