@@ -380,27 +380,55 @@
                             Active: <span id="activeUserCount">-</span> / Total: <span id="totalUserCount">-</span>
                         </span>
                     </span>
-                    <button class="btn btn-primary" onclick="window.dashboardAPI.showCreateUserModal()">➕ Add
-                        User</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="window.dashboardAPI.loadUsers()" class="btn-apply" style="margin-top:0;">↻ Refresh</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>User ID</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Models</th>
+                                <th>Period</th>
+                                <th>Cost Used</th>
+                                <th>Limit</th>
+                                <th>Quota Usage</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTable">
+                            <tr>
+                                <td colspan="9" class="loading">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="section" style="margin-top: 30px;">
+                <div class="section-title">🔄 User Sync Status (Open WebUI ⇄ Middleware)</div>
+                <div class="insight-banner">
+                    <span class="insight-icon">🔄</span>
+                    <span class="insight-text">Đối chiếu tài khoản chéo giữa Open WebUI DB và Middleware DB. Trạng thái
+                        lệch sẽ tự động hiển thị ở đầu danh sách.</span>
                 </div>
                 <table>
                     <thead>
                         <tr>
-                            <th>User ID</th>
-                            <th>Role</th>
-                            <th>Status</th>
-                            <th>Models</th>
-                            <th>Period</th>
-                            <th>Cost Used</th>
-                            <th>Limit</th>
-                            <th>Quota Usage</th>
-                            <th>Subkey Hash</th>
+                            <th>Email / User ID</th>
+                            <th>Name</th>
+                            <th>Open WebUI Role</th>
+                            <th>Middleware Active</th>
+                            <th>Sync Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="usersTable">
+                    <tbody id="syncTable">
                         <tr>
-                            <td colspan="10" class="loading">Loading...</td>
+                            <td colspan="7" class="loading">Loading sync status...</td>
                         </tr>
                     </tbody>
                 </table>

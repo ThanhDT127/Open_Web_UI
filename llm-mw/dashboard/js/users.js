@@ -29,6 +29,10 @@ export async function loadUsers() {
             return;
         }
 
+        // Sort by quota usage percentage (descending, unlimited goes to bottom)
+        const getPct = (q) => (q && q.limit_cost_usd > 0) ? (q.used_cost_usd / q.limit_cost_usd) : -1;
+        users.sort((a, b) => getPct(b.quota) - getPct(a.quota));
+
         tbody.innerHTML = users.map(u => {
             const q = u.quota || {};
             const costUsed = q.used_cost_usd || 0;
@@ -53,7 +57,7 @@ export async function loadUsers() {
                         <div class="quota-gauge-fill" style="width: ${quotaPct}%; background: ${color}"></div>
                     </div>
                     <span class="quota-text" style="color: ${color}">${quotaPct.toFixed(0)}%</span>
-                    <span class="quota-detail">$${costUsed.toFixed(4)} / $${costLimit.toFixed(2)}</span>
+                    <span class="quota-detail">$${costUsed.toFixed(4)} / $${costLimit.toFixed(4)}</span>
                 `;
             } else {
                 quotaBar = '<span class="quota-unlimited">∞ Unlimited</span>';
@@ -76,14 +80,16 @@ export async function loadUsers() {
                 <td class="models-cell" title="${models}">${models.length > 25 ? models.slice(0, 25) + '...' : models}</td>
                 <td>${period}</td>
                 <td class="cost">$${costUsed.toFixed(4)}</td>
-                <td>$${costLimit > 0 ? costLimit.toFixed(2) : '∞'}</td>
+                <td>$${costLimit > 0 ? costLimit.toFixed(4) : '∞'}</td>
                 <td class="quota-cell">${quotaBar}</td>
-                <td class="hash-cell" title="${hash}"><code>${maskedHash}</code></td>
                 <td class="actions-cell">
-                    <button class="btn-icon btn-edit" title="Edit" onclick="window.dashboardAPI.showEditUserModal('${uid}')">✏️</button>
-                    <button class="btn-icon btn-key" title="Rotate Key" onclick="window.dashboardAPI.rotateUserKey('${uid}')">🔑</button>
-                    <button class="btn-icon btn-toggle" title="${isActive ? 'Disable' : 'Enable'}" onclick="window.dashboardAPI.toggleUserActive('${uid}', ${!isActive})">${isActive ? '🔴' : '🟢'}</button>
-                    <button class="btn-icon btn-delete" title="Delete" onclick="window.dashboardAPI.deleteUser('${uid}')">🗑️</button>
+                    ${uid === 'admin' ? `
+                        <!-- System only -->
+                    ` : `
+                        <button class="btn-icon btn-edit" title="Edit" onclick="window.dashboardAPI.showEditUserModal('${uid}')">✏️</button>
+                        <button class="btn-icon btn-toggle" title="${isActive ? 'Disable' : 'Enable'}" onclick="window.dashboardAPI.toggleUserActive('${uid}', ${!isActive})">${isActive ? '🔴' : '🟢'}</button>
+                        <button class="btn-icon btn-delete" title="Delete" onclick="window.dashboardAPI.deleteUser('${uid}')">🗑️</button>
+                    `}
                 </td>
             </tr>`;
         }).join('');
@@ -92,7 +98,7 @@ export async function loadUsers() {
         await loadSyncStatus();
     } catch (err) {
         console.error('Failed to load users:', err);
-        tbody.innerHTML = '<tr><td colspan="10" class="error-msg">Error: ' + err.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="error-msg">Error: ' + err.message + '</td></tr>';
     }
 }
 
@@ -327,6 +333,10 @@ export async function loadSyncStatus() {
             return;
         }
 
+        // Sort by status priority (mismatch -> pending_ow_approval -> pending_sync -> orphan_middleware -> synced)
+        const weight = { 'mismatch': 4, 'pending_ow_approval': 3, 'pending_sync': 2, 'orphan_middleware': 1, 'synced': 0 };
+        users.sort((a, b) => (weight[b.status] || 0) - (weight[a.status] || 0));
+
         tbody.innerHTML = users.map(u => {
             const email = u.email || '';
             const name = u.name || '';
@@ -347,16 +357,26 @@ export async function loadSyncStatus() {
                 statusBadge = '<span class="badge badge-danger" style="background:#ef4444">⚠️ Mismatch</span>';
             } else if (u.status === 'orphan_middleware') {
                 statusBadge = '<span class="badge badge-inactive" style="background:#64748b">👻 Orphan MW</span>';
+            } else if (u.status === 'pending_ow_approval') {
+                statusBadge = '<span class="badge badge-warning" style="background:#64748b;color:#fff">⌛ OW Approval Needed</span>';
             }
 
             const uid = encodeURIComponent(email);
             
             // Render sync action button
             let actionBtn = '';
-            if (u.status !== 'synced') {
+            if (u.status === 'pending_ow_approval') {
+                actionBtn = `<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>Requires Role</button>`;
+            } else if (u.status !== 'synced') {
                 actionBtn = `<button class="btn btn-sm btn-primary" onclick="window.dashboardAPI.syncUserNow('${uid}')">Sync Now</button>`;
             } else {
                 actionBtn = `<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>Synced</button>`;
+            }
+
+            // Special override for 'admin' system account
+            if (email === 'admin') {
+                statusBadge = '<span class="badge badge-active" style="background:#4f46e5">🔑 Dashboard Manager</span>';
+                actionBtn = '<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>System Only</button>';
             }
 
             return `<tr>
@@ -364,7 +384,6 @@ export async function loadSyncStatus() {
                 <td>${name}</td>
                 <td><span class="badge" style="background:#334155">${owRole}</span></td>
                 <td>${mwActive}</td>
-                <td><code title="${rawSubkey}">${maskedSubkey}</code></td>
                 <td>${statusBadge}</td>
                 <td>${actionBtn}</td>
             </tr>`;
@@ -372,7 +391,7 @@ export async function loadSyncStatus() {
 
     } catch (err) {
         console.error('Failed to load sync status:', err);
-        tbody.innerHTML = '<tr><td colspan="7" class="error-msg">Error: ' + err.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="error-msg">Error: ' + err.message + '</td></tr>';
     }
 }
 

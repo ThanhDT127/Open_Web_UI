@@ -30,7 +30,7 @@ from api.audit_query import parse_audit_filters
 from api.user_admin import (
     list_users, create_user, update_user, 
     rotate_user_key, disable_user, enable_user, get_admin_audit,
-    delete_user_endpoint
+    delete_user_endpoint, get_users_sync_status, sync_user_now
 )
 from api.dashboard_login import dashboard_login, dashboard_logout
 from api.auth_check import get_auth_check
@@ -182,6 +182,8 @@ app.add_api_route("/v1/_mw/access_stream", stream_access, methods=["GET"])
 app.add_api_route("/v1/_mw/audit/query", parse_audit_filters, methods=["GET"])
 
 # User management endpoints (admin only)
+app.add_api_route("/v1/_mw/admin/users/sync-status", get_users_sync_status, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/users/sync-now", sync_user_now, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/users", list_users, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/users", create_user, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/users/{user_id}", update_user, methods=["PATCH"])
