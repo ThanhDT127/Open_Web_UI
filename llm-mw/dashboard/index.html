@@ -457,8 +457,7 @@
                         </span>
                     </span>
                     <div style="display: flex; gap: 10px;">
-                        <button onclick="window.dashboardAPI.loadUsers()" class="btn-apply" style="margin-top:0;">↻
-                            Refresh</button>
+                        <button onclick="window.dashboardAPI.loadUsers()" class="btn-apply" style="margin-top:0;">↻ Refresh</button>
                     </div>
                 </div>
                 <div class="table-container">
@@ -509,46 +508,6 @@
                         </tr>
                     </tbody>
                 </table>
-            </div>
-        </div>
-
-        <!-- Pending Requests Details Modal -->
-        <div id="pendingModal" class="modal-overlay" style="display:none">
-            <div class="modal-content" style="max-width: 800px; width: 90%;">
-                <div class="modal-header">
-                    <span id="pendingModalTitle">⏳ Active Pending Requests</span>
-                    <button class="modal-close" onclick="window.dashboardAPI.closePendingModal()">✕</button>
-                </div>
-                <div class="modal-body">
-                    <div style="text-align: right; margin-bottom: 10px;">
-                        <button class="btn btn-secondary" onclick="window.dashboardAPI.refreshPendingList()">↻
-                            Refresh</button>
-                    </div>
-                    <div class="table-container" style="max-height: 400px; overflow-y: auto;">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Request ID</th>
-                                    <th>User ID</th>
-                                    <th>Model</th>
-                                    <th>Endpoint</th>
-                                    <th>Started</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="pendingTableBody">
-                                <tr>
-                                    <td colspan="6" style="text-align:center; padding: 20px; color: #64748b;">No active
-                                        pending requests.</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="modal-footer"
-                    style="text-align: right; padding-top: 15px; border-top: 1px solid #1e293b; margin-top: 15px;">
-                    <button class="btn btn-secondary" onclick="window.dashboardAPI.closePendingModal()">Close</button>
-                </div>
             </div>
         </div>
 

@@ -63,7 +63,7 @@ export async function loadUsers() {
                         <div class="quota-gauge-fill" style="width: ${quotaPct}%; background: ${color}"></div>
                     </div>
                     <span class="quota-text" style="color: ${color}">${quotaPct.toFixed(0)}%</span>
-                    <span class="quota-detail">${formatUsd(costUsed)} / ${formatUsd(costLimit)}</span>
+                    <span class="quota-detail">$${costUsed.toFixed(4)} / $${costLimit.toFixed(4)}</span>
                 `;
             } else {
                 quotaBar = '<span class="quota-unlimited">∞ Unlimited</span>';
@@ -85,8 +85,8 @@ export async function loadUsers() {
                 <td>${statusBadge}</td>
                 <td class="models-cell" title="${models}">${models.length > 25 ? models.slice(0, 25) + '...' : models}</td>
                 <td>${period}</td>
-                <td class="cost">${formatUsd(costUsed)}</td>
-                <td>${costLimit > 0 ? formatUsd(costLimit) : '∞'}</td>
+                <td class="cost">$${costUsed.toFixed(4)}</td>
+                <td>$${costLimit > 0 ? costLimit.toFixed(4) : '∞'}</td>
                 <td class="quota-cell">${quotaBar}</td>
                 <td class="actions-cell">
                     ${uid === 'admin' ? `
@@ -343,6 +343,10 @@ export async function loadSyncStatus() {
             return;
         }
 
+        // Sort by status priority (mismatch -> pending_ow_approval -> pending_sync -> orphan_middleware -> synced)
+        const weight = { 'mismatch': 4, 'pending_ow_approval': 3, 'pending_sync': 2, 'orphan_middleware': 1, 'synced': 0 };
+        users.sort((a, b) => (weight[b.status] || 0) - (weight[a.status] || 0));
+
         tbody.innerHTML = users.map(u => {
             const email = u.email || '';
             const name = u.name || '';
@@ -363,16 +367,26 @@ export async function loadSyncStatus() {
                 statusBadge = '<span class="badge badge-danger" style="background:#ef4444">⚠️ Mismatch</span>';
             } else if (u.status === 'orphan_middleware') {
                 statusBadge = '<span class="badge badge-inactive" style="background:#64748b">👻 Orphan MW</span>';
+            } else if (u.status === 'pending_ow_approval') {
+                statusBadge = '<span class="badge badge-warning" style="background:#64748b;color:#fff">⌛ OW Approval Needed</span>';
             }
 
             const uid = encodeURIComponent(email);
             
             // Render sync action button
             let actionBtn = '';
-            if (u.status !== 'synced') {
+            if (u.status === 'pending_ow_approval') {
+                actionBtn = `<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>Requires Role</button>`;
+            } else if (u.status !== 'synced') {
                 actionBtn = `<button class="btn btn-sm btn-primary" onclick="window.dashboardAPI.syncUserNow('${uid}')">Sync Now</button>`;
             } else {
                 actionBtn = `<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>Synced</button>`;
+            }
+
+            // Special override for 'admin' system account
+            if (email === 'admin') {
+                statusBadge = '<span class="badge badge-active" style="background:#4f46e5">🔑 Dashboard Manager</span>';
+                actionBtn = '<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>System Only</button>';
             }
 
             return `<tr>
@@ -380,7 +394,6 @@ export async function loadSyncStatus() {
                 <td>${name}</td>
                 <td><span class="badge" style="background:#334155">${owRole}</span></td>
                 <td>${mwActive}</td>
-                <td><code title="${rawSubkey}">${maskedSubkey}</code></td>
                 <td>${statusBadge}</td>
                 <td>${actionBtn}</td>
             </tr>`;
@@ -388,7 +401,7 @@ export async function loadSyncStatus() {
 
     } catch (err) {
         console.error('Failed to load sync status:', err);
-        tbody.innerHTML = '<tr><td colspan="7" class="error-msg">Error: ' + err.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="error-msg">Error: ' + err.message + '</td></tr>';
     }
 }
 
