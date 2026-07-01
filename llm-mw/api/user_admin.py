@@ -529,7 +529,7 @@ def get_users_sync_status(request: Request):
             if ow_role in ("user", "admin"):
                 status = "pending_sync"
             else:
-                status = "synced"  # pending/banned in OW, and doesn't exist in MW (this is correct/synced)
+                status = "pending_ow_approval"
         elif not ow_u and mw_u:
             status = "orphan_middleware"
         else:
