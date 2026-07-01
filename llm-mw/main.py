@@ -29,6 +29,7 @@ from api.summary_v2 import get_summary_v2
 from api.stream import stream_audit
 from api.access_logs import get_access_summary, stream_access
 from api.audit_query import parse_audit_filters
+from api.rag_health import get_rag_ingestion, get_rag_retrieval, get_rag_storage
 from api.user_admin import (
     list_users, create_user, update_user, 
     rotate_user_key, disable_user, enable_user, get_admin_audit,
@@ -190,6 +191,11 @@ app.add_api_route("/v1/_mw/access_stream", stream_access, methods=["GET"])
 
 # Audit log query endpoint (Logs tab)
 app.add_api_route("/v1/_mw/audit/query", parse_audit_filters, methods=["GET"])
+
+# RAG Health endpoints (RAG Health tab)
+app.add_api_route("/v1/_mw/rag-health/ingestion", get_rag_ingestion, methods=["GET"])
+app.add_api_route("/v1/_mw/rag-health/retrieval", get_rag_retrieval, methods=["GET"])
+app.add_api_route("/v1/_mw/rag-health/storage", get_rag_storage, methods=["GET"])
 
 # User management endpoints (admin only)
 app.add_api_route("/v1/_mw/admin/users", list_users, methods=["GET"])
