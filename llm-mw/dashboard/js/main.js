@@ -19,6 +19,7 @@ import {
 	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, saveDefaultQuota, testSMTP
 } from './settings.js';
 import { applyRagFilters, resetRagFilters } from './raghealth.js';
+import { applyKnowledgeFilters, resetKnowledgeFilters } from './knowledge.js';
 import {
 	recalcComparison, resetSimulator, showAddPriceModal, showEditPriceModal,
 	closePriceModal, savePrice, deletePrice
@@ -91,6 +92,11 @@ export async function initAPI() {
 	window.ragHealthAPI = {
 		apply: applyRagFilters,
 		reset: resetRagFilters
+	};
+
+	window.knowledgeAPI = {
+		apply: applyKnowledgeFilters,
+		reset: resetKnowledgeFilters
 	};
 
 	window.groupAnalyticsAPI = {
