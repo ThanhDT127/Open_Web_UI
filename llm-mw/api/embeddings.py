@@ -4,7 +4,6 @@ Routes embedding requests through middleware to LiteLLM for monitoring via dashb
 """
 
 import uuid
-from datetime import datetime, timezone
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 import httpx
@@ -15,7 +14,6 @@ from core.quota import maybe_reset_quota
 from core.cost import load_prices
 from core.audit_state import init_audit_state, set_usage_state, set_error_state
 from services.litellm import get_cost_from_headers
-from utils.logging import write_audit_line
 
 
 # Gemini embedding pricing: $0.15 / 1M tokens
@@ -67,10 +65,9 @@ async def create_embeddings(request: Request):
     
     model = body.get("model", "unknown")
     rid = f"emb-{uuid.uuid4().hex[:12]}"
-    request.state.mw_request_id = rid
-    
+
     # ── Init audit state ──
-    init_audit_state(request, user_id=user_id, model=model, endpoint="/v1/embeddings")
+    init_audit_state(request, user_id=user_id, model=model, endpoint="/v1/embeddings", rid=rid)
     
     logger.info(
         "embedding_request rid=%s user=%s model=%s",
@@ -139,20 +136,6 @@ async def create_embeddings(request: Request):
         tokens_total=total_tokens,
         cost_usd=cost_usd,
     )
-    
-    write_audit_line({
-        "ts": datetime.now(timezone.utc).isoformat(),
-        "user": user_id,
-        "auth_source": getattr(request.state, "mw_auth_source", None),
-        "openwebui_user_id": getattr(request.state, "mw_openwebui_user_id", None),
-        "model": model,
-        "endpoint": "embeddings",
-        "rid": rid,
-        "prompt_tokens": total_tokens,
-        "completion_tokens": 0,
-        "cost_usd": cost_usd,
-        "status": "ok",
-    })
     
     logger.info(
         "embedding_done rid=%s user=%s model=%s tokens=%d cost=%.6f",

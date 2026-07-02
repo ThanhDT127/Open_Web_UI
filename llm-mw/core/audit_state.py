@@ -16,6 +16,7 @@ from fastapi import Request
 LLM_ENDPOINT_ALLOWLIST = {
     "/v1/chat/completions",
     "/v1/embeddings",
+    "/v1/rerank",
     "/v1/images/generations",
     "/v1/audio/transcriptions",
     "/v1/audio/speech",
@@ -71,6 +72,12 @@ def init_audit_state(
     if endpoint not in LLM_ENDPOINT_ALLOWLIST:
         # Do not initialize audit state for non-LLM endpoints
         # This prevents background polling (chats, tasks, etc.) from being counted as LLM usage
+        from config import logger
+        logger.warning(
+            "init_audit_state called with endpoint %r not in LLM_ENDPOINT_ALLOWLIST; "
+            "audit state NOT initialized (add it to the allowlist if this endpoint should be audited)",
+            endpoint,
+        )
         return ""
     # Generate or use provided request ID
     if rid is None:

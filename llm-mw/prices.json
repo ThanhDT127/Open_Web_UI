@@ -144,5 +144,15 @@
     "input_per_1m": 2.00,
     "output_per_1m": 0.00,
     "notes": "Cohere Rerank v3.5 via OpenRouter (estimate $2/1M tokens if token-based, or per-search fallback)"
+  },
+  "cohere/rerank-v3.5": {
+    "input_per_1m": 2.00,
+    "output_per_1m": 0.00,
+    "notes": "Cohere Rerank v3.5 via OpenRouter - keyed by actual model name sent by clients"
+  },
+  "cohere/rerank-4-fast": {
+    "input_per_1m": 2.00,
+    "output_per_1m": 0.00,
+    "notes": "Cohere Rerank 4 Fast via OpenRouter - keyed by actual model name sent by clients"
   }
 }
