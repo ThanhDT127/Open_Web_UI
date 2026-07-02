@@ -684,6 +684,40 @@ eventSource.addEventListener('audit', (e) => {
 
 ---
 
+## 📚 Knowledge Analytics Tab
+
+Tab **📚 Knowledge** biến kho tri thức (OpenWebUI `knowledge` + `file`) thành tín hiệu *áp dụng & giá trị* cho admin — khác với tab **🧬 RAG Health** (chuyên phát hiện sự cố vận hành). Toàn bộ **chỉ đọc**, chỉ admin.
+
+**Endpoints** (`/v1/_mw/knowledge-analytics/`): `inventory`, `kb-value`, `governance`. Kết nối OpenWebUI DB dùng `psycopg2` không pool (giống `core/identity.py`, `core/rag_health.py`), có cache TTL ngắn (`_get_corpus`, mặc định 60s) dùng chung cho cả 3 panel.
+
+### 1. Inventory & Growth
+Tổng số KB / file / chunk / dung lượng, biểu đồ tăng trưởng KB & file theo thời gian, và phân bố loại file (`content_type`) — tất cả lấy từ `file.meta`.
+
+### 2. KB Value Matrix
+Mỗi KB được phân loại từ 4 tín hiệu: **demand** (số lần tài liệu của KB được đính vào chat, lấy từ `mw_request_log`), **quality** (tỉ lệ trích dẫn `[N]`), **supply** (file/chunk/dung lượng), **freshness** (tạo/sửa/lần dùng gần nhất):
+
+| Nhãn | Điều kiện | Ý nghĩa |
+|------|-----------|---------|
+| ⭐ **Star** | demand ≥ `MIN_SAMPLE_ATTACHMENTS` (5) và hit-rate ≥ `GOOD_HIT_RATE` (60%) | Dùng nhiều, trích dẫn tốt |
+| 🛠️ **Needs Tuning** | demand đủ nhưng hit-rate thấp | Dùng nhiều nhưng RAG trích kém → nên re-chunk |
+| 💀 **Dead Knowledge** | có chunk nhưng ~0 lần dùng | Tốn công tạo mà không ai dùng |
+| 🌱 **Unproven** | quá ít lần dùng để đánh giá | Chưa đủ dữ liệu |
+
+Ngưỡng là hằng số trong `core/knowledge_analytics.py`, chỉnh khi dữ liệu lớn dần.
+
+### 3. Governance
+- **Duplicate files** — nhóm theo cột `file.hash`, ước tính dung lượng có thể thu hồi.
+- **Ad-hoc files** (upload ngoài mọi KB) và **Dangling files** (`knowledge_id` trỏ tới KB đã xoá).
+- **Owner concentration** — số KB/file/dung lượng theo chủ sở hữu (tên lấy từ bảng `"user"`).
+
+### ⚠️ Giới hạn đã biết (từ spike dữ liệu thật)
+- **Usage chỉ phản ánh chat đã log** trong `mw_request_log`; link KB↔chat suy ra bằng cách khớp marker `Filename:`/`Source:` nhúng trong `<source>` với `file.filename` theo **stem** (bỏ đuôi — log có thể mang đuôi khác file gốc).
+- Một filename tồn tại ở **nhiều KB** → usage được đánh dấu **Ambiguous** (không quy về 1 KB) thay vì gán bừa.
+- **Membership divergence**: feature này dùng `file.meta.data.knowledge_id` (nguồn đáng tin) làm liên kết KB↔file, **không** dùng bảng join `knowledge_file` (quan sát thấy stale — 4 dòng so với 121 file có `knowledge_id`). `core/rag_health.py` hiện vẫn join `knowledge_file`; nên có change riêng để hoà giải.
+- Dữ liệu ít (vài KB) khiến số liệu còn thưa; nhãn **Unproven** và ngưỡng mẫu tối thiểu tránh kết luận sai.
+
+---
+
 ## 🛠️ Troubleshooting
 
 ### Dashboard không mở được

@@ -30,6 +30,9 @@ from api.stream import stream_audit
 from api.access_logs import get_access_summary, stream_access
 from api.audit_query import parse_audit_filters
 from api.rag_health import get_rag_ingestion, get_rag_retrieval, get_rag_storage
+from api.knowledge_analytics import (
+    get_knowledge_inventory, get_knowledge_kb_value, get_knowledge_governance,
+)
 from api.user_admin import (
     list_users, create_user, update_user, 
     rotate_user_key, disable_user, enable_user, get_admin_audit,
@@ -196,6 +199,10 @@ app.add_api_route("/v1/_mw/audit/query", parse_audit_filters, methods=["GET"])
 app.add_api_route("/v1/_mw/rag-health/ingestion", get_rag_ingestion, methods=["GET"])
 app.add_api_route("/v1/_mw/rag-health/retrieval", get_rag_retrieval, methods=["GET"])
 app.add_api_route("/v1/_mw/rag-health/storage", get_rag_storage, methods=["GET"])
+
+app.add_api_route("/v1/_mw/knowledge-analytics/inventory", get_knowledge_inventory, methods=["GET"])
+app.add_api_route("/v1/_mw/knowledge-analytics/kb-value", get_knowledge_kb_value, methods=["GET"])
+app.add_api_route("/v1/_mw/knowledge-analytics/governance", get_knowledge_governance, methods=["GET"])
 
 # User management endpoints (admin only)
 app.add_api_route("/v1/_mw/admin/users", list_users, methods=["GET"])

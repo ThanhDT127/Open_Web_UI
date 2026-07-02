@@ -96,6 +96,7 @@
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'users')">👥 Users</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'logs')">📋 Logs</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'raghealth')">🧬 RAG Health</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'knowledge')">📚 Knowledge</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'settings')">⚙️ Settings</button>
         </div>
 
@@ -809,6 +810,198 @@
                         </thead>
                         <tbody id="ragStorOutlierTable">
                             <tr><td colspan="5" class="loading">No data</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- KNOWLEDGE ANALYTICS TAB                            -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="knowledgeTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">📚</span>
+                <span class="insight-text">Knowledge-base adoption &amp; value — what's created, what's actually
+                    used, and where storage is wasted. Read-only. Usage reflects logged chats only; a filename
+                    shared across several KBs is shown as ambiguous rather than credited to one.</span>
+            </div>
+
+            <!-- Date-range filter (applies to growth + usage-derived signals) -->
+            <div class="log-filters"
+                style="display: grid; grid-template-columns: repeat(2, 1fr) auto; gap: 15px; margin-bottom: 20px; padding: 15px; background: #1e293b; border-radius: 8px; align-items: flex-end;">
+                <div>
+                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Start</label>
+                    <input type="datetime-local" id="knStart" class="filter-select">
+                </div>
+                <div>
+                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">End</label>
+                    <input type="datetime-local" id="knEnd" class="filter-select">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="window.knowledgeAPI.apply()" class="btn-apply">Apply</button>
+                    <button onclick="window.knowledgeAPI.reset()" class="btn-secondary">Reset</button>
+                </div>
+            </div>
+
+            <!-- ── Inventory ── -->
+            <div class="section">
+                <div class="section-title">📦 Inventory &amp; Growth</div>
+                <div class="metrics">
+                    <div class="metric-card">
+                        <div class="metric-label">📚 Knowledge Bases</div>
+                        <div class="metric-value" id="knTotKB">-</div>
+                        <div class="metric-detail">Total KBs</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">📄 Files</div>
+                        <div class="metric-value" id="knTotFiles">-</div>
+                        <div class="metric-detail">Uploaded documents</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">🧩 Chunks</div>
+                        <div class="metric-value" id="knTotChunks">-</div>
+                        <div class="metric-detail">Embedded vectors</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">💽 Storage</div>
+                        <div class="metric-value" id="knTotStorage">-</div>
+                        <div class="metric-detail">Total file bytes</div>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div class="chart-title">📈 KB &amp; File Growth Over Time</div>
+                    <canvas id="knGrowthChart"></canvas>
+                </div>
+                <div class="section-title" style="margin-top: 20px;">File Types</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Content Type</th>
+                                <th>Files</th>
+                                <th>Bytes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="knTypeTable">
+                            <tr><td colspan="3" class="loading">No data</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ── KB Value Matrix ── -->
+            <div class="section">
+                <div class="section-title">⭐ KB Value Matrix</div>
+                <div class="metrics">
+                    <div class="metric-card accent-green">
+                        <div class="metric-label">⭐ Star</div>
+                        <div class="metric-value" id="knCatStar">-</div>
+                        <div class="metric-detail">Used + cited well</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">🛠️ Needs Tuning</div>
+                        <div class="metric-value" id="knCatTuning">-</div>
+                        <div class="metric-detail">Used but rarely cited</div>
+                    </div>
+                    <div class="metric-card usage-missing">
+                        <div class="metric-label">💀 Dead Knowledge</div>
+                        <div class="metric-value" id="knCatDead">-</div>
+                        <div class="metric-detail">Has chunks, never used</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">🌱 Unproven</div>
+                        <div class="metric-value" id="knCatUnproven">-</div>
+                        <div class="metric-detail" title="Fewer than the minimum attachments to judge quality.">Too little usage ⓘ</div>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Knowledge Base</th>
+                                <th>Owner</th>
+                                <th title="Chats that attached one of this KB's documents (logged only).">Demand ⓘ</th>
+                                <th title="Share of attachments whose answer produced a [N] citation.">Hit-Rate ⓘ</th>
+                                <th>Files</th>
+                                <th>Chunks</th>
+                                <th>Size</th>
+                                <th>Last Used</th>
+                                <th>Category</th>
+                            </tr>
+                        </thead>
+                        <tbody id="knValueTable">
+                            <tr><td colspan="9" class="loading">No data</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="section-title" style="margin-top: 20px;" title="A source filename that exists in more than one KB — usage cannot be pinned to a single KB.">Ambiguous Usage ⓘ</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Source (filename stem)</th>
+                                <th>Attachments</th>
+                                <th>Appears in # KBs</th>
+                            </tr>
+                        </thead>
+                        <tbody id="knAmbiguousTable">
+                            <tr><td colspan="3" class="loading">None 🎉</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ── Governance ── -->
+            <div class="section">
+                <div class="section-title">🏛️ Governance</div>
+                <div class="metrics">
+                    <div class="metric-card usage-missing">
+                        <div class="metric-label">♻️ Reclaimable</div>
+                        <div class="metric-value" id="knReclaimable">-</div>
+                        <div class="metric-detail">Wasted on duplicate files</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">🧾 Ad-hoc Files</div>
+                        <div class="metric-value" id="knAdhoc">-</div>
+                        <div class="metric-detail">Uploaded outside any KB</div>
+                    </div>
+                    <div class="metric-card usage-missing">
+                        <div class="metric-label">🔗 Dangling Files</div>
+                        <div class="metric-value" id="knDangling">-</div>
+                        <div class="metric-detail" title="Files whose knowledge_id points to a deleted KB.">KB deleted ⓘ</div>
+                    </div>
+                </div>
+                <div class="section-title" style="margin-top: 20px;">Duplicate Files (by content hash)</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Copies</th>
+                                <th># KBs</th>
+                                <th>Size</th>
+                                <th>Reclaimable</th>
+                            </tr>
+                        </thead>
+                        <tbody id="knDupTable">
+                            <tr><td colspan="5" class="loading">None 🎉</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="section-title" style="margin-top: 20px;">Owner Concentration</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Owner</th>
+                                <th>KBs</th>
+                                <th>Files</th>
+                                <th>Storage</th>
+                            </tr>
+                        </thead>
+                        <tbody id="knOwnerTable">
+                            <tr><td colspan="4" class="loading">No data</td></tr>
                         </tbody>
                     </table>
                 </div>
