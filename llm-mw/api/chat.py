@@ -10,7 +10,7 @@ from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 import httpx
 
-from config import LITELLM_BASE, LITELLM_KEY, logger
+from config import LITELLM_BASE, LITELLM_KEY, logger, MW_RAG_IMAGE_INJECT, MW_RAG_IMAGE_MAX
 from core.auth import require_user, assert_model_allowed
 from core.quota import maybe_reset_quota, enforce_and_bump_quota, get_quota_reset_info
 from core.cost import calc_cost_usd, append_pending, remove_pending, load_prices, calc_image_cost_from_body
@@ -697,6 +697,8 @@ async def _finalize_streaming(request: Request, user: dict, model: str, request_
             "ts": datetime.now(timezone.utc).isoformat(),
             "rid": request_id,
             "user_id": user["user_id"],
+            "auth_source": getattr(request.state, "mw_auth_source", None),
+            "openwebui_user_id": getattr(request.state, "mw_openwebui_user_id", None),
             "endpoint": "/v1/chat/completions",
             "model": model,
             "status": "reconciled",
@@ -727,6 +729,165 @@ async def _finalize_streaming(request: Request, user: dict, model: str, request_
         return None
 
 
+def _extract_rag_source_images(messages: list) -> dict:
+    """
+    Parse <source id="N"> tags in messages,
+    extracting image URLs, alt text, and preceding context text.
+    """
+    import re
+    source_images = {}
+    
+    if not isinstance(messages, list):
+        return source_images
+        
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        content = msg.get("content")
+        if not isinstance(content, str):
+            continue
+            
+        # Parse <source id="N">...</source>
+        matches = re.finditer(r'<source\s+id="(\d+)">(.*?)</source>', content, re.DOTALL)
+        for match in matches:
+            source_id = match.group(1)
+            source_content = match.group(2)
+            
+            # Find Markdown images in this source block: ![alt](url)
+            img_matches = re.finditer(r'!\[([^\]]*)\]\((https?://[^\s)]+)\)', source_content)
+            
+            for img_match in img_matches:
+                alt_text = img_match.group(1) or ""
+                url = img_match.group(2)
+                
+                # Get up to 200 characters of text preceding this image in the source block
+                start_pos = img_match.start()
+                preceding = source_content[:start_pos]
+                # Strip other markdown images from preceding text to avoid pollution
+                preceding_clean = re.sub(r'!\[.*?\]\([^)]+\)', '', preceding)
+                preceding_text = preceding_clean[-200:].strip()
+                
+                if source_id not in source_images:
+                    source_images[source_id] = []
+                    
+                source_images[source_id].append({
+                    "url": url,
+                    "alt_text": alt_text,
+                    "preceding_text": preceding_text
+                })
+                
+    return source_images
+
+
+def _validate_llm_images(response_content: str) -> str:
+    """
+    Scan response for Markdown images, validate if URL is trusted.
+    If URL is not from trusted domains (/v1/_mw/media/ or /rag-images/),
+    remove the image from the response.
+    """
+    import re
+    if not isinstance(response_content, str):
+        return response_content
+        
+    def replace_img(match):
+        alt = match.group(1)
+        url = match.group(2)
+        if "/v1/_mw/media/" in url or "/rag-images/" in url:
+            return match.group(0)
+        logger.info("rag_image_strip: stripped untrusted image URL: %s", url)
+        return ""
+        
+    pattern = r'!\[([^\]]*)\]\((https?://[^\s)]+)\)'
+    return re.sub(pattern, replace_img, response_content)
+
+
+def _response_has_valid_images(response_content: str, source_images: dict) -> bool:
+    """
+    Check if the LLM response already contains any valid images from our sources.
+    """
+    import re
+    if not isinstance(response_content, str) or not source_images:
+        return False
+        
+    all_source_urls = set()
+    for img_list in source_images.values():
+        for img in img_list:
+            all_source_urls.add(img["url"])
+            
+    pattern = r'!\[[^\]]*\]\((https?://[^\s)]+)\)'
+    response_urls = re.findall(pattern, response_content)
+    
+    for url in response_urls:
+        if url in all_source_urls:
+            return True
+            
+    return False
+
+
+def _select_image_by_proximity(response_text: str, image_list: list) -> str:
+    """
+    Select the image that has the highest proximity/semantic match score
+    with the response text, using n-gram word overlaps.
+    """
+    if not image_list:
+        return ""
+    if len(image_list) == 1:
+        return image_list[0]["url"]
+        
+    scored = []
+    response_lower = response_text.lower()
+    
+    for idx, img in enumerate(image_list):
+        score = 0
+        preceding = img.get("preceding_text", "").lower()
+        alt = img.get("alt_text", "").lower()
+        
+        prec_words = preceding.split()
+        if len(prec_words) >= 3:
+            ngrams = [" ".join(prec_words[i:i+3]) for i in range(len(prec_words)-2)]
+            match_count = sum(1 for ng in ngrams if ng in response_lower)
+            score += match_count
+            
+        alt_words = alt.split()
+        if alt_words:
+            alt_match = sum(1 for w in alt_words if len(w) > 2 and w in response_lower)
+            score += alt_match * 2
+            
+        logger.debug("proximity_score idx=%d url=%s score=%d", idx, img["url"], score)
+        scored.append((score, idx, img["url"]))
+        
+    scored.sort(key=lambda x: (x[0], -x[1]), reverse=True)
+    return scored[0][2]
+
+
+def _build_image_injection_text(cited_images: list, max_images: int = 3) -> str:
+    """
+    Build Markdown section containing the selected cited images.
+    """
+    if not cited_images:
+        return ""
+        
+    seen_urls = set()
+    unique_images = []
+    for item in cited_images:
+        url = item["url"]
+        if url not in seen_urls:
+            seen_urls.add(url)
+            unique_images.append(item)
+            
+    images_to_inject = unique_images[:max_images]
+    if not images_to_inject:
+        return ""
+        
+    img_section = "\n\n---\n📊 **Hình minh họa từ nguồn trích dẫn:**\n"
+    for item in images_to_inject:
+        cid = item["source_id"]
+        url = item["url"]
+        img_section += f"\n![Nguồn [{cid}]]({url})\n"
+        
+    return img_section
+
+
 async def chat_completions(request: Request):
     """
     Proxy chat completions to LiteLLM with quota enforcement.
@@ -750,8 +911,25 @@ async def chat_completions(request: Request):
     if is_image_model:
         return await _handle_image_as_chat(request, user, model, body)
     
+    # --- RAG Context Cleaning: Materialize Base64 images in messages ---
+    messages = body.get("messages")
+    logger.info("rag_debug: processing %d messages", len(messages) if isinstance(messages, list) else 0)
+    
+    # Bypass Base64 scanning to optimize Query Path latency.
+    # Images are already materialized in WebP format on local storage at Ingest-time.
+    # Direct user chat attachments are kept as-is to be processed natively by Vision Models.
+
     # Initialize audit state early
     rid = init_audit_state(request, user["user_id"], "/v1/chat/completions", model)
+
+    # Extract RAG source images for hybrid injection
+    request.state.rag_source_images = {}
+    if MW_RAG_IMAGE_INJECT and isinstance(messages, list):
+        try:
+            request.state.rag_source_images = _extract_rag_source_images(messages)
+            logger.info("rag_image_extract: extracted %d sources with images", len(request.state.rag_source_images))
+        except Exception as e:
+            logger.error("rag_image_extract_error: %s", e)
 
     # Process multimodal content (images, documents, and other file attachments in messages)
     messages = body.get("messages")
@@ -959,6 +1137,8 @@ async def _handle_streaming(request: Request, user: dict, model: str, body: dict
         "ts": datetime.now(timezone.utc).isoformat(),
         "rid": request_id,
         "user_id": user["user_id"],
+        "auth_source": getattr(request.state, "mw_auth_source", None),
+        "openwebui_user_id": getattr(request.state, "mw_openwebui_user_id", None),
         "endpoint": "/v1/chat/completions",
         "model": model,
         "status": "pending",
@@ -1012,6 +1192,8 @@ async def _handle_streaming(request: Request, user: dict, model: str, body: dict
                 "ts": datetime.now(timezone.utc).isoformat(),
                 "rid": request_id,
                 "user_id": user["user_id"],
+                "auth_source": getattr(request.state, "mw_auth_source", None),
+                "openwebui_user_id": getattr(request.state, "mw_openwebui_user_id", None),
                 "endpoint": "/v1/chat/completions",
                 "model": model,
                 "status": "error",
@@ -1036,6 +1218,9 @@ async def _handle_streaming(request: Request, user: dict, model: str, body: dict
         logger.warning("stream_error rid=%s status=%s body=%s", request_id, resp.status_code, error_text[:500])
         raise HTTPException(resp.status_code, error_text)
 
+    response_text_holder = [""]
+    buffer_overflow_holder = [False]
+
     async def _iter_bytes():
         sampled: bytearray = bytearray()
         usage_data = None  # Track usage from stream_options.include_usage
@@ -1046,7 +1231,7 @@ async def _handle_streaming(request: Request, user: dict, model: str, body: dict
                 if len(sampled) < 8192:
                     sampled.extend(chunk[: max(0, 8192 - len(sampled))])
                 
-                # Try to extract usage from SSE data (stream_options.include_usage)
+                # Try to extract usage and text content from SSE data
                 try:
                     chunk_str = chunk.decode("utf-8", errors="ignore")
                     for line in chunk_str.split("\n"):
@@ -1058,6 +1243,19 @@ async def _handle_streaming(request: Request, user: dict, model: str, body: dict
                                 # Extract usage from final chunk
                                 if "usage" in chunk_data:
                                     usage_data = chunk_data["usage"]
+                                
+                                # Accumulate text content for image injection proximity match
+                                choices = chunk_data.get("choices", [])
+                                if choices and isinstance(choices, list):
+                                    delta = choices[0].get("delta", {})
+                                    delta_content = delta.get("content")
+                                    if delta_content and isinstance(delta_content, str):
+                                        if len(response_text_holder[0]) < 200000:
+                                            response_text_holder[0] += delta_content
+                                        else:
+                                            if not buffer_overflow_holder[0]:
+                                                buffer_overflow_holder[0] = True
+                                                logger.warning("rag_image_stream_buffer_overflow rid=%s", request_id)
                 except Exception:
                     pass  # Ignore parsing errors
                 
@@ -1097,6 +1295,22 @@ async def _handle_streaming(request: Request, user: dict, model: str, body: dict
                     sample_bytes=len(sampled),
                     sample=truncate_text(sampled.decode("utf-8", errors="ignore"), limit=4000),
                 )
+            # Persist the assembled answer text so retrieval-health (citation
+            # hit-rate) can be derived for streamed chats too — mirrors the
+            # non-streaming chat.response event. Logged before RAG image
+            # injection, so it reflects the model's own [N] citation markers.
+            if response_text_holder[0]:
+                detail_log(
+                    "chat.response",
+                    request=request,
+                    rid=request_id,
+                    user_id=user.get("user_id"),
+                    status=resp.status_code,
+                    model=model,
+                    content=truncate_text(response_text_holder[0], limit=2000),
+                    usage=usage_data,
+                    stream=True,
+                )
 
     # Wrap _iter_bytes to inject quota warning after stream ends
     async def _iter_with_quota_warning():
@@ -1105,6 +1319,68 @@ async def _handle_streaming(request: Request, user: dict, model: str, body: dict
         async for chunk in _iter_bytes():
             yield chunk
         
+        # RAG image injection fallback for streaming
+        source_images = getattr(request.state, "rag_source_images", {})
+        if MW_RAG_IMAGE_INJECT and source_images and not buffer_overflow_holder[0]:
+            response_text = response_text_holder[0]
+            try:
+                if not _response_has_valid_images(response_text, source_images):
+                    import re
+                    citations = re.findall(r'\[(\d+(?:\s*,\s*\d+)*)\]', response_text)
+                    cited_ids = set()
+                    for cit in citations:
+                        for part in cit.split(','):
+                            cited_ids.add(part.strip())
+                            
+                    selected_images = []
+                    for cid in sorted(list(cited_ids)):
+                        if cid in source_images:
+                            img_list = source_images[cid]
+                            if img_list:
+                                if len(img_list) == 1:
+                                    selected_images.append({
+                                        "source_id": cid,
+                                        "url": img_list[0]["url"]
+                                    })
+                                    logger.info("rag_image_inject rid=%s source=%s method=s1_single url=%s (stream)", request_id, cid, img_list[0]["url"])
+                                else:
+                                    best_url = _select_image_by_proximity(response_text, img_list)
+                                    selected_images.append({
+                                        "source_id": cid,
+                                        "url": best_url
+                                    })
+                                    logger.info("rag_image_inject rid=%s source=%s method=s1_proximity url=%s (stream)", request_id, cid, best_url)
+                                    
+                    if selected_images:
+                        image_injection = _build_image_injection_text(selected_images, MW_RAG_IMAGE_MAX)
+                        if image_injection:
+                            image_chunk = {
+                                "id": f"chatcmpl-{request_id}",
+                                "object": "chat.completion.chunk",
+                                "created": int(datetime.now(timezone.utc).timestamp()),
+                                "model": model,
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {"content": image_injection},
+                                    "finish_reason": None
+                                }]
+                            }
+                            yield f"data: {json.dumps(image_chunk)}\n\n".encode("utf-8")
+                            logger.info("rag_image_inject rid=%s: injected %d images to stream", request_id, len(selected_images))
+                    else:
+                        logger.info("rag_image_skip rid=%s: no matching source images for citations (stream)", request_id)
+                else:
+                    logger.info("rag_image_skip rid=%s: response already contains valid source images (stream)", request_id)
+            except Exception as e:
+                logger.error("rag_image_stream_injection_error rid=%s: %s", request_id, e)
+        else:
+            if not MW_RAG_IMAGE_INJECT:
+                logger.info("rag_image_skip rid=%s: feature disabled (stream)", request_id)
+            elif buffer_overflow_holder[0]:
+                logger.info("rag_image_skip rid=%s: buffer overflow (stream)", request_id)
+            else:
+                logger.info("rag_image_skip rid=%s: no source images extracted (stream)", request_id)
+
         # After stream completes, check quota warning
         # _finalize_streaming already ran in the finally block
         # We need to check quota status here since we can now yield
@@ -1218,6 +1494,65 @@ async def _handle_non_streaming(request: Request, user: dict, model: str, body: 
     asyncio.create_task(
         _safe_alert_check(user["user_id"], cost_usd)
     )
+
+    # Extract RAG image injection state and process content
+    source_images = getattr(request.state, "rag_source_images", {})
+    try:
+        choices = data.get("choices", [])
+        if choices and isinstance(choices, list):
+            msg = choices[0].get("message", {})
+            content = msg.get("content")
+            if isinstance(content, str):
+                # Validate & strip untrusted images
+                content = _validate_llm_images(content)
+                
+                # Check for RAG image injection fallback
+                if MW_RAG_IMAGE_INJECT and source_images:
+                    if not _response_has_valid_images(content, source_images):
+                        import re
+                        citations = re.findall(r'\[(\d+(?:\s*,\s*\d+)*)\]', content)
+                        cited_ids = set()
+                        for cit in citations:
+                            for part in cit.split(','):
+                                cited_ids.add(part.strip())
+                        
+                        selected_images = []
+                        for cid in sorted(list(cited_ids)):
+                            if cid in source_images:
+                                img_list = source_images[cid]
+                                if img_list:
+                                    if len(img_list) == 1:
+                                        selected_images.append({
+                                            "source_id": cid,
+                                            "url": img_list[0]["url"]
+                                        })
+                                        logger.info("rag_image_inject rid=%s source=%s method=s1_single url=%s", request_id, cid, img_list[0]["url"])
+                                    else:
+                                        best_url = _select_image_by_proximity(content, img_list)
+                                        selected_images.append({
+                                            "source_id": cid,
+                                            "url": best_url
+                                        })
+                                        logger.info("rag_image_inject rid=%s source=%s method=s1_proximity url=%s", request_id, cid, best_url)
+                                        
+                        if selected_images:
+                            injection_text = _build_image_injection_text(selected_images, MW_RAG_IMAGE_MAX)
+                            if injection_text:
+                                content += injection_text
+                                logger.info("rag_image_inject rid=%s: injected %d images", request_id, len(selected_images))
+                        else:
+                            logger.info("rag_image_skip rid=%s: no matching source images for citations", request_id)
+                    else:
+                        logger.info("rag_image_skip rid=%s: response already contains valid source images (s3_llm)", request_id)
+                else:
+                    if not MW_RAG_IMAGE_INJECT:
+                        logger.info("rag_image_skip rid=%s: feature disabled", request_id)
+                    else:
+                        logger.info("rag_image_skip rid=%s: no source images extracted", request_id)
+                
+                msg["content"] = content
+    except Exception as e:
+        logger.error("rag_image_non_streaming_injection_error rid=%s: %s", request_id, e)
 
     # Inject warnings into response content (routing downgrade + quota)
     combined_warnings = ""

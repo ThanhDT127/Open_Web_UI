@@ -33,7 +33,7 @@ User ──HTTPS──▶ Nginx (:3000) ─▶ Open WebUI (:8080) ─▶ Middlew
 | Tiền tố | Loại                          | Ví dụ                                     |
 | ------- | ----------------------------- | ----------------------------------------- |
 | `chat-` | Chat đa phương thức (text+vision) | `chat-gpt-5.4`, `chat-gemini-2.5-flash` |
-| `img-`  | Tạo ảnh                       | `img-gpt-image-1.5`, `img-gemini-flash`  |
+| `img-`  | Tạo ảnh                       | `img-gpt-1.5`, `img-gemini-3.1-flash`    |
 | `tts-`  | Text-to-Speech                | `tts-gpt-4o-mini`                         |
 | `stt-`  | Speech-to-Text                | `stt-gpt-4o`, `stt-gpt-4o-mini`           |
 

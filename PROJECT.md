@@ -140,7 +140,7 @@ User, Auth, Chat, Channel, Message, Knowledge, File, Document, DocumentChunk (ve
 ### Python (Middleware)
 - **Framework**: FastAPI + Uvicorn
 - **Style**: Type hints required, async preferred
-- **DB**: SQLAlchemy + asyncpg (PostgreSQL)
+- **DB**: SQLAlchemy + psycopg / psycopg2-based PostgreSQL integrations
 - **Auth**: HMAC-SHA256 subkey hashing, JWT for dashboard
 - **Logging**: Structured logging to `logs/`
 - **Tests**: Playwright (E2E), pytest (unit)

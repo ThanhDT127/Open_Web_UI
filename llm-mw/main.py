@@ -20,23 +20,29 @@ from api.chat import chat_completions
 from api.images import generate_images
 from api.audio import transcribe_audio
 from api.embeddings import create_embeddings
+from api.rerank import rerank
 from api.media import serve_media
+from api.docling import docling_proxy
 from api.admin import get_usage, reset_quota, reconcile_usage
 from api.summary import get_summary
 from api.summary_v2 import get_summary_v2
 from api.stream import stream_audit
 from api.access_logs import get_access_summary, stream_access
 from api.audit_query import parse_audit_filters
+from api.rag_health import get_rag_ingestion, get_rag_retrieval, get_rag_storage
 from api.user_admin import (
     list_users, create_user, update_user, 
     rotate_user_key, disable_user, enable_user, get_admin_audit,
-    delete_user_endpoint, get_users_sync_status, sync_user_now
+    delete_user_endpoint, reconciliation_report, map_openwebui_user, get_users_sync_status, sync_user_now
 )
 from api.dashboard_login import dashboard_login, dashboard_logout
 from api.auth_check import get_auth_check
 from api.auth_test import auth_test
 from api.quota_status import get_quota_status, get_alert_config, update_alert_config, test_alert_email
 from api.notifications import list_notifications, unread_count, mark_notification_read, mark_all_read
+from api.oauth import router as oauth_router
+from api.integrations import router as integrations_router
+from api.approvals import router as approvals_router
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -159,11 +165,16 @@ app.add_api_route("/v1/models", list_models, methods=["GET"])
 # Chat, Images, Audio
 app.add_api_route("/v1/chat/completions", chat_completions, methods=["POST"])
 app.add_api_route("/v1/embeddings", create_embeddings, methods=["POST"])
+app.add_api_route("/v1/rerank", rerank, methods=["POST"])
 app.add_api_route("/v1/images/generations", generate_images, methods=["POST"])
 app.add_api_route("/v1/audio/transcriptions", transcribe_audio, methods=["POST"])
 
 # Media serving
 app.add_api_route("/v1/_mw/media/{name}", serve_media, methods=["GET"])
+
+# Docling Proxy (catch-all)
+app.add_api_route("/docling-proxy/{path:path}", docling_proxy, methods=["GET", "POST", "PUT", "DELETE"])
+app.add_api_route("/docling-proxy", docling_proxy, methods=["GET", "POST", "PUT", "DELETE"])
 
 # Admin endpoints
 app.add_api_route("/admin/usage", get_usage, methods=["GET"])
@@ -181,6 +192,11 @@ app.add_api_route("/v1/_mw/access_stream", stream_access, methods=["GET"])
 # Audit log query endpoint (Logs tab)
 app.add_api_route("/v1/_mw/audit/query", parse_audit_filters, methods=["GET"])
 
+# RAG Health endpoints (RAG Health tab)
+app.add_api_route("/v1/_mw/rag-health/ingestion", get_rag_ingestion, methods=["GET"])
+app.add_api_route("/v1/_mw/rag-health/retrieval", get_rag_retrieval, methods=["GET"])
+app.add_api_route("/v1/_mw/rag-health/storage", get_rag_storage, methods=["GET"])
+
 # User management endpoints (admin only)
 app.add_api_route("/v1/_mw/admin/users/sync-status", get_users_sync_status, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/users/sync-now", sync_user_now, methods=["POST"])
@@ -192,6 +208,8 @@ app.add_api_route("/v1/_mw/admin/users/{user_id}/rotate_key", rotate_user_key, m
 app.add_api_route("/v1/_mw/admin/users/{user_id}/disable", disable_user, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/users/{user_id}/enable", enable_user, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/audit", get_admin_audit, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/users/reconciliation", reconciliation_report, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/users/{user_id}/openwebui-mapping", map_openwebui_user, methods=["PUT"])
 
 # Quota status & Alert endpoints
 app.add_api_route("/v1/_mw/quota-status", get_quota_status, methods=["GET"])
@@ -212,6 +230,11 @@ app.add_api_route("/v1/_mw/auth_check", get_auth_check, methods=["GET"])
 
 # Auth diagnostic endpoint (any user with valid Bearer token)
 app.add_api_route("/v1/_mw/auth-test", auth_test, methods=["GET"])
+
+# Include OAuth, integrations and approvals routers (added for Phase 2)
+app.include_router(oauth_router, prefix="/v1")
+app.include_router(integrations_router, prefix="/v1")
+app.include_router(approvals_router, prefix="/v1")
 
 # Mount static files for dashboard (css, js, vendor)
 import os

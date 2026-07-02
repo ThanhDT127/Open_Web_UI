@@ -84,11 +84,10 @@ export async function authenticate() {
         }
 
         await res.json();
+        input.value = '';
 
-        // Store key for header-based auth
-        sessionStorage.setItem('mw_admin_key', key);
-
-        // Success - hide auth prompt and show dashboard
+        // Success - hide auth prompt and show dashboard. The server sets an
+        // HttpOnly cookie; do not store the raw admin key in browser storage.
         document.getElementById('authPrompt').classList.add('hidden');
         document.getElementById('dashboard').classList.remove('hidden');
 
@@ -109,17 +108,18 @@ async function checkAuthStatus() {
         const res = await mwFetch('/v1/_mw/auth_check');
         if (!res || !res.ok) {
             updateStatus('warning', 'Auth check failed - cookie may not work across different hosts');
-            return;
+            return false;
         }
         const data = await res.json();
         if (data.ok) {
             updateStatus('ok', 'Authenticated ✓');
-        } else {
-            updateStatus('warning', 'Cookie not present - use same host (localhost OR 127.0.0.1, not mixed)');
+            return true;
         }
+        updateStatus('warning', 'Cookie not present - use same host (localhost OR 127.0.0.1, not mixed)');
+        return false;
     } catch (err) {
-        // auth_check endpoint might not exist yet
-        updateStatus('ok', 'Authenticated ✓');
+        updateStatus('warning', 'Auth check failed');
+        return false;
     }
 }
 
@@ -140,22 +140,16 @@ export function initAuth() {
         }
     });
 
-    // Check if already logged in on page load
+    // Check cookie-backed session on page load. Do not require sessionStorage;
+    // a valid HttpOnly cookie should be enough to restore the dashboard.
     document.addEventListener('DOMContentLoaded', async () => {
-        const adminKey = sessionStorage.getItem('mw_admin_key');
-        if (!adminKey) return; // Must have header key to proceed
-
         try {
-            const res = await mwFetch('/v1/_mw/auth_check');
-            if (res && res.ok) {
-                const data = await res.json();
-                if (data.ok) {
-                    // Already authenticated, go straight to dashboard
-                    document.getElementById('authPrompt').classList.add('hidden');
-                    document.getElementById('dashboard').classList.remove('hidden');
-                    const { startDashboard } = await import('./main.js');
-                    startDashboard();
-                }
+            const authenticated = await checkAuthStatus();
+            if (authenticated) {
+                document.getElementById('authPrompt').classList.add('hidden');
+                document.getElementById('dashboard').classList.remove('hidden');
+                const { startDashboard } = await import('./main.js');
+                startDashboard();
             }
         } catch (err) {
             // Not logged in, stay on login screen

@@ -4,12 +4,21 @@ Health check endpoint for middleware monitoring.
 
 import time
 import shutil
+from urllib.parse import urlsplit, urlunsplit
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 import httpx
 
 from config import LITELLM_BASE, LITELLM_KEY, LOG_DIR, logger
 from core.auth import load_users
+
+
+def _litellm_health_url() -> str:
+    """Return LiteLLM proxy health URL even when LITELLM_BASE includes /v1."""
+    parts = urlsplit(LITELLM_BASE)
+    base = urlunsplit((parts.scheme, parts.netloc, "", "", ""))
+    return f"{base}/health/liveliness"
 
 
 async def health_check(request: Request):
@@ -28,7 +37,7 @@ async def health_check(request: Request):
     try:
         client: httpx.AsyncClient = request.app.state.http_client
         resp = await client.get(
-            f"{LITELLM_BASE}/health",
+            _litellm_health_url(),
             headers={"Authorization": f"Bearer {LITELLM_KEY}"},
             timeout=15.0
         )

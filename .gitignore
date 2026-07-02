@@ -11,10 +11,13 @@ vertex.json
 
 # Middleware user registry (local)
 llm-mw/users.json
-llm-mw/users.local.json
+llm-mw/data/users.json
+llm-mw/data/users.local.json
+llm-mw/data/backup/
 
 # Runtime data
 openwebui_data/
+backups/
 *.db
 *.db-*
 *.sqlite
@@ -54,3 +57,41 @@ nginx/ssl/
 # Temp files
 ~c:\Code\openwebui_fetch\Oppen_Web_UI*
 test_tts.mp3
+
+# Local Docker compose overrides
+docker-compose.override.yml
+docker-compose.override.yaml
+*.bak
+*.bak-*
+
+# npm cache (local tooling)
+.npm-cache/
+
+# Generated / temp config dumps
+config_dump.json
+mcp_config.json
+mcp_config.json.bak
+mcpo_openapi.json
+
+# SearXNG local overrides
+searxng/settings.yml.new
+
+# Codegraph server index
+.codegraph/
+
+# Generated runtime configs
+current_config.json
+test-results/
+bench_results.txt
+docker_status.txt
+
+# Build / cache
+.uv-cache/
+.pytest_cache/
+
+# AI coding agent configs
+.claude/
+.codex/
+
+# git-filter-repo working file
+expressions.txt

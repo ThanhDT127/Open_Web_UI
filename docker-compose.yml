@@ -7,7 +7,7 @@ services:
     container_name: openwebui-postgres
     environment:
       POSTGRES_USER: openwebui_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-YOUR_DB_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Required}
       POSTGRES_DB: openwebui
       POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
       TZ: Asia/Ho_Chi_Minh
@@ -57,7 +57,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - GOOGLE_APPLICATION_CREDENTIALS=/app/vertex.json
-      - VERTEX_PROJECT=YOUR_GCP_PROJECT_ID
+      - VERTEX_PROJECT=${VERTEX_PROJECT:-your-gcp-project-id}
       - VERTEX_LOCATION=us-central1
       - TZ=Asia/Ho_Chi_Minh
     volumes:
@@ -90,15 +90,28 @@ services:
       - ADMIN_KEY=${ADMIN_KEY}
       - JWT_SECRET=${JWT_SECRET}
       - MW_SECRET=${MW_SECRET}
-      - MW_PUBLIC_URL=https://openwebui.example.com:51122
+      - OPENWEBUI_SERVICE_KEY=${SUBKEY_ADMIN}
+      - MW_PUBLIC_URL=${MW_PUBLIC_URL:-https://your-domain.example.com}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - DATABASE_URL=postgresql://openwebui_user:${POSTGRES_PASSWORD:-YOUR_DB_PASSWORD}@postgres:5432/middleware
+      - DATABASE_URL=postgresql://openwebui_user:${POSTGRES_PASSWORD:?Required}@postgres:5432/middleware
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Required}
+      - MCP_DATABASE_PASSWORD=${MCP_DATABASE_PASSWORD:-}
       - TZ=Asia/Ho_Chi_Minh
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+      - OFFICE365_CLIENT_ID=${OFFICE365_CLIENT_ID:-}
+      - OFFICE365_CLIENT_SECRET=${OFFICE365_CLIENT_SECRET:-}
+      - MW_RAG_IMAGE_INJECT=True
+      - MW_RAG_IMAGE_MAX=3
     volumes:
       - ./llm-mw/users.json:/app/data/users.json
       - ./llm-mw/prices.json:/app/data/prices.json:ro
       - ./llm-mw/data/alert_config.json:/app/data/alert_config.json
       - ./llm-mw/data/system_alerts.json:/app/data/system_alerts.json
+      - ./llm-mw/dashboard:/app/dashboard
       - ./logs:/app/../logs
     # Port closed — accessed through Nginx
     # ports:
@@ -170,6 +183,14 @@ services:
     container_name: openwebui-docling
     environment:
       - UVICORN_WORKERS=1
+      - DOCLING_SERVE_MAX_SYNC_WAIT=600
+      - DOCLING_SERVE_LOG_LEVEL=DEBUG
+      - DOCLING_SERVE_DEFAULT_OCR_ENGINE=paddleocr
+      - DOCLING_SERVE_DEFAULT_OCR_LANGS=vi,en
+      - DOCLING_SERVE_OCR_LANGS=vi,en
+      - OCR_LANGS=vi,en
+      - PADDLE_LANG=vi
+      - DOCLING_SERVE_IMAGE_EXPORT=true
     healthcheck:
       test: [ "CMD-SHELL", "curl --fail http://localhost:5001/health || exit 1" ]
       interval: 30s
@@ -179,7 +200,7 @@ services:
     restart: unless-stopped
     deploy:
       resources:
-        limits: { memory: 2G, cpus: '2' }
+        limits: { memory: 4G, cpus: '6' }
     networks:
       - openwebui-network
 
@@ -191,20 +212,23 @@ services:
     container_name: openwebui-app
     environment:
       # Database Configuration - PostgreSQL
-      - DATABASE_URL=postgresql://openwebui_user:${POSTGRES_PASSWORD:-YOUR_DB_PASSWORD}@postgres:5432/openwebui
+      - DATABASE_URL=postgresql://openwebui_user:${POSTGRES_PASSWORD:?Required}@postgres:5432/openwebui
 
       # PGVector Configuration
       - VECTOR_DB=pgvector
-      - PGVECTOR_DB_URL=postgresql://openwebui_user:${POSTGRES_PASSWORD:-YOUR_DB_PASSWORD}@postgres:5432/openwebui
+      - PGVECTOR_DB_URL=postgresql://openwebui_user:${POSTGRES_PASSWORD:?Required}@postgres:5432/openwebui
       - PGVECTOR_CREATE_EXTENSION=true
       - PGVECTOR_INDEX_METHOD=hnsw
 
-      # Embeddings using Gemini via LiteLLM (openai-compatible)
-      - RAG_EMBEDDING_ENGINE=openai
-      - RAG_EMBEDDING_MODEL=gemini-embedding-001
-      # Embedding connects through middleware for cost tracking & quota control
-      - RAG_EMBEDDING_OPENAI_API_BASE_URL=http://middleware:5000/v1
-      - RAG_EMBEDDING_OPENAI_API_KEY=${SUBKEY_ADMIN}
+     # Embeddings using Local Sentence Transformers
+      - RAG_EMBEDDING_ENGINE=
+      - RAG_EMBEDDING_MODEL=AITeamVN/Vietnamese_Embedding
+
+      # Reranking using Cohere via LiteLLM
+      - RAG_RERANKING_ENGINE=external
+      - RAG_EXTERNAL_RERANKER_URL=http://middleware:5000/v1/rerank
+      - RAG_RERANKING_MODEL=cohere/rerank-v3.5
+      - RAG_RERANKING_OPENAI_API_KEY=${SUBKEY_ADMIN}
 
       # RAG Configuration
       - ENABLE_RAG=true
@@ -212,11 +236,11 @@ services:
       - CHUNK_OVERLAP=100
       - RAG_TEXT_SPLITTER=character
       - ENABLE_RAG_HYBRID_SEARCH=true
-      - RAG_FILE_MAX_SIZE=2048
+      - RAG_FILE_MAX_SIZE=500
       - RAG_FILE_MAX_COUNT=20
 
-      # Embedding batch size (reduced for Gemini API rate limits)
-      - RAG_EMBEDDING_BATCH_SIZE=50
+    # Embedding batch size (optimized for CPU sentence-transformers)  
+      - RAG_EMBEDDING_BATCH_SIZE=100
 
       # LLM Connection via Middleware
       - OPENAI_API_BASE_URL=http://middleware:5000/v1
@@ -231,7 +255,8 @@ services:
 
       # Document Extraction Engine — Docling (replaces Tika)
       - CONTENT_EXTRACTION_ENGINE=docling
-      - DOCLING_API_BASE_URL=http://docling:5001
+      - DOCLING_SERVER_URL=http://middleware:5000/docling-proxy
+      - DOCLING_PARAMS={"image_export_mode":"referenced"}
 
       # Timezone
       - TZ=Asia/Ho_Chi_Minh
@@ -240,6 +265,7 @@ services:
       - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
       - ENABLE_SIGNUP=true
       - DEFAULT_USER_ROLE=pending
+      - ENABLE_FORWARD_USER_INFO_HEADERS=true
       - PORT=8080
 
       # WebSocket Manager — required for UVICORN_WORKERS > 1 (Socket.IO state sync via Redis)
@@ -251,6 +277,7 @@ services:
       - UVICORN_WORKERS=6
     volumes:
       - openwebui_data:/app/backend/data
+      - sandbox_outputs:/app/backend/data/static/outputs:rw
     # Port closed — accessed through Nginx
     # ports:
     #   - "3000:8080"
@@ -273,6 +300,48 @@ services:
         reservations: { memory: 4G }
     networks:
       - openwebui-network
+      - openwebui-sandbox-network
+
+  # Code Sandbox for secure Python execution
+  code-sandbox:
+    build:
+      context: ./code-sandbox
+      dockerfile: Dockerfile
+    container_name: openwebui-sandbox
+    command: jupyter kernelgateway --KernelGatewayApp.ip=0.0.0.0 --KernelGatewayApp.port=8888 --KernelGatewayApp.allow_origin="*" --JupyterWebsocketPersonality.list_kernels=True
+    environment:
+      - JUPYTER_RUNTIME_DIR=/tmp/jupyter_runtime
+      - KG_AUTH_TOKEN=
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+      - /run:size=10M
+      - /home/jovyan:size=10M
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+    volumes:
+      - sandbox_outputs:/tmp/outputs:rw
+    networks:
+      - openwebui-sandbox-network
+    restart: unless-stopped
+
+  # MCP-to-OpenAPI Proxy (MCPO)
+  mcpo:
+    image: ghcr.io/open-webui/mcpo:latest
+    container_name: openwebui-mcpo
+    volumes:
+      - ./mcp_config.json:/app/config.json:ro
+    command: mcpo --config /app/config.json --port 8015
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - openwebui-network
+
 
   # Nginx Reverse Proxy + HTTPS
   nginx:
@@ -302,7 +371,11 @@ volumes:
     driver: local
   searxng_data:
     driver: local
+  sandbox_outputs:
+    driver: local
 
 networks:
   openwebui-network:
+    driver: bridge
+  openwebui-sandbox-network:
     driver: bridge

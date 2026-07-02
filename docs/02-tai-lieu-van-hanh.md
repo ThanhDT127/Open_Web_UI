@@ -976,7 +976,20 @@ git push -u origin feature/my-feature
 | 01  | postgres   | pgvector/pgvector:0.8.0-pg16        | pg_isready mỗi 10s | unless-stopped |
 | 02  | litellm    | ghcr.io/berriai/litellm:main-latest | -                  | unless-stopped |
 | 03  | middleware | ./llm-mw (custom build)             | -                  | unless-stopped |
-| 04  | open-webui | ghcr.io/open-webui/open-webui:main  | -                  | unless-stopped |
+| 04  | open-webui | ghcr.io/open-webui/open-webui:v0.9.5 | -                  | unless-stopped |
+
+### 14.4. Upgrade Notes for Open WebUI v0.9.5
+
+- Open WebUI `v0.9.x` co database migrations. Backup DB truoc khi nang cap.
+- Khong thuc hien rolling update cho Open WebUI khi nang cap `v0.9.x`.
+- Sau nang cap, can test lai:
+  - login/logout
+  - chat streaming
+  - RAG upload/query
+  - SearXNG web search
+  - custom tools/functions/filters
+  - persisted chats, attachments, file preview
+  - dashboard analytics / token accounting
 
 ### 14.2. Volumes và Persistence
 

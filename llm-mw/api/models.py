@@ -46,7 +46,8 @@ async def list_models(request: Request):
             data = payload.get("data")
             if isinstance(data, list):
                 # Get user's allowed models
-                allowed_models = user.get("allowed_models", ["*"])
+                from config import DEFAULT_ALLOWED_MODELS
+                allowed_models = user.get("allowed_models") or DEFAULT_ALLOWED_MODELS
                 allow_all = allowed_models == ["*"]
                 
                 filtered = []
@@ -68,17 +69,17 @@ async def list_models(request: Request):
                     filtered.append(item)
 
                 # Inject auto-routing virtual models
-                # Collect IDs already in filtered list for tier eligibility check
-                filtered_ids = {
+                # Collect IDs of raw models in LiteLLM for tier eligibility check
+                raw_ids = {
                     item.get("id") or item.get("model") or item.get("name")
-                    for item in filtered if isinstance(item, dict)
+                    for item in data if isinstance(item, dict)
                 }
                 for auto_name, tiers in PROVIDER_TIERS.items():
-                    # User can use auto model if they have access to any tier model
+                    # User can use auto model if they have access to any tier model or if the auto model itself is explicitly allowed
                     tier_models = set(tiers.values())
-                    if allow_all or any(m in allowed_models for m in tier_models):
+                    if allow_all or auto_name in allowed_models or any(m in allowed_models for m in tier_models):
                         # Only add if at least one tier model exists in LiteLLM
-                        if tier_models & filtered_ids:
+                        if tier_models & raw_ids:
                             filtered.insert(0, {
                                 "id": auto_name,
                                 "object": "model",

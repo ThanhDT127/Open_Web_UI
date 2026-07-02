@@ -13,7 +13,7 @@ import json
 from config import logger, LITELLM_BASE, LITELLM_KEY
 
 # ── Provider tier mappings ──────────────────────────────────────
-# Each provider maps: tier → concrete model name
+# Each provider maps: tier → concrete LiteLLM model alias
 # Tiers: SIMPLE (cheapest), MEDIUM, COMPLEX, REASONING (most capable)
 
 PROVIDER_TIERS = {
@@ -25,9 +25,9 @@ PROVIDER_TIERS = {
     },
     "gemini-auto": {
         "SIMPLE": "chat-gemini-2.5-flash",
-        "MEDIUM": "chat-gemini-3.1-flash-lite-preview",
-        "COMPLEX": "chat-gemini-3.1-pro-preview",
-        "REASONING": "chat-gemini-3.1-pro-preview",
+        "MEDIUM": "chat-gemini-3.1-flash-lite",
+        "COMPLEX": "chat-gemini-3.1-pro",
+        "REASONING": "chat-gemini-3.1-pro",
     },
     "grok-auto": {
         "SIMPLE": "chat-grok-4.1-fast-lite",
@@ -50,32 +50,11 @@ PROVIDER_TIERS = {
 }
 
 # ── Provider thinking/reasoning parameters per tier ──────────────
-# Maps auto-model → tier → extra body params for thinking depth.
-# Grok: reasoning controlled by model variant (fast-lite vs reasoning), no param.
-# DeepSeek: built-in reasoning, no separate param.
-
-PROVIDER_THINKING = {
-    "openai-auto": {
-        "SIMPLE": {"reasoning": {"effort": "low"}},
-        "MEDIUM": {"reasoning": {"effort": "medium"}},
-        "COMPLEX": {"reasoning": {"effort": "high"}},
-        "REASONING": {"reasoning": {"effort": "high"}},
-    },
-    "gemini-auto": {
-        "SIMPLE": {"thinking_config": {"thinking_level": "MINIMAL"}},
-        "MEDIUM": {"thinking_config": {"thinking_level": "MEDIUM"}},
-        "COMPLEX": {"thinking_config": {"thinking_level": "HIGH"}},
-        "REASONING": {"thinking_config": {"thinking_level": "HIGH"}},
-    },
-    "claude-auto": {
-        "SIMPLE": {"thinking": {"type": "adaptive", "effort": "low"}},
-        "MEDIUM": {"thinking": {"type": "adaptive", "effort": "medium"}},
-        "COMPLEX": {"thinking": {"type": "adaptive", "effort": "high"}},
-        "REASONING": {"thinking": {"type": "adaptive", "effort": "high"}},
-    },
-    # grok-auto: no thinking params (model variant controls reasoning)
-    # deepseek-auto: no thinking params (built-in reasoning)
-}
+# Keep auto-routing compatible by default. Direct provider params for OpenAI,
+# Gemini, and Claude currently fail through the LiteLLM chat-completions path
+# used by this middleware, while direct model aliases work without them.
+# Reasoning depth is therefore controlled by tier -> model selection here.
+PROVIDER_THINKING = {}
 
 # ── Complexity keywords (Vietnamese + English) ──────────────────
 _BOOST_KEYWORDS = re.compile(
@@ -250,7 +229,7 @@ async def resolve_auto_model(
     messages: list,
     quota_percent: float,
     has_vision: bool = False,
-    has_files: bool = False,
+    has_files: bool = False
 ) -> tuple[str, str, bool, dict]:
     """
     Resolve an auto-model name to a concrete model + thinking config.

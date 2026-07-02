@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Middleware Dashboard</title>
-    <link rel="stylesheet" href="/dashboard/css/dashboard.css">
+    <link rel="stylesheet" href="/dashboard/css/dashboard.css?v=1.0.2">
 </head>
 
 <body>
@@ -95,6 +95,7 @@
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'access')">🌐 Access</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'users')">👥 Users</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'logs')">📋 Logs</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'raghealth')">🧬 RAG Health</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'settings')">⚙️ Settings</button>
         </div>
 
@@ -167,7 +168,12 @@
             <div class="chart-row-3">
                 <div class="chart-container small">
                     <div class="chart-title">🍩 Request Types</div>
-                    <canvas id="requestTypeChart"></canvas>
+                    <div class="chart-content-wrapper">
+                        <div class="canvas-wrapper">
+                            <canvas id="requestTypeChart"></canvas>
+                        </div>
+                        <div id="requestTypeLegend" class="custom-legend"></div>
+                    </div>
                 </div>
                 <div class="chart-container" style="flex:2">
                     <div class="chart-title">📈 Requests Over Time</div>
@@ -222,7 +228,12 @@
             <div class="chart-table-row">
                 <div class="chart-container small">
                     <div class="chart-title">🍩 Cost by User</div>
-                    <canvas id="userCostChart"></canvas>
+                    <div class="chart-content-wrapper">
+                        <div class="canvas-wrapper">
+                            <canvas id="userCostChart"></canvas>
+                        </div>
+                        <div id="userCostLegend" class="custom-legend"></div>
+                    </div>
                 </div>
                 <div class="table-container" style="flex:2">
                     <table>
@@ -276,7 +287,12 @@
             <div class="chart-table-row">
                 <div class="chart-container small">
                     <div class="chart-title">🍩 Cost by Model</div>
-                    <canvas id="modelCostChart"></canvas>
+                    <div class="chart-content-wrapper">
+                        <div class="canvas-wrapper">
+                            <canvas id="modelCostChart"></canvas>
+                        </div>
+                        <div id="modelCostLegend" class="custom-legend"></div>
+                    </div>
                 </div>
                 <div class="table-container" style="flex:2">
                     <table>
@@ -451,7 +467,6 @@
                         <label>Role</label>
                         <select id="modalRole">
                             <option value="user">user</option>
-                            <option value="manager">manager</option>
                             <option value="admin">admin</option>
                         </select>
                     </div>
@@ -614,6 +629,216 @@
                 <div style="text-align: center; margin-top: 20px;">
                     <button id="loadMoreBtn" onclick="window.dashboardAPI.loadMoreLogs()" style="display: none;"
                         class="btn-apply">Load More</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- RAG HEALTH TAB                                     -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="raghealthTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">🧬</span>
+                <span class="insight-text">RAG pipeline health — embedding ingestion failures, retrieval
+                    citation hit-rate, and vector-storage anomalies. All data is read-only.</span>
+            </div>
+
+            <!-- Shared filters (apply to all three sections) -->
+            <div class="log-filters"
+                style="display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 15px; margin-bottom: 20px; padding: 15px; background: #1e293b; border-radius: 8px; align-items: flex-end;">
+                <div>
+                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Start</label>
+                    <input type="datetime-local" id="ragStart" class="filter-select">
+                </div>
+                <div>
+                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">End</label>
+                    <input type="datetime-local" id="ragEnd" class="filter-select">
+                </div>
+                <div>
+                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Model</label>
+                    <select id="ragModel" class="filter-select">
+                        <option value="">All Models</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">User</label>
+                    <select id="ragUser" class="filter-select">
+                        <option value="">All Users</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="window.ragHealthAPI.apply()" class="btn-apply">Apply</button>
+                    <button onclick="window.ragHealthAPI.reset()" class="btn-secondary">Reset</button>
+                </div>
+            </div>
+
+            <!-- ── Ingestion ── -->
+            <div class="section">
+                <div class="section-title">📥 Ingestion — Embedding Failures</div>
+                <div class="metrics">
+                    <div class="metric-card">
+                        <div class="metric-label">🔢 Embedding Calls</div>
+                        <div class="metric-value" id="ragIngestCalls">-</div>
+                        <div class="metric-detail">/v1/embeddings in range</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">❌ Failure Rate</div>
+                        <div class="metric-value" id="ragIngestFailRate">-</div>
+                        <div class="metric-detail" id="ragIngestFailCount">0 failures</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">⚡ Avg Latency</div>
+                        <div class="metric-value" id="ragIngestLatency">-</div>
+                        <div class="metric-detail">Embedding call latency</div>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div class="chart-title">📉 Failure Rate Over Time</div>
+                    <canvas id="ragIngestChart"></canvas>
+                </div>
+                <div class="section-title" style="margin-top: 20px;">Recent Failures</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>User</th>
+                                <th>Error Type</th>
+                                <th>Message</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ragIngestFailures">
+                            <tr><td colspan="4" class="loading">No data</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ── Retrieval ── -->
+            <div class="section">
+                <div class="section-title">🔎 Retrieval — Citation Hit-Rate</div>
+                <div class="metrics">
+                    <div class="metric-card">
+                        <div class="metric-label">📎 KB-Attached Messages</div>
+                        <div class="metric-value" id="ragRetrAttached">-</div>
+                        <div class="metric-detail">Requests with a &lt;source&gt; tag</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">✅ Cited</div>
+                        <div class="metric-value" id="ragRetrCited">-</div>
+                        <div class="metric-detail">Produced a [N] citation</div>
+                    </div>
+                    <div class="metric-card accent-green">
+                        <div class="metric-label">🎯 Hit-Rate</div>
+                        <div class="metric-value" id="ragRetrHitRate">-</div>
+                        <div class="metric-detail" title="Logged response text is truncated at 2000 chars; late citation markers may be missed.">Citation hit-rate ⓘ</div>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div class="chart-title">📊 Hit-Rate by Model</div>
+                    <canvas id="ragRetrModelChart"></canvas>
+                </div>
+                <div class="section-title" style="margin-top: 20px;" title="Grouped by source document; the <source id> index is per-request, not a knowledge-base id.">By Source ⓘ</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Source</th>
+                                <th>Attached</th>
+                                <th>Cited</th>
+                                <th>Hit-Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ragRetrBySource">
+                            <tr><td colspan="4" class="loading">No data</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="section-title" style="margin-top: 20px;">Zero-Citation Messages</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Timestamp</th>
+                                <th>User</th>
+                                <th>Model</th>
+                                <th>Question</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ragRetrZeroCite">
+                            <tr><td colspan="4" class="loading">No data</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ── Storage ── -->
+            <div class="section">
+                <div class="section-title">💾 Storage — Vector Anomalies</div>
+                <div class="metrics">
+                    <div class="metric-card usage-missing">
+                        <div class="metric-label">🈳 Zero-Chunk KBs</div>
+                        <div class="metric-value" id="ragStorZeroKB">-</div>
+                        <div class="metric-detail">KBs with files but no chunks</div>
+                    </div>
+                    <div class="metric-card usage-missing">
+                        <div class="metric-label">👻 Orphaned Collections</div>
+                        <div class="metric-value" id="ragStorOrphan">-</div>
+                        <div class="metric-detail">Chunks with no file/KB</div>
+                    </div>
+                    <div class="metric-card usage-missing">
+                        <div class="metric-label">📐 Chunk Outliers</div>
+                        <div class="metric-value" id="ragStorOutlier">-</div>
+                        <div class="metric-detail" title="Heuristic: chunk count vs. estimate from file size.">Anomalously low chunks ⓘ</div>
+                    </div>
+                </div>
+                <div id="ragStorError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
+                <div class="section-title" style="margin-top: 20px;">Zero-Chunk Knowledge Bases</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Owner</th>
+                                <th>Created</th>
+                                <th>Files</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ragStorZeroKBTable">
+                            <tr><td colspan="4" class="loading">No data</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="section-title" style="margin-top: 20px;">Orphaned Chunks</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Collection Name</th>
+                                <th>Chunk Count</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ragStorOrphanTable">
+                            <tr><td colspan="2" class="loading">No data</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="section-title" style="margin-top: 20px;" title="Heuristic — chunk count vs. estimate from file size.">Chunk-Count Outliers ⓘ</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Filename</th>
+                                <th>Owner</th>
+                                <th>Size (bytes)</th>
+                                <th>Chunks</th>
+                                <th>Expected</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ragStorOutlierTable">
+                            <tr><td colspan="5" class="loading">No data</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>

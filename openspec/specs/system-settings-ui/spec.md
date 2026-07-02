@@ -1,7 +1,8 @@
 # system-settings-ui Specification
 
 ## Purpose
-TBD - created by archiving change system-ui-config. Update Purpose after archive.
+Provide a canonical specification for the admin dashboard Settings tab, including SMTP configuration, quota alert thresholds, provider API budgets, and notification channel controls used by middleware operators.
+
 ## Requirements
 ### Requirement: Centralized System Settings Interface
 The system SHALL provide a dedicated "Settings" tab in the admin dashboard for managing system-wide configurations.
@@ -41,4 +42,3 @@ The system SHALL allow administrators to enable or disable specific notification
 #### Scenario: Admin toggles notification settings
 - **WHEN** an administrator toggles settings for User Email Alerts, Admin Realtime Email, Dashboard Alerts, or Daily Digest and clicks "Save Toggles"
 - **THEN** the system SHALL update the notification policy accordingly.
-

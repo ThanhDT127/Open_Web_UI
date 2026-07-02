@@ -6,8 +6,7 @@ import json
 from fastapi import Request, HTTPException
 
 from config import ADMIN_KEY
-from core.auth import load_users, save_users, get_lock, get_user_by_id, update_user_quota
-from core.quota import maybe_reset_quota
+from core.auth import clear_user_quota_usage, load_users, get_user_by_id, update_user_quota
 from core.cost import load_prices, calc_cost_usd
 from services.litellm import find_usage_in_log
 
@@ -38,14 +37,9 @@ async def reset_quota(request: Request):
     
     body = await request.json()
     target_user = body.get("user_id")
-    lock = get_lock()
-    with lock:
-        users = load_users()
-        for stored_user in users:
-            if target_user is None or stored_user.get("user_id") == target_user:
-                maybe_reset_quota(stored_user)
-        save_users(users)
-    return {"ok": True}
+    user_ids = [target_user] if target_user else [u.get("user_id") for u in load_users()]
+    reset_count = sum(1 for user_id in user_ids if user_id and clear_user_quota_usage(user_id))
+    return {"ok": True, "reset_count": reset_count}
 
 
 async def reconcile_usage(request: Request):

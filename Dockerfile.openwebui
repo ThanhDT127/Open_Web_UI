@@ -1,4 +1,4 @@
-FROM ghcr.io/open-webui/open-webui:main
+FROM ghcr.io/open-webui/open-webui:v0.9.6
 
 USER root
 
@@ -21,6 +21,6 @@ RUN python3 -c "import nltk; nltk.download('averaged_perceptron_tagger_eng', dow
 
 # 4. Đảm bảo cache/functions directory có đúng quyền
 RUN mkdir -p /app/backend/data/cache/functions && \
-    chown -R 1000:0 /app/backend/data/cache
+    chown -R 1000:0 /app/backend/data /app/backend/open_webui/static
 
 USER 1000

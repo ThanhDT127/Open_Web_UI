@@ -6,9 +6,13 @@
 import { test, expect, request } from '@playwright/test';
 
 // Load credentials from environment
-const ADMIN_EMAIL = process.env.TEST_ADMIN_EMAIL || 'admin@example.com';
-const ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD || 'Testcus1234';
-const SUBKEY_ADMIN = process.env.SUBKEY_ADMIN || 'YOUR_SUBKEY_ADMIN';
+const ADMIN_EMAIL = process.env.TEST_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.TEST_ADMIN_PASSWORD;
+const SUBKEY_ADMIN = process.env.SUBKEY_ADMIN;
+
+if (!ADMIN_EMAIL || !ADMIN_PASSWORD || !SUBKEY_ADMIN) {
+    throw new Error("Missing required environment variables for test execution: TEST_ADMIN_EMAIL, TEST_ADMIN_PASSWORD, SUBKEY_ADMIN");
+}
 
 test.describe('User Authentication - Login', () => {
 

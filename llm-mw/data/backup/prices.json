@@ -1,0 +1,138 @@
+{
+  "_schema": {
+    "version": 3,
+    "units": {
+      "input_per_1m": "USD per 1,000,000 input tokens",
+      "output_per_1m": "USD per 1,000,000 output tokens"
+    },
+    "updated_utc": "2026-05-08",
+    "sources": {
+      "openai": "https://platform.openai.com/docs/pricing",
+      "gemini": "https://ai.google.dev/gemini-api/docs/pricing",
+      "xai": "https://docs.x.ai/docs/models#models-and-pricing",
+      "anthropic": "https://docs.anthropic.com/en/docs/about-claude/pricing",
+      "deepseek": "https://openrouter.ai/deepseek/deepseek-v4-pro"
+    },
+    "notes": "5-provider pricing (OpenAI, Gemini, xAI, Anthropic, DeepSeek via OpenRouter). Middleware primarily trusts LiteLLM x-litellm-response-cost; these values are fallback."
+  },
+  "gpt-5.4": {
+    "input_per_1m": 2.50,
+    "output_per_1m": 15.00
+  },
+  "gpt-5.2": {
+    "input_per_1m": 1.75,
+    "output_per_1m": 14.00
+  },
+  "gpt-5": {
+    "input_per_1m": 1.25,
+    "output_per_1m": 10.00
+  },
+  "gpt-image-1.5": {
+    "per_image_usd": {
+      "low": {
+        "1024x1024": 0.011,
+        "1024x1792": 0.016,
+        "1792x1024": 0.016
+      },
+      "medium": {
+        "1024x1024": 0.042,
+        "1024x1792": 0.063,
+        "1792x1024": 0.063
+      },
+      "high": {
+        "1024x1024": 0.167,
+        "1024x1792": 0.25,
+        "1792x1024": 0.25
+      }
+    },
+    "notes": "OpenAI GPT Image 1.5 - latest, 4x faster than gpt-image-1."
+  },
+  "gpt-image-1": {
+    "per_image_usd": {
+      "low": {
+        "1024x1024": 0.011,
+        "1024x1792": 0.016,
+        "1792x1024": 0.016
+      },
+      "medium": {
+        "1024x1024": 0.042,
+        "1024x1792": 0.063,
+        "1792x1024": 0.063
+      },
+      "high": {
+        "1024x1024": 0.167,
+        "1024x1792": 0.25,
+        "1792x1024": 0.25
+      }
+    }
+  },
+  "gemini-3.1-pro-preview": {
+    "input_per_1m": 2.00,
+    "output_per_1m": 12.00
+  },
+  "gemini-3.1-flash-lite-preview": {
+    "input_per_1m": 0.25,
+    "output_per_1m": 1.50
+  },
+  "gemini-2.5-flash": {
+    "input_per_1m": 0.30,
+    "output_per_1m": 2.50
+  },
+  "gemini-3.1-flash-image-preview": {
+    "input_per_1m": 0.25,
+    "output_per_1m": 1.50,
+    "per_image_usd": 0.067
+  },
+  "gemini-3-pro-image-preview": {
+    "input_per_1m": 2.00,
+    "output_per_1m": 12.00,
+    "per_image_usd": 0.134
+  },
+  "grok-4.20-reasoning": {
+    "input_per_1m": 2.00,
+    "output_per_1m": 6.00
+  },
+  "grok-4-1-fast-reasoning": {
+    "input_per_1m": 0.20,
+    "output_per_1m": 0.50
+  },
+  "grok-4-1-fast-non-reasoning": {
+    "input_per_1m": 0.20,
+    "output_per_1m": 0.50
+  },
+  "grok-imagine-image": {
+    "per_image_usd": 0.05,
+    "notes": "xAI Grok Imagine standard image generation"
+  },
+  "grok-imagine-image-pro": {
+    "per_image_usd": 0.10,
+    "notes": "xAI Grok Imagine Pro - higher quality, faster"
+  },
+  "claude-opus-4-6": {
+    "input_per_1m": 5.00,
+    "output_per_1m": 25.00
+  },
+  "claude-sonnet-4-6": {
+    "input_per_1m": 3.00,
+    "output_per_1m": 15.00
+  },
+  "claude-haiku-4-5": {
+    "input_per_1m": 1.00,
+    "output_per_1m": 5.00
+  },
+  "deepseek-v4-pro": {
+    "input_per_1m": 1.74,
+    "output_per_1m": 3.48,
+    "notes": "DeepSeek V4 Pro via OpenRouter - 1.6T/49B active, 1M context"
+  },
+  "deepseek-v4-flash": {
+    "input_per_1m": 0.14,
+    "output_per_1m": 0.28,
+    "notes": "DeepSeek V4 Flash via OpenRouter - 284B/13B active, 1M context"
+  },
+  "gemini-embedding-001": {
+    "input_per_1m": 0.15,
+    "output_per_1m": 0.00,
+    "notes": "Gemini Embedding 001 - reduced to 1536-dim via middleware"
+  }
+}

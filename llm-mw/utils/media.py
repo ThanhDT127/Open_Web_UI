@@ -113,35 +113,41 @@ def public_media_url(request: Request, name: str) -> str:
     
     Detection order:
     1. MW_PUBLIC_URL env var (recommended for production)
+       - Smart bypass: if request is from localhost/IP but env var is a domain, 
+         fallback to request headers for better local dev experience.
     2. X-Forwarded-Host / X-Forwarded-Proto headers (reverse proxy)
-    3. Host header if not Docker-internal (e.g. 192.168.x.x:5000)
+    3. Host header if not Docker-internal (e.g. 192.168.x.x:3000)
     4. Fallback: http://localhost:5000
-    
-    NOTE: request.base_url returns Docker internal hostname (e.g. http://middleware:5000/)
-    which is NOT accessible from the browser. We must use the externally accessible URL.
     """
-    # 1. Explicit env var (best option)
+    # Get request host for smart bypass
+    host_header = request.headers.get("host", "")
+    is_local_access = any(x in host_header.lower() for x in ["localhost", "127.0.0.1", "192.168.", "10."])
+    
+    # 1. Explicit env var
     public_base = os.environ.get("MW_PUBLIC_URL", "").rstrip("/")
     if public_base:
-        return f"{public_base}/v1/_mw/media/{name}"
+        # Smart bypass: if we are accessing via local IP/localhost but public_base is a real domain,
+        # use the request headers instead to ensure the browser can reach the file.
+        is_public_domain = "example.com" in public_base # Project specific check
+        if not (is_local_access and is_public_domain):
+            return f"{public_base}/v1/_mw/media/{name}"
     
-    # 2. Reverse proxy headers
+    # 2. Reverse proxy headers (Nginx sets these)
     fwd_host = request.headers.get("x-forwarded-host")
     fwd_proto = request.headers.get("x-forwarded-proto", "http")
     if fwd_host:
         return f"{fwd_proto}://{fwd_host}/v1/_mw/media/{name}"
     
-    # 3. Host header (skip Docker-internal names like "middleware")
-    host = request.headers.get("host", "")
-    docker_internal_names = {"middleware", "litellm", "open-webui", "postgres"}
-    host_name = host.split(":")[0] if host else ""
-    if host and host_name not in docker_internal_names:
-        scheme = str(request.url.scheme) or "http"
-        return f"{scheme}://{host}/v1/_mw/media/{name}"
+    # 3. Host header
+    if host_header:
+        docker_internal_names = {"middleware", "litellm", "open-webui", "postgres", "docling"}
+        host_name = host_header.split(":")[0]
+        if host_name not in docker_internal_names:
+            scheme = request.headers.get("x-forwarded-proto", "http")
+            return f"{scheme}://{host_header}/v1/_mw/media/{name}"
     
     # 4. Last resort fallback
-    port = request.url.port or 5000
-    return f"http://localhost:{port}/v1/_mw/media/{name}"
+    return f"http://localhost:5000/v1/_mw/media/{name}"
 
 
 def maybe_materialize_data_url(
@@ -306,3 +312,34 @@ def get_allowed_extensions_pattern() -> str:
         "zip|rar|7z|"  # Archives
         "bin"  # Binary fallback
     )
+
+
+def convert_bytes_to_webp(image_bytes: bytes, quality: int = 80) -> bytes:
+    """
+    Convert raw image bytes to WebP format using Pillow.
+    
+    Args:
+        image_bytes: Source image bytes (PNG, JPEG, etc.)
+        quality: Compression quality (1-100), default 80
+        
+    Returns:
+        WebP image bytes
+    """
+    import io
+    from PIL import Image
+    import logging
+    
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        
+        # Convert P/1 modes to RGBA to avoid issues with WebP export
+        if img.mode in ("P", "1"):
+            img = img.convert("RGBA")
+            
+        output = io.BytesIO()
+        img.save(output, format="WEBP", quality=quality, method=4)
+        return output.getvalue()
+    except Exception as e:
+        logging.getLogger("llm_mw").error(f"Failed to convert image to WebP: {e}. Returning original bytes.")
+        return image_bytes
+

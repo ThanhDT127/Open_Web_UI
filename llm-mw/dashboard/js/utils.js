@@ -39,8 +39,9 @@ export function updateStatus(type, message) {
     msg.textContent = message;
 }
 
-// Centralized fetch with credentials and 403 handling
-// Note: 403 handler will be set by auth module to avoid circular dependency
+// Centralized fetch with cookie credentials and 403 handling.
+// Admin auth is carried by the HttpOnly mw_admin_session cookie set at login.
+// Note: 403 handler will be set by auth module to avoid circular dependency.
 let handle403 = null;
 
 export function set403Handler(handler) {
@@ -48,18 +49,16 @@ export function set403Handler(handler) {
 }
 
 export async function mwFetch(path, opts = {}) {
-    const adminKey = sessionStorage.getItem('mw_admin_key');
-    const authHeader = adminKey ? { 'Authorization': `Bearer ${adminKey}` } : {};
-
-    const defaultOpts = {
-        credentials: 'include',
-        headers: {
-            'Content-Type': 'application/json',
-            ...authHeader,
-            ...(opts.headers || {})
-        }
+    const defaultHeaders = {
+        'Content-Type': 'application/json',
+        ...(opts.headers || {})
     };
-    const mergedOpts = { ...defaultOpts, ...opts, headers: defaultOpts.headers };
+
+    const mergedOpts = {
+        ...opts,
+        credentials: 'include',
+        headers: defaultHeaders
+    };
 
     try {
         const res = await fetch(path, mergedOpts);

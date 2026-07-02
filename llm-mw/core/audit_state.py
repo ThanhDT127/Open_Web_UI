@@ -16,6 +16,7 @@ from fastapi import Request
 LLM_ENDPOINT_ALLOWLIST = {
     "/v1/chat/completions",
     "/v1/embeddings",
+    "/v1/rerank",
     "/v1/images/generations",
     "/v1/audio/transcriptions",
     "/v1/audio/speech",
@@ -71,6 +72,12 @@ def init_audit_state(
     if endpoint not in LLM_ENDPOINT_ALLOWLIST:
         # Do not initialize audit state for non-LLM endpoints
         # This prevents background polling (chats, tasks, etc.) from being counted as LLM usage
+        from config import logger
+        logger.warning(
+            "init_audit_state called with endpoint %r not in LLM_ENDPOINT_ALLOWLIST; "
+            "audit state NOT initialized (add it to the allowlist if this endpoint should be audited)",
+            endpoint,
+        )
         return ""
     # Generate or use provided request ID
     if rid is None:
@@ -87,6 +94,8 @@ def init_audit_state(
     request.state.mw_endpoint = endpoint
     request.state.mw_model = model
     request.state.mw_purpose = purpose  # NEW: Track request purpose/context
+    request.state.mw_auth_source = getattr(request.state, "mw_auth_source", "direct_subkey")
+    request.state.mw_openwebui_user_id = getattr(request.state, "mw_openwebui_user_id", None)
     
     # Default status is "ok" (will be changed if error occurs)
     request.state.mw_status = "ok"

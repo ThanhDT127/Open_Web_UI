@@ -15,6 +15,7 @@ import {
 import {
 	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, testSMTP
 } from './settings.js';
+import { applyRagFilters, resetRagFilters } from './raghealth.js';
 
 // Expose a stable API for inline HTML handlers (window.dashboardAPI.*)
 export async function initAPI() {
@@ -44,6 +45,11 @@ export async function initAPI() {
 		saveBudgets,
 		saveNotifToggles,
 		testSMTP
+	};
+
+	window.ragHealthAPI = {
+		apply: applyRagFilters,
+		reset: resetRagFilters
 	};
 
 	// One-time UI init

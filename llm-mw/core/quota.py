@@ -7,10 +7,10 @@ from typing import Dict, Any
 from zoneinfo import ZoneInfo
 from fastapi import HTTPException
 
-from core.auth import load_users, save_users, get_lock, get_user_by_id, update_user_quota
+from core.auth import get_user_by_id, reset_user_quota_period, update_user_quota
 
 
-def period_anchor_ms(period: str, tz: str) -> int:
+def period_anchor_ms(period: str, tz: str, now: dt.datetime = None) -> int:
     """
     Calculate period start timestamp in milliseconds.
     
@@ -22,7 +22,7 @@ def period_anchor_ms(period: str, tz: str) -> int:
         Timestamp in milliseconds
     """
     zone = ZoneInfo(tz) if tz else ZoneInfo("UTC")
-    now = dt.datetime.now(zone)
+    now = now.astimezone(zone) if now else dt.datetime.now(zone)
     if period == "weekly":
         start = now - dt.timedelta(days=now.weekday())
         start = dt.datetime(start.year, start.month, start.day, tzinfo=zone)
@@ -52,6 +52,19 @@ def maybe_reset_quota(user: Dict[str, Any]):
         # Reset alert tracking for the new period
         user["alerts_sent"] = {}
         # DO NOT reset user["used_*"] - those are lifetime counters
+
+
+def get_current_quota_user(user_id: str) -> Dict[str, Any]:
+    """Return one committed user record after applying any required period reset."""
+    user = get_user_by_id(user_id)
+    if not user:
+        return None
+    quota = user.get("quota", {})
+    anchor = period_anchor_ms(
+        quota.get("period", "monthly"),
+        quota.get("timezone", "UTC"),
+    )
+    return reset_user_quota_period(user_id, anchor)
 
 
 def get_quota_reset_info(user: Dict[str, Any]) -> Dict[str, Any]:
@@ -117,32 +130,11 @@ def enforce_and_bump_quota(
         HTTPException: 403 if quota exceeded, 404 if user not found
     """
     # O(1) lookup instead of load_users() + loop
-    stored_user = get_user_by_id(user_id)
+    stored_user = get_current_quota_user(user_id)
     if not stored_user:
         raise HTTPException(404, f"user_id={user_id} not found")
 
-    # Check if quota period needs reset
-    old_period_start = int(stored_user.get("quota", {}).get("period_start", 0))
-    maybe_reset_quota(stored_user)
     quota = stored_user.setdefault("quota", {})
-
-    # If period was reset, persist the reset (alerts_sent cleared, period_start updated)
-    # This needs lock + save for the reset fields (non-atomic multi-field update)
-    if int(quota.get("period_start", 0)) != old_period_start:
-        from core.auth import save_users
-        lock = get_lock()
-        with lock:
-            users = load_users()
-            for u in users:
-                if u.get("user_id") == user_id:
-                    maybe_reset_quota(u)
-                    break
-            save_users(users)
-        # Re-read after reset
-        stored_user = get_user_by_id(user_id)
-        if not stored_user:
-            raise HTTPException(404, f"user_id={user_id} not found")
-        quota = stored_user.setdefault("quota", {})
 
     def _enforce_limit(limit_key: str, used_key: str, add_value: float, label: str):
         """Check if adding value would exceed limit"""

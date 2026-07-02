@@ -1,4 +1,36 @@
 model_list:
+  - model_name: llama-3.1-8b-instant
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: "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"
+      
+  - model_name: gpt-oss-120b
+    litellm_params:
+      model: groq/openai/gpt-oss-120b
+      api_key: "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"
+
+  - model_name: gpt-oss-20b
+    litellm_params:
+      model: groq/openai/gpt-oss-20b
+      api_key: "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"
+
+server_settings:
+  host: "0.0.0.0"
+  port: 4000
+  api_base: "/v1"
+  telemetry: false
+
+general_settings:
+  enable_spend_logging: true
+  verbose: true
+  master_key: "super_admin_key_123"
+  log_level: "info"
+
+logging:
+  file: "D:\\ktlt\\Works\\Open_Web_UI\\litellm\\litellm.log"
+  level: INFO
+
+model_list:
   # ============================================================
   # OPENAI CHAT MODELS (3)
   # ============================================================
@@ -37,17 +69,20 @@ model_list:
       model: gemini/gemini-3.1-flash-lite-preview
       api_key: os.environ/GEMINI_API_KEY
 
-  # Gemini 2.5 Flash (Stable — mid-tier)
-  - model_name: chat-gemini-2.5-flash
-    litellm_params:
-      model: gemini/gemini-2.5-flash
-      api_key: os.environ/GEMINI_API_KEY
+  # Gemini 2.5 Flash via OpenRouter
   - model_name: chat-gemini-2.5-flash
     litellm_params:
       model: vertex_ai/gemini-2.5-flash
       vertex_project: os.environ/VERTEX_PROJECT
       vertex_location: os.environ/VERTEX_LOCATION
       vertex_credentials: /app/vertex.json
+
+  - model_name: chat-gemini-2.5-flash-openrouter
+    litellm_params:
+      model: openrouter/google/gemini-2.5-flash
+      api_key: os.environ/OPENROUTER_API_KEY
+      max_tokens: 4096
+
 
   # ============================================================
   # XAI GROK CHAT MODELS (3)
@@ -142,6 +177,7 @@ model_list:
     litellm_params:
       model: openrouter/deepseek/deepseek-v4-pro
       api_key: os.environ/OPENROUTER_API_KEY
+      max_tokens: 4096
 
   # DeepSeek V4 Flash (284B/13B active, 1M context, fast & cheap)
   - model_name: chat-deepseek-v4-flash
@@ -153,11 +189,25 @@ model_list:
 # EMBEDDING MODELS
 # ============================================================
 
-  # Gemini Embedding — API key only (Vertex embedding API differs)
+  # Gemini Embedding 2 via Vertex AI
+  - model_name: gemini-embedding-2
+    litellm_params:
+      model: vertex_ai/gemini-embedding-2
+
+  # Gemini Embedding 001 via OpenRouter
   - model_name: gemini-embedding-001
     litellm_params:
-      model: gemini/gemini-embedding-001
-      api_key: os.environ/GEMINI_API_KEY
+      model: openrouter/gemini-embedding-001
+
+# ============================================================
+# RERANK MODELS
+# ============================================================
+
+  # Cohere Rerank v3.5 via OpenRouter
+  - model_name: cohere/rerank-v3.5
+    litellm_params:
+      model: openrouter/cohere/rerank-v3.5
+      api_key: os.environ/OPENROUTER_API_KEY
 
 # ============================================================
 # LITELLM SETTINGS
@@ -174,7 +224,7 @@ litellm_settings:
   host: "0.0.0.0"
   port: 4000
   telemetry: false
-  request_timeout: 120
+  request_timeout: 600
   num_retries: 2
 
 general_settings:

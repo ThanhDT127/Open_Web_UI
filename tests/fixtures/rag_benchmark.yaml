@@ -1,0 +1,109 @@
+version: 1
+name: rag_upload_file_benchmark_tcvn
+description: Test RAG cho luồng user upload file dựa trên Benchmark TCVN 7722-2-3:2007 QA
+
+defaults:
+  timeout_ms: 60000
+  require_citation: true
+  language: vi
+
+cases:
+  - id: streetlight_standard_01
+    title: Hỏi về phạm vi áp dụng và điện áp tối đa của tiêu chuẩn
+    files:
+      - path: tests/fixtures/rag/TCVN7722-2-3_2007_904224.docx
+        type: docx
+    question: "Tiêu chuẩn TCVN 7722-2-3 : 2007 áp dụng cho những loại đèn điện nào và với mức điện áp tối đa là bao nhiêu?"
+    expected:
+      answer_contains:
+        - "đường phố"
+        - "đường hầm"
+        - "liền cột"
+        - "2,5 m"
+        - "không vượt quá 1000 V"
+      source_contains:
+        - "TCVN7722-2-3_2007_904224.docx"
+    tags:
+      - docx
+      - scope
+      - voltage
+      - citation
+
+  - id: streetlight_standard_02
+    title: Hỏi về yêu cầu cấp bảo vệ IP tối thiểu
+    files:
+      - path: tests/fixtures/rag/TCVN7722-2-3_2007_904224.docx
+        type: docx
+    question: "Yêu cầu về cấp bảo vệ (IP) tối thiểu đối với đèn điện theo tiêu chuẩn này là gì?"
+    expected:
+      answer_contains:
+        - "IPX3"
+        - "IPX5"
+      source_contains:
+        - "TCVN7722-2-3_2007_904224.docx"
+    tags:
+      - docx
+      - ip_rating
+      - safety
+      - citation
+
+  - id: streetlight_standard_03
+    title: Hỏi về thông tin bổ sung trong tờ hướng dẫn
+    files:
+      - path: tests/fixtures/rag/TCVN7722-2-3_2007_904224.docx
+        type: docx
+    question: "Ngoài các yêu cầu chung, nhà sản xuất cần cung cấp những thông tin bổ sung nào trong tờ hướng dẫn đi kèm đèn điện?"
+    expected:
+      answer_contains:
+        - "Tư thế đặt"
+        - "Khối lượng"
+        - "kích thước tổng thể"
+        - "tải trọng gió"
+        - "thích hợp với đèn điện"
+        - "không giảm đi 10°C"
+        - "kích thước của ngăn đặt hộp nối"
+        - "mô men xoắn"
+      source_contains:
+        - "TCVN7722-2-3_2007_904224.docx"
+    tags:
+      - docx
+      - manual
+      - instructions
+      - citation
+
+  - id: streetlight_standard_04
+    title: Hỏi về yêu cầu an toàn nắp đậy kính và thử nghiệm vỡ kính
+    files:
+      - path: tests/fixtures/rag/TCVN7722-2-3_2007_904224.docx
+        type: docx
+    question: "Tiêu chuẩn quy định nắp đậy bằng kính của đèn điện phải đảm bảo yêu cầu an toàn như thế nào và điều kiện để vượt qua thử nghiệm vỡ kính là gì?"
+    expected:
+      answer_contains:
+        - "vỡ thành các mảnh nhỏ"
+        - "lưới chắn"
+        - "nhiều hơn 60 mảnh"
+      source_contains:
+        - "TCVN7722-2-3_2007_904224.docx"
+    tags:
+      - docx
+      - safety
+      - glass_testing
+      - citation
+
+  - id: streetlight_standard_05
+    title: Hỏi về điều chỉnh nhiệt độ khi thử nghiệm độ bền nhiệt
+    files:
+      - path: tests/fixtures/rag/TCVN7722-2-3_2007_904224.docx
+        type: docx
+    question: "Khi đo nhiệt độ để thử nghiệm độ bền nhiệt của đèn điện, kết quả đo được phép điều chỉnh như thế nào để phù hợp với môi trường thực tế?"
+    expected:
+      answer_contains:
+        - "giảm đi 10"
+        - "dịch chuyển không khí tự nhiên"
+      source_contains:
+        - "TCVN7722-2-3_2007_904224.docx"
+    tags:
+      - docx
+      - thermal_testing
+      - temperature
+      - citation

@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from config import DATA_DIR, BACKUP_DATA_DIR, logger
-from core.auth import load_users, save_users, get_lock
+from core.auth import claim_quota_alert, load_users, save_users, get_lock
 
 
 # ─── File paths ───────────────────────────────────────────────
@@ -181,7 +181,7 @@ def save_system_alerts(alerts: dict):
 
 # ─── Main alert check ────────────────────────────────────────
 
-async def check_and_send_alerts(user_id: str, add_cost_usd: float = 0.0):
+async def _legacy_check_and_send_alerts(user_id: str, add_cost_usd: float = 0.0):
     """
     Check quota thresholds and send notifications.
     
@@ -331,6 +331,98 @@ async def check_and_send_alerts(user_id: str, add_cost_usd: float = 0.0):
         # NEVER raise — alert failures must not block users
 
 
+def _format_usd(value: float) -> str:
+    """Format small quota values without hiding their actual magnitude."""
+    value = max(0.0, float(value or 0))
+    if value >= 1:
+        return f"${value:.2f}"
+    return f"${value:.6f}".rstrip("0").rstrip(".")
+
+
+def _quota_alert_kind(threshold: int):
+    if threshold >= 100:
+        return "critical", "quota_blocked", True
+    if threshold >= 95:
+        return "warning", "quota_critical", False
+    return "info", "quota_warning", False
+
+
+# Replaces the legacy full-user-list implementation defined above.
+async def check_and_send_alerts(user_id: str, add_cost_usd: float = 0.0):
+    """Evaluate and claim alerts from one freshly committed quota record."""
+    try:
+        config = load_alert_config()
+        smtp_enabled = config.get("smtp", {}).get("enabled", False)
+        admin_cfg = config.get("admin_alerts", {})
+        pending_emails = []
+        pending_notifications = []
+
+        from core.quota import get_current_quota_user
+        user = get_current_quota_user(user_id)
+        if user:
+            quota = user.get("quota", {})
+            limit_cost = float(quota.get("limit_cost_usd", 0) or 0)
+            used_cost = float(quota.get("used_cost_usd", 0) or 0)
+            period_start = int(quota.get("period_start", 0) or 0)
+            if limit_cost > 0:
+                percent = used_cost / limit_cost * 100
+                admin_thresholds = admin_cfg.get("per_user_quota", {}).get("thresholds", [80, 95, 100])
+                user_cfg = config.get("user_alerts", {})
+                user_thresholds = user_cfg.get("thresholds", [80, 95, 100])
+                user_email_enabled = user_cfg.get("enabled") and user_cfg.get("send_email") and smtp_enabled
+
+                for threshold in sorted(set(admin_thresholds + user_thresholds)):
+                    if percent < threshold:
+                        continue
+                    level, alert_type, send_admin_email = _quota_alert_kind(threshold)
+                    snapshot = {
+                        "user_id": user_id,
+                        "percent": percent,
+                        "used_usd": used_cost,
+                        "limit_usd": limit_cost,
+                        "remaining_usd": max(0.0, limit_cost - used_cost),
+                        "threshold": threshold,
+                        "period_start": period_start,
+                    }
+                    if not claim_quota_alert(user_id, period_start, threshold, alert_type, snapshot):
+                        continue
+                    pending_notifications.append({
+                        "user_id": user_id,
+                        "type": alert_type,
+                        "level": level,
+                        "title": f"User {user_id} dat {threshold}% quota",
+                        "message": (
+                            f"User {user_id} da su dung {_format_usd(used_cost)}/{_format_usd(limit_cost)} "
+                            f"({percent:.1f}%). Con lai: {_format_usd(max(0.0, limit_cost - used_cost))}"
+                        ),
+                        "metadata": snapshot,
+                        "send_email_realtime": send_admin_email,
+                    })
+                    if user_email_enabled and threshold in user_thresholds:
+                        email = _get_user_email(user_id)
+                        if email:
+                            pending_emails.append({
+                                "type": "user_quota", "to": email, "user_id": user_id,
+                                "threshold": threshold, "used": used_cost,
+                                "limit": limit_cost, "percent": percent,
+                            })
+
+        api_budgets = admin_cfg.get("api_budgets", {})
+        admin_emails = admin_cfg.get("emails", [])
+        if api_budgets and admin_emails:
+            _check_provider_budget_alerts(config, api_budgets, admin_emails, pending_notifications, pending_emails)
+
+        from core.notification import send_notification
+        for notification in pending_notifications:
+            await send_notification(**notification)
+        if pending_emails and smtp_enabled:
+            smtp_cfg = config.get("smtp", {})
+            for email_task in pending_emails:
+                await asyncio.to_thread(_send_queued_email, smtp_cfg, email_task)
+    except Exception as e:
+        logger.error("alert_check_failed user=%s: %s", user_id, str(e))
+
+
 def _send_queued_email(smtp_cfg: dict, email_task: dict):
     """Send a queued email. Called via asyncio.to_thread() to avoid blocking."""
     task_type = email_task.get("type")
@@ -352,8 +444,8 @@ def _send_queued_email(smtp_cfg: dict, email_task: dict):
             f"Xin chào {user_id},\n\n"
             f"Tài khoản của bạn đã sử dụng {percent:.0f}% hạn mức chi phí.\n\n"
             f"  • Đã dùng: ${used:.4f}\n"
-            f"  • Hạn mức:  ${limit:.2f}\n"
-            f"  • Còn lại:  ${limit - used:.4f}\n\n"
+            f"  • Hạn mức:  {_format_usd(limit)}\n"
+            f"  • Còn lại:  {_format_usd(max(0.0, limit - used))}\n\n"
         )
         if threshold >= 100:
             body += (
@@ -571,15 +663,13 @@ def get_user_quota_status(user_id: str) -> dict:
     Returns:
         Dict with percent_used, remaining_usd, unlimited flag
     """
-    from core.quota import maybe_reset_quota
+    from core.quota import get_current_quota_user
 
-    users = load_users()
-    user = next((u for u in users if u.get("user_id") == user_id), None)
+    user = get_current_quota_user(user_id)
 
     if not user:
         return {"found": False}
 
-    maybe_reset_quota(user)
     quota = user.get("quota", {})
     limit = float(quota.get("limit_cost_usd", 0) or 0)
     used = float(quota.get("used_cost_usd", 0) or 0)
@@ -595,7 +685,7 @@ def get_user_quota_status(user_id: str) -> dict:
         }
 
     percent = round(used / limit * 100, 1)
-    remaining = round(max(0, limit - used), 2)
+    remaining = max(0, limit - used)
 
     # Determine alert level
     alert_level = None
@@ -609,7 +699,7 @@ def get_user_quota_status(user_id: str) -> dict:
         "user_id": user_id,
         "percent_used": percent,
         "used_cost_usd": round(used, 4),
-        "limit_cost_usd": round(limit, 2),
+        "limit_cost_usd": limit,
         "remaining_usd": remaining,
         "unlimited": False,
         "alert_level": alert_level
