@@ -30,6 +30,7 @@ from api.stream import stream_audit
 from api.access_logs import get_access_summary, stream_access
 from api.audit_query import parse_audit_filters
 from api.rag_health import get_rag_ingestion, get_rag_retrieval, get_rag_storage
+from api.group_analytics import get_group_analytics, get_group_users
 from api.user_admin import (
     list_users, create_user, update_user, 
     rotate_user_key, disable_user, enable_user, get_admin_audit,
@@ -188,6 +189,10 @@ app.add_api_route("/v1/_mw/stream", stream_audit, methods=["GET"])
 # Access log endpoints (separate from usage)
 app.add_api_route("/v1/_mw/access_summary", get_access_summary, methods=["GET"])
 app.add_api_route("/v1/_mw/access_stream", stream_access, methods=["GET"])
+
+# Group Analytics endpoint
+app.add_api_route("/v1/_mw/admin/analytics/groups", get_group_analytics, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/analytics/groups/{group_id}/users", get_group_users, methods=["GET"])
 
 # Audit log query endpoint (Logs tab)
 app.add_api_route("/v1/_mw/audit/query", parse_audit_filters, methods=["GET"])

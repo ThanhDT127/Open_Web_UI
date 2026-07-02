@@ -21,8 +21,20 @@ export async function setTimeRange(e, minutes) {
     currentTimeRange = { minutes };
 
     // Reload data
-    const { loadSummary } = await import('./usage.js');
-    loadSummary();
+    if (window.dashboardAPI) {
+        if (window.dashboardAPI.loadSummary) {
+            window.dashboardAPI.loadSummary();
+        }
+        if (window.dashboardAPI.refreshAnalytics) {
+            window.dashboardAPI.refreshAnalytics();
+        }
+        if (window.dashboardAPI.refreshSatisfaction) {
+            window.dashboardAPI.refreshSatisfaction();
+        }
+    }
+    if (window.groupAnalyticsAPI && window.groupAnalyticsAPI.fetchData) {
+        window.groupAnalyticsAPI.fetchData();
+    }
 }
 
 export async function applyCustomRange() {
@@ -56,8 +68,21 @@ export async function applyCustomRange() {
         end: new Date(end).toISOString().replace('Z', '+00:00')
     };
 
-    const { loadSummary } = await import('./usage.js');
-    loadSummary();
+    // Reload data
+    if (window.dashboardAPI) {
+        if (window.dashboardAPI.loadSummary) {
+            window.dashboardAPI.loadSummary();
+        }
+        if (window.dashboardAPI.refreshAnalytics) {
+            window.dashboardAPI.refreshAnalytics();
+        }
+        if (window.dashboardAPI.refreshSatisfaction) {
+            window.dashboardAPI.refreshSatisfaction();
+        }
+    }
+    if (window.groupAnalyticsAPI && window.groupAnalyticsAPI.fetchData) {
+        window.groupAnalyticsAPI.fetchData();
+    }
 }
 
 // Initialize audit filters
