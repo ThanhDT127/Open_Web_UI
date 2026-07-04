@@ -457,7 +457,8 @@
                         </span>
                     </span>
                     <div style="display: flex; gap: 10px;">
-                        <button onclick="window.dashboardAPI.loadUsers()" class="btn-apply" style="margin-top:0;">↻ Refresh</button>
+                        <button onclick="window.dashboardAPI.loadUsers()" class="btn-apply" style="margin-top:0;">↻
+                            Refresh</button>
                     </div>
                 </div>
                 <div class="table-container">
@@ -847,6 +848,9 @@
                             <tr>
                                 <td colspan="4" class="loading">No data</td>
                             </tr>
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -872,12 +876,18 @@
                         <div class="metric-detail"
                             title="Logged response text is truncated at 2000 chars; late citation markers may be missed.">
                             Citation hit-rate ⓘ</div>
+                        <div class="metric-detail"
+                            title="Logged response text is truncated at 2000 chars; late citation markers may be missed.">
+                            Citation hit-rate ⓘ</div>
                     </div>
                 </div>
                 <div class="chart-container">
                     <div class="chart-title">📊 Hit-Rate by Model</div>
                     <canvas id="ragRetrModelChart"></canvas>
                 </div>
+                <div class="section-title" style="margin-top: 20px;"
+                    title="Grouped by source document; the <source id> index is per-request, not a knowledge-base id.">
+                    By Source ⓘ</div>
                 <div class="section-title" style="margin-top: 20px;"
                     title="Grouped by source document; the <source id> index is per-request, not a knowledge-base id.">
                     By Source ⓘ</div>
@@ -892,6 +902,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragRetrBySource">
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                             <tr>
                                 <td colspan="4" class="loading">No data</td>
                             </tr>
@@ -910,6 +923,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragRetrZeroCite">
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                             <tr>
                                 <td colspan="4" class="loading">No data</td>
                             </tr>
@@ -937,6 +953,8 @@
                         <div class="metric-value" id="ragStorOutlier">-</div>
                         <div class="metric-detail" title="Heuristic: chunk count vs. estimate from file size.">
                             Anomalously low chunks ⓘ</div>
+                        <div class="metric-detail" title="Heuristic: chunk count vs. estimate from file size.">
+                            Anomalously low chunks ⓘ</div>
                     </div>
                 </div>
                 <div id="ragStorError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
@@ -952,6 +970,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragStorZeroKBTable">
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                             <tr>
                                 <td colspan="4" class="loading">No data</td>
                             </tr>
@@ -971,9 +992,14 @@
                             <tr>
                                 <td colspan="2" class="loading">No data</td>
                             </tr>
+                            <tr>
+                                <td colspan="2" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
+                <div class="section-title" style="margin-top: 20px;"
+                    title="Heuristic — chunk count vs. estimate from file size.">Chunk-Count Outliers ⓘ</div>
                 <div class="section-title" style="margin-top: 20px;"
                     title="Heuristic — chunk count vs. estimate from file size.">Chunk-Count Outliers ⓘ</div>
                 <div class="table-container">
@@ -988,6 +1014,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragStorOutlierTable">
+                            <tr>
+                                <td colspan="5" class="loading">No data</td>
+                            </tr>
                             <tr>
                                 <td colspan="5" class="loading">No data</td>
                             </tr>

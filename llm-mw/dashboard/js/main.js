@@ -10,6 +10,9 @@ import { applyLogFilters, resetLogFilters, loadMoreLogs, exportLogsToExcel } fro
 import { refreshAnalytics, initAnalyticsChart } from './analytics.js';
 import { initGroupAnalyticsChart, fetchData as refreshGroups } from './group_analytics.js';
 import { refreshSatisfaction } from './satisfaction.js';
+import { refreshAnalytics, initAnalyticsChart } from './analytics.js';
+import { initGroupAnalyticsChart, fetchData as refreshGroups } from './group_analytics.js';
+import { refreshSatisfaction } from './satisfaction.js';
 import { updateStatus } from './utils.js';
 import {
 	loadUsers, showCreateUserModal, showEditUserModal, closeUserModal, saveUser,
@@ -49,7 +52,11 @@ export async function initAPI() {
 		loadSummary,
 		refreshAnalytics,
 		refreshSatisfaction,
+		loadSummary,
+		refreshAnalytics,
+		refreshSatisfaction,
 		// User CRUD
+		loadUsers,
 		loadUsers,
 		showCreateUserModal,
 		showEditUserModal,
@@ -72,12 +79,9 @@ export async function initAPI() {
 		closePendingModal,
 		refreshPendingList,
 		reconcilePending,
-		forceClearPending,
-		// Export report modal
-		openExportModal,
-		closeExportModal,
-		downloadReport
+		forceClearPending
 	};
+
 
 
 	window.settingsAPI = {
@@ -108,6 +112,8 @@ export async function initAPI() {
 		initCharts();
 		initAnalyticsChart();
 		initGroupAnalyticsChart();
+		initAnalyticsChart();
+		initGroupAnalyticsChart();
 	} catch (e) {
 		// Chart.js may not be ready yet; summary load will still work.
 		console.warn('Charts init failed:', e);
@@ -119,6 +125,7 @@ export function startDashboard() {
 	// Initial load
 	loadSummary();
 	connectEventStream();
+	connectActiveUsersStream();
 	connectActiveUsersStream();
 
 	// Refresh summary periodically (keeps charts/metrics fresh)
@@ -139,6 +146,7 @@ export function startDashboard() {
 
 export function stopDashboard() {
 	stopDashboardLoops();
+	disconnectActiveUsersStream();
 	disconnectActiveUsersStream();
 	updateStatus('warning', 'Stopped');
 }
