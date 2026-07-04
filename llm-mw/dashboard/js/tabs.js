@@ -4,6 +4,10 @@ import { loadUsers } from './users.js';
 import { loadLogs } from './logs.js';
 import { loadSettings } from './settings.js';
 import { loadRagHealth } from './raghealth.js';
+import { loadPrices } from './prices.js';
+import { refreshAnalytics } from './analytics.js';
+import { fetchData as refreshGroups } from './group_analytics.js';
+import { refreshSatisfaction } from './satisfaction.js';
 import { accessEventSource } from './auth.js';
 
 // FIX: Pass event explicitly
@@ -29,5 +33,13 @@ export function switchTab(e, tabName) {
         loadSettings();
     } else if (tabName === 'raghealth') {
         loadRagHealth();
+    } else if (tabName === 'prices') {
+        loadPrices();
+    } else if (tabName === 'analytics') {
+        refreshAnalytics();
+    } else if (tabName === 'groups') {
+        refreshGroups();
+    } else if (tabName === 'satisfaction') {
+        refreshSatisfaction();
     }
 }

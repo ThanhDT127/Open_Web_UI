@@ -96,6 +96,10 @@
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'users')">👥 Users</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'logs')">📋 Logs</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'raghealth')">🧬 RAG Health</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'groups')">🏢 Groups</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'analytics')">💬 Chat Analytics</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'satisfaction')">⭐ Satisfaction</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'prices')">💸 Prices</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'settings')">⚙️ Settings</button>
         </div>
 
@@ -397,7 +401,8 @@
                         </span>
                     </span>
                     <div style="display: flex; gap: 10px;">
-                        <button onclick="window.dashboardAPI.loadUsers()" class="btn-apply" style="margin-top:0;">↻ Refresh</button>
+                        <button onclick="window.dashboardAPI.loadUsers()" class="btn-apply" style="margin-top:0;">↻
+                            Refresh</button>
                     </div>
                 </div>
                 <div class="table-container">
@@ -708,7 +713,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragIngestFailures">
-                            <tr><td colspan="4" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -731,14 +738,18 @@
                     <div class="metric-card accent-green">
                         <div class="metric-label">🎯 Hit-Rate</div>
                         <div class="metric-value" id="ragRetrHitRate">-</div>
-                        <div class="metric-detail" title="Logged response text is truncated at 2000 chars; late citation markers may be missed.">Citation hit-rate ⓘ</div>
+                        <div class="metric-detail"
+                            title="Logged response text is truncated at 2000 chars; late citation markers may be missed.">
+                            Citation hit-rate ⓘ</div>
                     </div>
                 </div>
                 <div class="chart-container">
                     <div class="chart-title">📊 Hit-Rate by Model</div>
                     <canvas id="ragRetrModelChart"></canvas>
                 </div>
-                <div class="section-title" style="margin-top: 20px;" title="Grouped by source document; the <source id> index is per-request, not a knowledge-base id.">By Source ⓘ</div>
+                <div class="section-title" style="margin-top: 20px;"
+                    title="Grouped by source document; the <source id> index is per-request, not a knowledge-base id.">
+                    By Source ⓘ</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -750,7 +761,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragRetrBySource">
-                            <tr><td colspan="4" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -766,7 +779,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragRetrZeroCite">
-                            <tr><td colspan="4" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -789,7 +804,8 @@
                     <div class="metric-card usage-missing">
                         <div class="metric-label">📐 Chunk Outliers</div>
                         <div class="metric-value" id="ragStorOutlier">-</div>
-                        <div class="metric-detail" title="Heuristic: chunk count vs. estimate from file size.">Anomalously low chunks ⓘ</div>
+                        <div class="metric-detail" title="Heuristic: chunk count vs. estimate from file size.">
+                            Anomalously low chunks ⓘ</div>
                     </div>
                 </div>
                 <div id="ragStorError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
@@ -805,7 +821,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragStorZeroKBTable">
-                            <tr><td colspan="4" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -819,11 +837,14 @@
                             </tr>
                         </thead>
                         <tbody id="ragStorOrphanTable">
-                            <tr><td colspan="2" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="2" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
-                <div class="section-title" style="margin-top: 20px;" title="Heuristic — chunk count vs. estimate from file size.">Chunk-Count Outliers ⓘ</div>
+                <div class="section-title" style="margin-top: 20px;"
+                    title="Heuristic — chunk count vs. estimate from file size.">Chunk-Count Outliers ⓘ</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -836,10 +857,265 @@
                             </tr>
                         </thead>
                         <tbody id="ragStorOutlierTable">
-                            <tr><td colspan="5" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="5" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- ANALYTICS TAB                                      -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="analyticsTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">💬</span>
+                <span class="insight-text">Chat Analytics — Thống kê tập trung về mức độ sử dụng từ Open WebUI và Chi
+                    phí từ Middleware.</span>
+            </div>
+
+
+
+            <!-- Summary Metrics -->
+            <div class="metrics" style="margin-bottom: 20px;">
+                <div class="metric-card">
+                    <div class="metric-label">💬 Total Chats</div>
+                    <div class="metric-value" id="analyticsTotalChats">-</div>
+                    <div class="metric-detail">Số phiên chat (Open WebUI)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">📩 Total Requests</div>
+                    <div class="metric-value" id="analyticsTotalMessages">-</div>
+                    <div class="metric-detail">Số requests (Middleware)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">🔤 Total Tokens</div>
+                    <div class="metric-value" id="analyticsTotalTokens">-</div>
+                    <div class="metric-detail">Tokens (Middleware)</div>
+                </div>
+                <div class="metric-card accent-green">
+                    <div class="metric-label">💰 Total Cost</div>
+                    <div class="metric-value" id="analyticsTotalCost">-</div>
+                    <div class="metric-detail">Chi phí USD (Middleware)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">👥 Active Users</div>
+                    <div class="metric-value" id="analyticsActiveUsers">-</div>
+                    <div class="metric-detail">Số người dùng có hoạt động</div>
+                </div>
+            </div>
+
+            <!-- Row 1: Daily Trend & Hourly Activity -->
+            <div class="chart-grid">
+                <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
+                    <div class="chart-title" style="flex-shrink: 0;">📈 Daily Trend (Requests vs Cost)</div>
+                    <div style="position: relative; flex: 1; min-height: 0;">
+                        <canvas id="analyticsDualChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
+                    <div class="chart-title" style="flex-shrink: 0;">🕐 Hourly Activity (0h - 23h)</div>
+                    <div style="position: relative; flex: 1; min-height: 0;">
+                        <canvas id="analyticsHourlyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 2: Model Breakdown & Top Models Table -->
+            <div class="chart-grid">
+                <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
+                    <div class="chart-title" style="flex-shrink: 0;">🍩 Model Breakdown (Cost)</div>
+                    <div style="position: relative; flex: 1; min-height: 0;">
+                        <canvas id="analyticsModelChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
+                    <div class="chart-title" style="flex-shrink: 0;">🤖 Top Models</div>
+                    <div style="overflow-y: auto; flex: 1; min-height: 0;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Model</th>
+                                    <th>Requests</th>
+                                    <th>Cost (USD)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="analyticsTopModelsTable">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Leaderboard Table -->
+            <div class="section">
+                <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🏆 Top Users Leaderboard</span>
+                    <button onclick="window.dashboardAPI.refreshAnalytics()" class="btn-apply" style="margin-top:0;">↻
+                        Refresh</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Email (User ID)</th>
+                            <th>Display Name</th>
+                            <th>Chats</th>
+                            <th>Requests</th>
+                            <th>Tokens</th>
+                            <th>Cost (USD)</th>
+                            <th>Cost Share</th>
+                            <th>Top Model</th>
+                        </tr>
+                    </thead>
+                    <tbody id="analyticsLeaderboardTable">
+                        <tr>
+                            <td colspan="9" class="loading">Loading analytics...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- SATISFACTION TAB                                    -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="satisfactionTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">⭐</span>
+                <span class="insight-text">User Satisfaction — Điểm CSAT, bảng xếp hạng model và phản hồi chi tiết từ
+                    người dùng.</span>
+            </div>
+
+            <!-- CSAT Summary Metrics -->
+            <div class="metrics" style="margin-bottom: 20px;">
+                <div class="metric-card accent-green">
+                    <div class="metric-label">😊 CSAT Score</div>
+                    <div class="metric-value" id="csatScoreValue">-%</div>
+                    <div class="metric-detail">Tỷ lệ đánh giá tích cực</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">👍 Positive</div>
+                    <div class="metric-value" id="csatPositiveCount">-</div>
+                    <div class="metric-detail">Số lượt đánh giá tốt</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">👎 Negative</div>
+                    <div class="metric-value" id="csatNegativeCount">-</div>
+                    <div class="metric-detail">Số lượt đánh giá xấu</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">📊 Total Votes</div>
+                    <div class="metric-value" id="csatTotalCount">-</div>
+                    <div class="metric-detail">Tổng số lượt đánh giá</div>
+                </div>
+            </div>
+
+            <!-- Model Leaderboard -->
+            <div class="section">
+                <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🏆 Model Satisfaction Leaderboard</span>
+                    <button onclick="window.dashboardAPI.refreshSatisfaction()" class="btn-apply"
+                        style="margin-top:0;">↻ Refresh</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Model</th>
+                            <th>👍 Positive</th>
+                            <th>👎 Negative</th>
+                            <th>Total</th>
+                            <th>CSAT %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="csatModelLeaderboard">
+                        <tr>
+                            <td colspan="6" class="loading">Loading satisfaction data...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Recent Feedback Feed -->
+            <div class="section">
+                <div class="section-title">💬 Phản hồi gần đây</div>
+                <div id="csatRecentFeedback" style="max-height: 500px; overflow-y: auto;">
+                    <div class="loading">Loading feedback...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- PRICES TAB                                         -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="pricesTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">💸</span>
+                <span class="insight-text">Quản lý bảng giá model LLM & So sánh chi phí mô phỏng token (Cơ sở dữ liệu
+                    mw_prices).</span>
+            </div>
+
+            <!-- Cost Comparison Panel -->
+            <div class="section" style="margin-bottom: 20px;">
+                <div class="section-title">📊 So Sánh Chi Phí Mô Phỏng (Cost Comparison)</div>
+                <p style="font-size: 14px; color: #94a3b8; margin-bottom: 15px;">
+                    Mô phỏng chi phí 1 lượt chat bằng cách nhập số lượng token đầu vào (Input) và đầu ra (Output) dự
+                    kiến.
+                </p>
+                <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: flex-end; flex-wrap: wrap;">
+                    <div class="form-group" style="margin-bottom: 0; min-width: 150px;">
+                        <label style="font-size: 12px; margin-bottom: 4px; display: block;">Input Tokens</label>
+                        <input type="number" id="simInputTokens" value="10000" min="0"
+                            onchange="window.dashboardAPI.recalcComparison()"
+                            style="padding: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; border-radius: 4px; width: 100%;">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0; min-width: 150px;">
+                        <label style="font-size: 12px; margin-bottom: 4px; display: block;">Output Tokens</label>
+                        <input type="number" id="simOutputTokens" value="2000" min="0"
+                            onchange="window.dashboardAPI.recalcComparison()"
+                            style="padding: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; border-radius: 4px; width: 100%;">
+                    </div>
+                    <button onclick="window.dashboardAPI.resetSimulator()" class="btn-secondary"
+                        style="height: 38px;">Mặc định</button>
+                </div>
+
+                <div id="comparisonList" style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
+                    <!-- Comparison bars will be rendered dynamically here -->
+                </div>
+            </div>
+
+            <!-- Pricing CRUD Table -->
+            <div class="section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div class="section-title" style="margin-bottom: 0;">📋 Bảng Giá Chi Tiết</div>
+                    <button onclick="window.dashboardAPI.showAddPriceModal()" class="btn-apply" style="margin-top:0;">➕
+                        Thêm Bảng Giá</button>
+                </div>
+
+                <div style="margin-bottom: 15px; font-size: 14px; color: #94a3b8;">
+                    Tổng số model đã cấu hình: <span id="totalPricesCount">-</span>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tên Model</th>
+                            <th>Giá Input (1M Tokens)</th>
+                            <th>Giá Output (1M Tokens)</th>
+                            <th>Giá Sinh Ảnh</th>
+                            <th>Ghi chú</th>
+                            <th style="text-align: right; width: 120px;">Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pricesTable">
+                        <tr>
+                            <td colspan="6" class="loading">Đang tải bảng giá...</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 

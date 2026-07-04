@@ -23,7 +23,8 @@ from api.embeddings import create_embeddings
 from api.rerank import rerank
 from api.media import serve_media
 from api.docling import docling_proxy
-from api.admin import get_usage, reset_quota, reconcile_usage
+from api.admin import get_usage, reset_quota, reconcile_usage, stream_active_users, list_pending, force_remove_pending
+from api.analytics import get_chat_analytics, get_satisfaction_analytics
 from api.summary import get_summary
 from api.summary_v2 import get_summary_v2
 from api.stream import stream_audit
@@ -181,6 +182,8 @@ app.add_api_route("/docling-proxy", docling_proxy, methods=["GET", "POST", "PUT"
 app.add_api_route("/admin/usage", get_usage, methods=["GET"])
 app.add_api_route("/admin/reset", reset_quota, methods=["POST"])
 app.add_api_route("/admin/reconcile", reconcile_usage, methods=["POST"])
+app.add_api_route("/v1/_mw/admin/analytics/chat", get_chat_analytics, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/analytics/satisfaction", get_satisfaction_analytics, methods=["GET"])
 
 # Summary & Stream endpoints
 app.add_api_route("/v1/_mw/summary", get_summary_v2, methods=["GET"])  # Enhanced version with time range
