@@ -8,7 +8,6 @@ import { loadPrices } from './prices.js';
 import { refreshAnalytics } from './analytics.js';
 import { fetchData as refreshGroups } from './group_analytics.js';
 import { refreshSatisfaction } from './satisfaction.js';
-import { loadKnowledge } from './knowledge.js';
 import { accessEventSource } from './auth.js';
 
 // FIX: Pass event explicitly
@@ -43,7 +42,5 @@ export function switchTab(e, tabName) {
         refreshGroups();
     } else if (tabName === 'satisfaction') {
         refreshSatisfaction();
-    } else if (tabName === 'knowledge') {
-        loadKnowledge();
     }
 }
