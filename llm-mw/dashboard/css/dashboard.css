@@ -313,6 +313,46 @@ body {
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
+.metric-card.interactive {
+    cursor: pointer;
+}
+
+.metric-card.interactive:hover {
+    border-color: #6366f1;
+    background: #1f2937 !important;
+}
+
+.pulse-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background-color: #10b981;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    animation: pulse 1.6s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    }
+
+    70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+    }
+
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    }
+}
+
+
+
 .metric-card.accent-green {
     border-left-color: #10b981;
 }
@@ -1520,6 +1560,7 @@ input:checked+.slider:before {
     color: #94a3b8;
     font-weight: 600;
 }
+
 
 /* ─── Scrollable Enhancements ────────────────────────────── */
 .table-container {

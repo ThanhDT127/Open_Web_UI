@@ -37,6 +37,7 @@ from api.user_admin import (
     rotate_user_key, disable_user, enable_user, get_admin_audit,
     delete_user_endpoint, reconciliation_report, map_openwebui_user, get_users_sync_status, sync_user_now
 )
+from api.price_admin import list_prices, update_price, delete_price
 from api.dashboard_login import dashboard_login, dashboard_logout
 from api.auth_check import get_auth_check
 from api.auth_test import auth_test
@@ -179,6 +180,13 @@ app.add_api_route("/docling-proxy/{path:path}", docling_proxy, methods=["GET", "
 app.add_api_route("/docling-proxy", docling_proxy, methods=["GET", "POST", "PUT", "DELETE"])
 
 # Admin endpoints
+app.add_api_route("/v1/_mw/admin/prices", list_prices, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/prices", update_price, methods=["POST"])
+app.add_api_route("/v1/_mw/admin/prices/{model_name}", delete_price, methods=["DELETE"])
+app.add_api_route("/v1/_mw/admin/alerts/config", get_alert_config, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/alerts/config", update_alert_config, methods=["POST"])
+app.add_api_route("/v1/_mw/admin/alerts/test-email", test_alert_email, methods=["POST"])
+app.add_api_route("/v1/_mw/admin/active-users/stream", stream_active_users, methods=["GET"])
 app.add_api_route("/admin/usage", get_usage, methods=["GET"])
 app.add_api_route("/admin/reset", reset_quota, methods=["POST"])
 app.add_api_route("/admin/reconcile", reconcile_usage, methods=["POST"])
@@ -206,6 +214,8 @@ app.add_api_route("/v1/_mw/rag-health/retrieval", get_rag_retrieval, methods=["G
 app.add_api_route("/v1/_mw/rag-health/storage", get_rag_storage, methods=["GET"])
 
 # User management endpoints (admin only)
+app.add_api_route("/v1/_mw/admin/pending", list_pending, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/pending/{request_id}", force_remove_pending, methods=["DELETE"])
 app.add_api_route("/v1/_mw/admin/users/sync-status", get_users_sync_status, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/users/sync-now", sync_user_now, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/users", list_users, methods=["GET"])

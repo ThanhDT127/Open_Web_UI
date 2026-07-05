@@ -156,10 +156,15 @@
                     <div class="metric-value" id="metricUsageMissing">-</div>
                     <div class="metric-detail">OK nhưng thiếu tokens (BUG)</div>
                 </div>
-                <div class="metric-card">
+                <div class="metric-card interactive" onclick="window.dashboardAPI.showPendingModal()">
                     <div class="metric-label">⏳ Pending</div>
                     <div class="metric-value" id="metricPending">-</div>
-                    <div class="metric-detail">Đang chờ xử lý</div>
+                    <div class="metric-detail">Đang chờ xử lý (Xem chi tiết)</div>
+                </div>
+                <div class="metric-card" id="cardActiveUsers">
+                    <div class="metric-label"><span class="pulse-dot"></span> Active Users</div>
+                    <div class="metric-value" id="metricActiveUsers">-</div>
+                    <div class="metric-detail">Hoạt động (Real-time)</div>
                 </div>
             </div>
 
@@ -341,6 +346,49 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════════ -->
+        <!-- GROUP ANALYTICS TAB                                -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="groupsTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">🏢</span>
+                <span class="insight-text">Phân bổ chi phí và thống kê theo phòng ban (Primary Group) — Nhóm được gán tự
+                    động dựa trên group cũ nhất của user bên Open WebUI.</span>
+            </div>
+
+            <div class="section-controls" style="margin-top: 15px;">
+                <div class="section-title">🏆 Top Spenders by Department</div>
+                <button class="btn-apply" style="margin-top:0;"
+                    onclick="window.groupAnalyticsAPI && window.groupAnalyticsAPI.fetchData()">↻ Refresh</button>
+            </div>
+            <div class="chart-table-row">
+                <div class="chart-container small">
+                    <div class="chart-title">🍩 Cost by Department</div>
+                    <canvas id="groupCostChart"></canvas>
+                </div>
+                <div class="table-container" style="flex:2">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID Phòng Ban</th>
+                                <th>Tên Phòng Ban</th>
+                                <th>Requests</th>
+                                <th>Tokens</th>
+                                <th>Chi phí (USD)</th>
+                                <th>Avg Latency (ms)</th>
+                                <th>Model ưa thích (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groupAnalyticsTable">
+                            <tr>
+                                <td colspan="7" class="loading">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
         <!-- ACCESS TAB                                         -->
         <!-- ═══════════════════════════════════════════════════ -->
         <div id="accessTab" class="tab-content">
@@ -456,6 +504,46 @@
             </div>
         </div>
 
+        <!-- Pending Requests Details Modal -->
+        <div id="pendingModal" class="modal-overlay" style="display:none">
+            <div class="modal-content" style="max-width: 800px; width: 90%;">
+                <div class="modal-header">
+                    <span id="pendingModalTitle">⏳ Active Pending Requests</span>
+                    <button class="modal-close" onclick="window.dashboardAPI.closePendingModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div style="text-align: right; margin-bottom: 10px;">
+                        <button class="btn btn-secondary" onclick="window.dashboardAPI.refreshPendingList()">↻
+                            Refresh</button>
+                    </div>
+                    <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Request ID</th>
+                                    <th>User ID</th>
+                                    <th>Model</th>
+                                    <th>Endpoint</th>
+                                    <th>Started</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pendingTableBody">
+                                <tr>
+                                    <td colspan="6" style="text-align:center; padding: 20px; color: #64748b;">No active
+                                        pending requests.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer"
+                    style="text-align: right; padding-top: 15px; border-top: 1px solid #1e293b; margin-top: 15px;">
+                    <button class="btn btn-secondary" onclick="window.dashboardAPI.closePendingModal()">Close</button>
+                </div>
+            </div>
+        </div>
+
         <!-- User Create/Edit Modal -->
         <div id="userModal" class="modal-overlay" style="display:none">
             <div class="modal-content">
@@ -545,6 +633,45 @@
                 <div class="modal-footer">
                     <button class="btn btn-primary"
                         onclick="document.getElementById('subkeyModal').style.display='none'">I've saved it</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Price Create/Edit Modal -->
+        <div id="priceModal" class="modal-overlay" style="display:none">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <span id="priceModalTitle">Thêm Bảng Giá Model</span>
+                    <button class="modal-close" onclick="window.dashboardAPI.closePriceModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Tên Model (model_name)</label>
+                        <input type="text" id="modalPriceModelName" placeholder="e.g. gpt-4o">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Giá Input (USD / 1M Tokens)</label>
+                            <input type="number" id="modalPriceInput" step="0.0001" min="0" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label>Giá Output (USD / 1M Tokens)</label>
+                            <input type="number" id="modalPriceOutput" step="0.0001" min="0" value="0">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Giá Sinh Ảnh (per_image_usd - Nhập số hoặc để trống)</label>
+                        <input type="number" id="modalPriceImage" step="0.0001" min="0" placeholder="e.g. 0.04">
+                    </div>
+                    <div class="form-group">
+                        <label>Ghi chú (notes)</label>
+                        <input type="text" id="modalPriceNotes" placeholder="e.g. Bảng giá ưu đãi">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="window.dashboardAPI.closePriceModal()">Hủy</button>
+                    <button class="btn btn-primary" id="modalPriceSaveBtn"
+                        onclick="window.dashboardAPI.savePrice()">Lưu</button>
                 </div>
             </div>
         </div>
@@ -1158,6 +1285,10 @@
                             <input type="text" name="from_email" id="smtpFrom" placeholder="noreply@example.com">
                         </div>
                         <div class="form-group">
+                            <label>Admin Alert Emails (comma-separated)</label>
+                            <input type="text" id="adminEmails" placeholder="admin1@example.com, admin2@example.com">
+                        </div>
+                        <div class="form-group">
                             <label>Password Env Var</label>
                             <input type="text" name="password_env" id="smtpPassEnv" placeholder="SMTP_PASSWORD">
                         </div>
@@ -1182,12 +1313,8 @@
                     <div class="section-title">📊 Quota Thresholds (%)</div>
                     <form id="quotaThresholdForm" class="settings-form">
                         <div class="form-group">
-                            <label>Info Threshold (%)</label>
-                            <input type="number" id="thresholdInfo" value="80">
-                        </div>
-                        <div class="form-group">
                             <label>Warning Threshold (%)</label>
-                            <input type="number" id="thresholdWarning" value="95">
+                            <input type="number" id="thresholdWarning" value="80">
                         </div>
                         <div class="form-group">
                             <label>Critical Threshold (%)</label>
@@ -1211,6 +1338,18 @@
                         <div class="form-group">
                             <label>Gemini Budget ($)</label>
                             <input type="number" step="0.01" id="budgetGemini">
+                        </div>
+                        <div class="form-group">
+                            <label>xAI (Grok) Budget ($)</label>
+                            <input type="number" step="0.01" id="budgetXai">
+                        </div>
+                        <div class="form-group">
+                            <label>Anthropic Budget ($)</label>
+                            <input type="number" step="0.01" id="budgetAnthropic">
+                        </div>
+                        <div class="form-group">
+                            <label>DeepSeek Budget ($)</label>
+                            <input type="number" step="0.01" id="budgetDeepseek">
                         </div>
                         <div class="form-actions">
                             <button type="button" onclick="window.settingsAPI.saveBudgets()" class="btn-apply">Save
@@ -1276,7 +1415,14 @@
             resetLogFilters: () => console.warn('Dashboard still loading...'),
             loadMoreLogs: () => console.warn('Dashboard still loading...'),
             exportLogsToExcel: () => console.warn('Dashboard still loading...'),
-            refreshUsage: () => console.warn('Dashboard still loading...')
+            refreshUsage: () => console.warn('Dashboard still loading...'),
+            recalcComparison: () => console.warn('Dashboard still loading...'),
+            resetSimulator: () => console.warn('Dashboard still loading...'),
+            showAddPriceModal: () => console.warn('Dashboard still loading...'),
+            closePriceModal: () => console.warn('Dashboard still loading...'),
+            savePrice: () => console.warn('Dashboard still loading...'),
+            editPrice: () => console.warn('Dashboard still loading...'),
+            deletePrice: () => console.warn('Dashboard still loading...')
         };
     </script>
 

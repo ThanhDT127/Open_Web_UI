@@ -12,13 +12,23 @@ import { initGroupAnalyticsChart, fetchData as refreshGroups } from './group_ana
 import { refreshSatisfaction } from './satisfaction.js';
 import { updateStatus } from './utils.js';
 import {
-	showCreateUserModal, showEditUserModal, closeUserModal, saveUser,
-	deleteUser, rotateUserKey, toggleUserActive
+	loadUsers, showCreateUserModal, showEditUserModal, closeUserModal, saveUser,
+	deleteUser, rotateUserKey, toggleUserActive, syncUserNow
 } from './users.js';
 import {
 	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, testSMTP
 } from './settings.js';
 import { applyRagFilters, resetRagFilters } from './raghealth.js';
+import {
+	recalcComparison, resetSimulator, showAddPriceModal, showEditPriceModal,
+	closePriceModal, savePrice, deletePrice
+} from './prices.js';
+import {
+	showPendingModal, closePendingModal, refreshPendingList, reconcilePending, forceClearPending
+} from './pending.js';
+import {
+	connectActiveUsersStream, disconnectActiveUsersStream
+} from './active_users.js';
 
 // Expose a stable API for inline HTML handlers (window.dashboardAPI.*)
 export async function initAPI() {

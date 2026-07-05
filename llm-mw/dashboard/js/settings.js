@@ -24,19 +24,30 @@ export async function loadSettings() {
         document.getElementById('smtpFrom').value = smtp.from_email || '';
         document.getElementById('smtpPassEnv').value = smtp.password_env || 'SMTP_PASSWORD';
         document.getElementById('smtpTls').checked = smtp.use_tls !== false;
+        
+        const adminAlerts = config.admin_alerts || {};
+        document.getElementById('adminEmails').value = (adminAlerts.emails || []).join(', ');
 
         // 2. Populate Quota Thresholds
-        const adminAlerts = config.admin_alerts || {};
+        // 2. Populate Quota Thresholds
         const userAlerts = config.user_alerts || {};
-        const thresholds = adminAlerts.per_user_quota?.thresholds || [80, 95, 100];
-        document.getElementById('thresholdInfo').value = thresholds[0] || 80;
-        document.getElementById('thresholdWarning').value = thresholds[1] || 95;
-        document.getElementById('thresholdCritical').value = thresholds[2] || 100;
+        
+        // Take the last two thresholds from the existing array (or default to 80, 100)
+        let thresholds = adminAlerts.per_user_quota?.thresholds || [80, 100];
+        if (thresholds.length >= 3) {
+            thresholds = [thresholds[thresholds.length - 2], thresholds[thresholds.length - 1]];
+        }
+        
+        document.getElementById('thresholdWarning').value = thresholds[0] || 80;
+        document.getElementById('thresholdCritical').value = thresholds[1] || 100;
 
         // 3. Populate API Budgets
         const budgets = adminAlerts.api_budgets || {};
         document.getElementById('budgetOpenAI').value = budgets.openai?.budget_usd || 0;
         document.getElementById('budgetGemini').value = budgets.gemini?.budget_usd || 0;
+        document.getElementById('budgetXai').value = budgets.xai?.budget_usd || 0;
+        document.getElementById('budgetAnthropic').value = budgets.anthropic?.budget_usd || 0;
+        document.getElementById('budgetDeepseek').value = budgets.deepseek?.budget_usd || 0;
 
         // 4. Populate Notification Toggles
         document.getElementById('toggleUserEmail').checked = userAlerts.send_email || false;
@@ -78,6 +89,9 @@ async function _savePartialConfig(partialData, sectionName) {
 }
 
 export async function saveSMTP() {
+    const emailsStr = document.getElementById('adminEmails').value;
+    const emails = emailsStr.split(',').map(e => e.trim()).filter(e => e);
+
     const data = {
         smtp: {
             enabled: document.getElementById('smtpEnabled').checked,
@@ -87,27 +101,36 @@ export async function saveSMTP() {
             from_email: document.getElementById('smtpFrom').value.trim(),
             password_env: document.getElementById('smtpPassEnv').value.trim() || 'SMTP_PASSWORD',
             use_tls: document.getElementById('smtpTls').checked
+        },
+        admin_alerts: {
+            emails: emails
         }
     };
     await _savePartialConfig(data, 'SMTP settings');
 }
 
 export async function saveQuotaThresholds() {
-    const info = parseInt(document.getElementById('thresholdInfo').value) || 80;
-    const warn = parseInt(document.getElementById('thresholdWarning').value) || 95;
+    const warn = parseInt(document.getElementById('thresholdWarning').value) || 80;
     const crit = parseInt(document.getElementById('thresholdCritical').value) || 100;
 
     const data = {
         admin_alerts: {
             per_user_quota: {
-                thresholds: [info, warn, crit]
+                thresholds: [warn, crit]
+            },
+            api_budgets: {
+                openai: { thresholds: [warn, crit] },
+                gemini: { thresholds: [warn, crit] },
+                xai: { thresholds: [warn, crit] },
+                anthropic: { thresholds: [warn, crit] },
+                deepseek: { thresholds: [warn, crit] }
             }
         },
         user_alerts: {
-            thresholds: [info, warn, crit]
+            thresholds: [warn, crit]
         }
     };
-    await _savePartialConfig(data, 'Quota thresholds');
+    await _savePartialConfig(data, 'Global Quota thresholds');
 }
 
 export async function saveBudgets() {
@@ -115,7 +138,10 @@ export async function saveBudgets() {
         admin_alerts: {
             api_budgets: {
                 openai: { budget_usd: parseFloat(document.getElementById('budgetOpenAI').value) || 0 },
-                gemini: { budget_usd: parseFloat(document.getElementById('budgetGemini').value) || 0 }
+                gemini: { budget_usd: parseFloat(document.getElementById('budgetGemini').value) || 0 },
+                xai: { budget_usd: parseFloat(document.getElementById('budgetXai').value) || 0 },
+                anthropic: { budget_usd: parseFloat(document.getElementById('budgetAnthropic').value) || 0 },
+                deepseek: { budget_usd: parseFloat(document.getElementById('budgetDeepseek').value) || 0 }
             }
         }
     };
