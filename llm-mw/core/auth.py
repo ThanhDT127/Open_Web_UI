@@ -130,9 +130,9 @@ def _find_user_db(subkey: str) -> Optional[Dict[str, Any]]:
             SELECT user_id, role, openwebui_user_id, subkey_hash, active,
                    allowed_models, used_tokens, used_cost_usd, quota, alerts_sent
             FROM mw_users
-            WHERE subkey_hash = %s
+            WHERE subkey_hash = %s OR subkey_hash = %s
             LIMIT 1
-        """, (subkey_hash_val,))
+        """, (subkey_hash_val, subkey))
         row = cur.fetchone()
         cur.close()
 
@@ -188,7 +188,7 @@ def _find_user_file(subkey: str) -> Optional[Dict[str, Any]]:
 
     for u in users:
         user_hash = u.get("subkey_hash")
-        if user_hash == subkey_hash_val:
+        if user_hash == subkey_hash_val or user_hash == subkey:
             matched_user = u
             break
         elif not user_hash and u.get("subkey") == subkey:
@@ -467,23 +467,40 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
             "used_image_requests": 0
         }
 
+        # Resolve openwebui UUID so Path A (service-key) auth works immediately
+        openwebui_uuid = None
+        try:
+            with db_ow_conn() as conn:
+                cur = conn.cursor()
+                cur.execute('SELECT id FROM "user" WHERE email = %s LIMIT 1', (user_id,))
+                uuid_row = cur.fetchone()
+                cur.close()
+                if uuid_row:
+                    openwebui_uuid = uuid_row[0]
+        except Exception as e:
+            logger.warning("lazy_provision: could not resolve openwebui UUID for %s: %s", user_id, str(e))
+
         try:
             with db_conn() as conn:
                 cur = conn.cursor()
+                # NOTE: 'subkey' column was dropped in security migration — use subkey_hash only
                 cur.execute("""
-                    INSERT INTO mw_users (user_id, subkey, subkey_hash, active, allowed_models, quota)
+                    INSERT INTO mw_users (user_id, subkey_hash, openwebui_user_id, active, allowed_models, quota)
                     VALUES (%s, %s, %s, true, '["*"]'::jsonb, %s)
                     ON CONFLICT (user_id) DO UPDATE SET
-                        subkey = COALESCE(mw_users.subkey, EXCLUDED.subkey),
                         subkey_hash = COALESCE(mw_users.subkey_hash, EXCLUDED.subkey_hash),
+                        openwebui_user_id = COALESCE(mw_users.openwebui_user_id, EXCLUDED.openwebui_user_id),
                         active = true
-                    RETURNING user_id, subkey, subkey_hash, active, allowed_models, quota
-                """, (user_id, subkey, subkey_hash, json.dumps(quota)))
+                    RETURNING user_id, subkey_hash, openwebui_user_id, active, allowed_models, quota
+                """, (user_id, subkey_hash, openwebui_uuid, json.dumps(quota)))
                 row = cur.fetchone()
                 cur.close()
-                
+
             if row:
-                logger.info("lazy_provision: successfully provisioned user %s", user_id)
+                logger.info(
+                    "lazy_provision: successfully provisioned user %s (openwebui_uuid=%s)",
+                    user_id, openwebui_uuid
+                )
                 # Also save to JSON file backup
                 try:
                     users = _load_users_file()
@@ -491,7 +508,6 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
                         new_user = {
                             "user_id": user_id,
                             "role": "user",
-                            "subkey": subkey,
                             "subkey_hash": subkey_hash,
                             "active": True,
                             "allowed_models": ["*"],
@@ -506,8 +522,9 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
 
                 return {
                     "user_id": row[0],
-                    "subkey": row[1],
-                    "subkey_hash": row[2],
+                    "subkey": None,
+                    "subkey_hash": row[1],
+                    "openwebui_user_id": row[2],
                     "active": row[3],
                     "allowed_models": row[4] if row[4] else ["*"],
                     "used_tokens": 0,
