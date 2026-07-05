@@ -1559,6 +1559,8 @@ input:checked+.slider:before {
     color: #94a3b8;
     font-weight: 600;
 }
+
+
 /* ─── Scrollable Enhancements ────────────────────────────── */
 .table-container {
     max-height: 400px;

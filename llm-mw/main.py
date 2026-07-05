@@ -38,7 +38,6 @@ from api.user_admin import (
     delete_user_endpoint, get_users_sync_status, sync_user_now
 )
 from api.price_admin import list_prices, update_price, delete_price
-from api.export_report import export_report
 from api.dashboard_login import dashboard_login, dashboard_logout
 from api.auth_check import get_auth_check
 from api.auth_test import auth_test
@@ -184,7 +183,10 @@ app.add_api_route("/docling-proxy", docling_proxy, methods=["GET", "POST", "PUT"
 app.add_api_route("/v1/_mw/admin/prices", list_prices, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/prices", update_price, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/prices/{model_name}", delete_price, methods=["DELETE"])
-app.add_api_route("/v1/_mw/admin/active-users/stream", stream_live_metrics, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/alerts/config", get_alert_config, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/alerts/config", update_alert_config, methods=["POST"])
+app.add_api_route("/v1/_mw/admin/alerts/test-email", test_alert_email, methods=["POST"])
+app.add_api_route("/v1/_mw/admin/active-users/stream", stream_active_users, methods=["GET"])
 app.add_api_route("/admin/usage", get_usage, methods=["GET"])
 app.add_api_route("/admin/reset", reset_quota, methods=["POST"])
 app.add_api_route("/admin/reconcile", reconcile_usage, methods=["POST"])
@@ -225,6 +227,8 @@ app.add_api_route("/v1/_mw/knowledge-analytics/kb-value", get_knowledge_kb_value
 app.add_api_route("/v1/_mw/knowledge-analytics/governance", get_knowledge_governance, methods=["GET"])
 
 # User management endpoints (admin only)
+app.add_api_route("/v1/_mw/admin/pending", list_pending, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/pending/{request_id}", force_remove_pending, methods=["DELETE"])
 app.add_api_route("/v1/_mw/admin/users/sync-status", get_users_sync_status, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/users/sync-now", sync_user_now, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/users", list_users, methods=["GET"])
