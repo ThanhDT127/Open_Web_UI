@@ -17,6 +17,8 @@ import { updateStatus } from './utils.js';
 import {
 	loadUsers, showCreateUserModal, showEditUserModal, closeUserModal, saveUser,
 	deleteUser, rotateUserKey, toggleUserActive, syncUserNow
+	loadUsers, showCreateUserModal, showEditUserModal, closeUserModal, saveUser,
+	deleteUser, rotateUserKey, toggleUserActive, syncUserNow
 } from './users.js';
 import {
 	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, saveDefaultQuota, testSMTP
@@ -32,10 +34,6 @@ import {
 import {
 	connectActiveUsersStream, disconnectActiveUsersStream
 } from './active_users.js';
-import {
-	openExportModal, closeExportModal, downloadReport
-} from './export.js';
-import { applyKnowledgeFilters, resetKnowledgeFilters } from './knowledge.js';
 
 // Expose a stable API for inline HTML handlers (window.dashboardAPI.*)
 export async function initAPI() {
