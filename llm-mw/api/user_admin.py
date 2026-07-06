@@ -94,6 +94,7 @@ class UpdateUserRequest(BaseModel):
     limit_tokens: Optional[int] = None
     limit_cost_usd: Optional[float] = None
     limit_image_requests: Optional[int] = None
+    period: Optional[str] = None
 
 
 class MapOpenWebUIUserRequest(BaseModel):
@@ -217,6 +218,7 @@ async def update_user(request: Request, user_id: str):
             "limit_tokens": req.limit_tokens,
             "limit_cost_usd": req.limit_cost_usd,
             "limit_image_requests": req.limit_image_requests,
+            "period": req.period,
         }.items() if value is not None
     }
     changes = {}

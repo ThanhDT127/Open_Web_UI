@@ -176,6 +176,7 @@ export async function saveUser() {
                 limit_cost_usd: parseFloat(document.getElementById('modalLimitCost').value) || 0,
                 limit_tokens: parseInt(document.getElementById('modalLimitTokens').value) || 0,
                 limit_image_requests: parseInt(document.getElementById('modalLimitImages').value) || 0,
+                period: document.getElementById('modalPeriod').value,
             };
 
             const res = await mwFetch(`/v1/_mw/admin/users/${encodeURIComponent(_editingUserId)}`, {
