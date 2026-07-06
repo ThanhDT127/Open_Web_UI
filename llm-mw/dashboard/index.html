@@ -33,6 +33,11 @@
                 <div class="status-dot" id="statusDot"></div>
                 <span class="status-message" id="statusMessage">Authenticated ✓</span>
             </div>
+            <!-- Export Report -->
+            <button class="btn-export" style="margin-left: auto;" onclick="window.dashboardAPI.openExportModal()"
+                title="Export a full dashboard report">
+                📥 Export Report
+            </button>
             <!-- Notification Bell -->
             <div class="notif-bell-wrapper">
                 <button class="notif-bell" id="notifBell" onclick="window.notifAPI.toggle()" title="Notifications">
@@ -672,6 +677,43 @@
                     <button class="btn btn-secondary" onclick="window.dashboardAPI.closePriceModal()">Hủy</button>
                     <button class="btn btn-primary" id="modalPriceSaveBtn"
                         onclick="window.dashboardAPI.savePrice()">Lưu</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Export Report Modal -->
+        <div id="exportModal" class="modal-overlay" style="display:none">
+            <div class="modal-content modal-sm">
+                <div class="modal-header">
+                    <span>📥 Export Report</span>
+                    <button class="modal-close" onclick="window.dashboardAPI.closeExportModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Format</label>
+                        <div style="display:flex; gap: 16px;">
+                            <label style="display:flex; align-items:center; gap:6px; font-weight:normal; text-transform:none;">
+                                <input type="radio" name="exportFormat" id="exportFormatXlsx" value="xlsx" checked
+                                    style="width:auto; padding:0;">
+                                Excel (.xlsx) — full 7-sheet report
+                            </label>
+                            <label style="display:flex; align-items:center; gap:6px; font-weight:normal; text-transform:none;">
+                                <input type="radio" name="exportFormat" id="exportFormatCsv" value="csv"
+                                    style="width:auto; padding:0;">
+                                CSV — raw audit log only
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Time Range</label>
+                        <div id="exportTimeRangeDisplay" style="color:#94a3b8; font-size: 13px;">
+                            Uses the dashboard's currently selected time range
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="window.dashboardAPI.closeExportModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="window.dashboardAPI.downloadReport()">Download</button>
                 </div>
             </div>
         </div>

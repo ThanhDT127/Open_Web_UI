@@ -1296,7 +1296,6 @@ td.cost {
 /* ─── Notification Bell ──────────────────────────────────── */
 .notif-bell-wrapper {
     position: relative;
-    margin-left: auto;
 }
 
 .notif-bell {

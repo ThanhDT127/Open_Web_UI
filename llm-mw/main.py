@@ -38,6 +38,7 @@ from api.user_admin import (
     delete_user_endpoint, reconciliation_report, map_openwebui_user, get_users_sync_status, sync_user_now
 )
 from api.price_admin import list_prices, update_price, delete_price
+from api.export_report import export_report
 from api.dashboard_login import dashboard_login, dashboard_logout
 from api.auth_check import get_auth_check
 from api.auth_test import auth_test
@@ -207,6 +208,9 @@ app.add_api_route("/v1/_mw/admin/analytics/groups/{group_id}/users", get_group_u
 
 # Audit log query endpoint (Logs tab)
 app.add_api_route("/v1/_mw/audit/query", parse_audit_filters, methods=["GET"])
+
+# Export report endpoint (Excel multi-sheet / CSV streaming)
+app.add_api_route("/v1/_mw/export/report", export_report, methods=["GET"])
 
 # RAG Health endpoints (RAG Health tab)
 app.add_api_route("/v1/_mw/rag-health/ingestion", get_rag_ingestion, methods=["GET"])

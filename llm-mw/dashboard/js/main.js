@@ -29,6 +29,9 @@ import {
 import {
 	connectActiveUsersStream, disconnectActiveUsersStream
 } from './active_users.js';
+import {
+	openExportModal, closeExportModal, downloadReport
+} from './export.js';
 
 // Expose a stable API for inline HTML handlers (window.dashboardAPI.*)
 export async function initAPI() {
@@ -68,7 +71,11 @@ export async function initAPI() {
 		closePendingModal,
 		refreshPendingList,
 		reconcilePending,
-		forceClearPending
+		forceClearPending,
+		// Export report modal
+		openExportModal,
+		closeExportModal,
+		downloadReport
 	};
 
 
