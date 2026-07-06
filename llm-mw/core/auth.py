@@ -481,18 +481,19 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
             logger.warning("lazy_provision: could not resolve openwebui UUID for %s: %s", user_id, str(e))
 
         try:
+            mw_role = "admin" if role == "admin" else "user"
             with db_conn() as conn:
                 cur = conn.cursor()
                 # NOTE: 'subkey' column was dropped in security migration — use subkey_hash only
                 cur.execute("""
-                    INSERT INTO mw_users (user_id, subkey_hash, openwebui_user_id, active, allowed_models, quota)
-                    VALUES (%s, %s, %s, true, '["*"]'::jsonb, %s)
+                    INSERT INTO mw_users (user_id, subkey_hash, openwebui_user_id, active, role, allowed_models, quota)
+                    VALUES (%s, %s, %s, true, %s, '["*"]'::jsonb, %s)
                     ON CONFLICT (user_id) DO UPDATE SET
                         subkey_hash = COALESCE(mw_users.subkey_hash, EXCLUDED.subkey_hash),
                         openwebui_user_id = COALESCE(mw_users.openwebui_user_id, EXCLUDED.openwebui_user_id),
                         active = true
                     RETURNING user_id, subkey_hash, openwebui_user_id, active, allowed_models, quota
-                """, (user_id, subkey_hash, openwebui_uuid, json.dumps(quota)))
+                """, (user_id, subkey_hash, openwebui_uuid, mw_role, json.dumps(quota)))
                 row = cur.fetchone()
                 cur.close()
 
@@ -507,7 +508,7 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
                     if not any(u.get("user_id") == user_id for u in users):
                         new_user = {
                             "user_id": user_id,
-                            "role": "user",
+                            "role": mw_role,
                             "subkey_hash": subkey_hash,
                             "active": True,
                             "allowed_models": ["*"],

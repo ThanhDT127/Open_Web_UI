@@ -488,13 +488,14 @@ def get_users_sync_status(request: Request):
     try:
         with db_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT user_id, active, subkey_hash FROM mw_users")
+            cur.execute("SELECT user_id, active, subkey_hash, role FROM mw_users")
             rows = cur.fetchall()
             for r in rows:
                 mw_users_list.append({
                     "user_id": r[0],
                     "active": r[1],
-                    "subkey": r[2]
+                    "subkey": r[2],
+                    "role": r[3]
                 })
             cur.close()
     except Exception as e:
@@ -515,6 +516,7 @@ def get_users_sync_status(request: Request):
         name = ow_u["name"] if ow_u else email.split("@")[0]
         ow_role = ow_u["role"] if ow_u else None
         mw_active = mw_u["active"] if mw_u else None
+        mw_role_val = mw_u.get("role", "user") if mw_u else "user"
         subkey = mw_u["subkey"] if mw_u else None
 
         if ow_u and not mw_u:
@@ -527,7 +529,9 @@ def get_users_sync_status(request: Request):
         else:
             # Exists in both
             ow_is_active = (ow_role in ("user", "admin"))
-            if ow_is_active == mw_active:
+            expected_mw_role = "admin" if ow_role == "admin" else "user"
+            
+            if ow_is_active == mw_active and mw_role_val == expected_mw_role:
                 status = "synced"
             else:
                 status = "mismatch"
@@ -594,6 +598,7 @@ async def sync_user_now(request: Request):
     logger.info("sync_user_now: user=%s ow_role=%s openwebui_uuid=%s", user_id, role, openwebui_uuid)
 
     is_active = role in ("user", "admin")
+    mw_role = "admin" if role == "admin" else "user"
     changes = {}
 
     try:
@@ -602,14 +607,15 @@ async def sync_user_now(request: Request):
             # Single UPSERT: create if new, or update active + UUID if already exists.
             # Always overwrites openwebui_user_id so a re-sync also fixes a missing UUID.
             cur.execute("""
-                INSERT INTO mw_users (user_id, openwebui_user_id, active, updated_at)
-                VALUES (%s, %s, %s, now())
+                INSERT INTO mw_users (user_id, openwebui_user_id, active, role, updated_at)
+                VALUES (%s, %s, %s, %s, now())
                 ON CONFLICT (user_id) DO UPDATE SET
                     openwebui_user_id = EXCLUDED.openwebui_user_id,
                     active            = EXCLUDED.active,
+                    role              = EXCLUDED.role,
                     updated_at        = now()
                 RETURNING (xmax = 0) AS inserted
-            """, (user_id, openwebui_uuid, is_active))
+            """, (user_id, openwebui_uuid, is_active, mw_role))
             result_row = cur.fetchone()
             cur.close()
 
@@ -619,7 +625,7 @@ async def sync_user_now(request: Request):
         if openwebui_uuid:
             changes["openwebui_user_id"] = str(openwebui_uuid)
 
-        # Sync active flag to JSON backup (best-effort)
+        # Sync active flag and role to JSON backup (best-effort)
         try:
             from core.auth import _load_users_file, _save_users_file
             users = _load_users_file()
@@ -627,10 +633,11 @@ async def sync_user_now(request: Request):
             for u in users:
                 if u.get("user_id") == user_id:
                     u["active"] = is_active
+                    u["role"] = mw_role
                     found = True
                     break
             if not found:
-                users.append({"user_id": user_id, "active": is_active})
+                users.append({"user_id": user_id, "active": is_active, "role": mw_role})
             _save_users_file(users)
         except Exception:
             pass
