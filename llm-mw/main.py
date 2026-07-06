@@ -38,6 +38,7 @@ from api.user_admin import (
     delete_user_endpoint, get_users_sync_status, sync_user_now
 )
 from api.price_admin import list_prices, update_price, delete_price
+from api.export_report import export_report
 from api.dashboard_login import dashboard_login, dashboard_logout
 from api.auth_check import get_auth_check
 from api.auth_test import auth_test

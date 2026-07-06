@@ -81,7 +81,11 @@ export async function initAPI() {
 		closePendingModal,
 		refreshPendingList,
 		reconcilePending,
-		forceClearPending
+		forceClearPending,
+		// Export report modal
+		openExportModal,
+		closeExportModal,
+		downloadReport
 	};
 
 
