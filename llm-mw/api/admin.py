@@ -200,17 +200,21 @@ async def force_remove_pending(request_id: str, request: Request):
         raise HTTPException(500, f"Failed to force clear pending request: {str(e)}")
 
 
-def get_active_users_count() -> int:
+def get_live_metrics() -> dict:
     """
-    Count unique user IDs active right now (in mw_pending or active in last 5 mins).
+    Get real-time metrics: unique active users (last 5 mins) and current pending requests.
     """
     from core.db import db_conn, _pool
     db_available = _pool is not None
+    
+    metrics = {"active_users": 0, "pending_count": 0}
     
     if db_available:
         try:
             with db_conn() as conn:
                 cur = conn.cursor()
+                
+                # Active users
                 cur.execute("""
                     WITH active_pending AS (
                         SELECT DISTINCT user_id FROM mw_pending
@@ -225,9 +229,14 @@ def get_active_users_count() -> int:
                         SELECT user_id FROM active_recent
                     ) combined;
                 """)
-                count = cur.fetchone()[0]
+                metrics["active_users"] = cur.fetchone()[0] or 0
+                
+                # Pending count
+                cur.execute("SELECT count(*) FROM mw_pending")
+                metrics["pending_count"] = cur.fetchone()[0] or 0
+                
                 cur.close()
-            return count or 0
+            return metrics
         except Exception as e:
             print(f"[SSE Active Users] DB query failed, falling back to files: {e}")
             
@@ -239,6 +248,7 @@ def get_active_users_count() -> int:
     from config import PENDING_CSV, AUDIT_LOG_FILE
     
     active_users = set()
+    pending_count = 0
     
     # 1. Read pending.csv
     if os.path.exists(PENDING_CSV):
@@ -247,10 +257,11 @@ def get_active_users_count() -> int:
                 reader = csv.reader(f)
                 rows = list(reader)[1:]
                 for row in rows:
+                    pending_count += 1
                     if len(row) >= 2:
                         active_users.add(row[1])  # user_id
         except Exception as e:
-            print(f"[SSE Active Users] Fallback failed to read pending.csv: {e}")
+            print(f"[SSE Live Metrics] Fallback failed to read pending.csv: {e}")
             
     # 2. Read audit.jsonl (last 5 minutes)
     cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)
@@ -273,29 +284,31 @@ def get_active_users_count() -> int:
                     except Exception:
                         continue
         except Exception as e:
-            print(f"[SSE Active Users] Fallback failed to read audit.jsonl: {e}")
+            print(f"[SSE Live Metrics] Fallback failed to read audit.jsonl: {e}")
             
-    return len(active_users)
+    metrics["active_users"] = len(active_users)
+    metrics["pending_count"] = pending_count
+    return metrics
 
 
-async def active_users_generator(request: Request):
+async def live_metrics_generator(request: Request):
     """
-    SSE Generator yielding active users count periodically.
+    SSE Generator yielding live metrics periodically.
     """
     import asyncio
     import json
     
-    last_count = -1
+    last_metrics = None
     
     while True:
         if await request.is_disconnected():
             break
             
         try:
-            current_count = get_active_users_count()
-            if current_count != last_count:
-                last_count = current_count
-                yield f"event: active_users\ndata: {json.dumps({'active_users': current_count})}\n\n"
+            current_metrics = get_live_metrics()
+            if current_metrics != last_metrics:
+                last_metrics = current_metrics
+                yield f"event: live_metrics\ndata: {json.dumps(current_metrics)}\n\n"
             else:
                 yield ": ping\n\n"
         except Exception as e:
@@ -304,9 +317,9 @@ async def active_users_generator(request: Request):
         await asyncio.sleep(5)
 
 
-async def stream_active_users(request: Request):
+async def stream_live_metrics(request: Request):
     """
-    SSE endpoint streaming real-time active users.
+    SSE endpoint streaming real-time metrics (active users, pending count).
     """
     from fastapi.responses import StreamingResponse
     from utils.auth_guard import require_admin_or_session
@@ -314,7 +327,7 @@ async def stream_active_users(request: Request):
     require_admin_or_session(request)
     
     return StreamingResponse(
-        active_users_generator(request),
+        live_metrics_generator(request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

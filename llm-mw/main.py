@@ -23,7 +23,7 @@ from api.embeddings import create_embeddings
 from api.rerank import rerank
 from api.media import serve_media
 from api.docling import docling_proxy
-from api.admin import get_usage, reset_quota, reconcile_usage, stream_active_users, list_pending, force_remove_pending
+from api.admin import get_usage, reset_quota, reconcile_usage, stream_live_metrics, list_pending, force_remove_pending
 from api.analytics import get_chat_analytics, get_satisfaction_analytics
 from api.summary import get_summary
 from api.summary_v2 import get_summary_v2
@@ -186,7 +186,7 @@ app.add_api_route("/v1/_mw/admin/prices/{model_name}", delete_price, methods=["D
 app.add_api_route("/v1/_mw/admin/alerts/config", get_alert_config, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/alerts/config", update_alert_config, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/alerts/test-email", test_alert_email, methods=["POST"])
-app.add_api_route("/v1/_mw/admin/active-users/stream", stream_active_users, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/active-users/stream", stream_live_metrics, methods=["GET"])
 app.add_api_route("/admin/usage", get_usage, methods=["GET"])
 app.add_api_route("/admin/reset", reset_quota, methods=["POST"])
 app.add_api_route("/admin/reconcile", reconcile_usage, methods=["POST"])
