@@ -242,10 +242,16 @@ export async function refreshAnalytics() {
                     sharePct = (user.cost_usd / totalCost) * 100;
                 }
 
+                const statusTag = user.user_status === 'deleted'
+                    ? ' <span style="font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 9px; background: rgba(239,68,68,0.15); color: #f87171;">🗑️ đã xóa</span>'
+                    : user.user_status === 'disabled'
+                        ? ' <span style="font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 9px; background: rgba(245,158,11,0.15); color: #fbbf24;">🔒 disabled</span>'
+                        : '';
+
                 tr.innerHTML = `
                     <td class="rank">${index + 1}</td>
                     <td style="font-weight: 500; color: #60a5fa;">${user.user_id}</td>
-                    <td>${user.display_name || '-'}</td>
+                    <td>${user.display_name || '-'}${statusTag}</td>
                     <td>${user.chat_count.toLocaleString()}</td>
                     <td>${user.request_count.toLocaleString()}</td>
                     <td>${user.tokens.toLocaleString()}</td>

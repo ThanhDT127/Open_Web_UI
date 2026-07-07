@@ -114,6 +114,9 @@ def init_pool(database_url: str, minconn: int = 2, maxconn: int = 10):
     # Auto-migrate from JSON if tables are empty
     _auto_migrate_if_empty()
 
+    # One-time backfill of historical audit rows
+    _backfill_audit_openwebui_ids()
+
     # Verify Open WebUI schema
     check_ow_schema()
 
@@ -170,6 +173,40 @@ def db_ow_conn():
         raise
     finally:
         put_ow_conn(conn)
+
+
+def fetch_final_audit_entries(start_dt, end_dt) -> list:
+    """One row per request from mw_audit_log: the latest entry per rid.
+
+    A request is logged multiple times over its lifecycle (pending -> ok /
+    reconciled / error); every consumer that counts "requests" must count each
+    rid exactly once, from its final state. This is the single definition of
+    that rule — analytics, group analytics and report export all go through it.
+    Rows without a rid are treated as individual requests.
+    """
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT ON (COALESCE(NULLIF(rid, ''), id::text))
+                   user_id, model, tokens_total, cost_usd, ts, status, latency_ms
+            FROM mw_audit_log
+            WHERE ts >= %s AND ts <= %s
+            ORDER BY COALESCE(NULLIF(rid, ''), id::text), ts DESC, id DESC
+        """, (start_dt, end_dt))
+        rows = cur.fetchall()
+        cur.close()
+    return [
+        {
+            "user_id": r[0],
+            "model": r[1],
+            "tokens_total": int(r[2] or 0),
+            "cost_usd": float(r[3] or 0.0),
+            "ts": r[4],
+            "status": r[5] or "ok",
+            "latency_ms": float(r[6]) if r[6] is not None else None,
+        }
+        for r in rows
+    ]
 
 
 def check_ow_schema() -> bool:
@@ -311,6 +348,10 @@ CREATE TABLE IF NOT EXISTS mw_migrations (
 
 ALTER TABLE mw_users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
 ALTER TABLE mw_users ADD COLUMN IF NOT EXISTS openwebui_user_id TEXT;
+-- Soft delete: identity must outlive the account so historical data (feedback,
+-- audit log, leaderboards) keeps resolving to a real user. Hard delete remains
+-- available via DELETE ...?purge=true.
+ALTER TABLE mw_users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mw_users_openwebui_user_id
     ON mw_users(openwebui_user_id) WHERE openwebui_user_id IS NOT NULL;
 UPDATE mw_users SET role = 'user' WHERE role = 'manager' OR role IS NULL;
@@ -382,6 +423,40 @@ def _create_tables():
 
         cur.close()
     logger.info("Database schema verified/created")
+
+
+def _backfill_audit_openwebui_ids():
+    """One-time backfill: stamp historical audit rows with the OW uuid mapped in mw_users.
+
+    New rows get openwebui_user_id at write time (auth sets it on request.state),
+    but rows written before the column existed are missing it. Rows of users
+    already hard-deleted from mw_users cannot be recovered — their mapping is gone.
+    """
+    migration_key = "2026-07-07-backfill-audit-openwebui-user-id"
+    try:
+        with db_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT 1 FROM mw_migrations WHERE migration_key = %s", (migration_key,))
+            if cur.fetchone():
+                cur.close()
+                return
+            cur.execute("""
+                UPDATE mw_audit_log a
+                SET openwebui_user_id = m.openwebui_user_id
+                FROM mw_users m
+                WHERE a.user_id = m.user_id
+                  AND m.openwebui_user_id IS NOT NULL
+                  AND (a.openwebui_user_id IS NULL OR a.openwebui_user_id = '')
+            """)
+            updated = cur.rowcount
+            cur.execute("""
+                INSERT INTO mw_migrations (migration_key, details)
+                VALUES (%s, %s) ON CONFLICT (migration_key) DO NOTHING
+            """, (migration_key, json.dumps({"rows_updated": updated})))
+            cur.close()
+        logger.info("Backfilled openwebui_user_id on %d audit log rows", updated)
+    except Exception as e:
+        logger.error("Audit openwebui_user_id backfill failed: %s", str(e))
 
 
 # ─── JSON → DB migration ─────────────────────────────────────

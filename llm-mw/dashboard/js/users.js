@@ -242,7 +242,7 @@ export async function saveUser() {
 
 export async function deleteUser(userId) {
     userId = decodeURIComponent(userId);
-    if (!confirm(`⚠️ Are you sure you want to DELETE user "${userId}"?\n\nThis action is PERMANENT and cannot be undone.`)) return;
+    if (!confirm(`⚠️ Are you sure you want to DELETE user "${userId}"?\n\nAccess is revoked immediately. Usage history and identity are preserved for reports.`)) return;
     if (!confirm(`🛑 FINAL CONFIRMATION\n\nDeleting user: ${userId}\n\nAll subkeys will be invalidated.\nContinue?`)) return;
 
     try {
