@@ -304,6 +304,10 @@ def query_retrieval_health(
 # ─── Storage health (OpenWebUI DB, unpooled) ─────────────────────────────────
 
 def _openwebui_database_url() -> str:
+    import os
+    ow_url = os.getenv("OPENWEBUI_DATABASE_URL", "").strip()
+    if ow_url:
+        return ow_url
     parsed = urlparse(DATABASE_URL)
     return DATABASE_URL.replace(parsed.path, "/openwebui")
 

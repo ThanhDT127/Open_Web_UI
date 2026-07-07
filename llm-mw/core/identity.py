@@ -10,6 +10,10 @@ from core.auth import get_user_by_openwebui_id, load_users, update_user_admin_fi
 
 
 def _openwebui_database_url() -> str:
+    import os
+    ow_url = os.getenv("OPENWEBUI_DATABASE_URL", "").strip()
+    if ow_url:
+        return ow_url
     parsed = urlparse(DATABASE_URL)
     return DATABASE_URL.replace(parsed.path, "/openwebui")
 

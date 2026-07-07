@@ -184,9 +184,6 @@ app.add_api_route("/docling-proxy", docling_proxy, methods=["GET", "POST", "PUT"
 app.add_api_route("/v1/_mw/admin/prices", list_prices, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/prices", update_price, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/prices/{model_name}", delete_price, methods=["DELETE"])
-app.add_api_route("/v1/_mw/admin/alerts/config", get_alert_config, methods=["GET"])
-app.add_api_route("/v1/_mw/admin/alerts/config", update_alert_config, methods=["POST"])
-app.add_api_route("/v1/_mw/admin/alerts/test-email", test_alert_email, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/active-users/stream", stream_live_metrics, methods=["GET"])
 app.add_api_route("/admin/usage", get_usage, methods=["GET"])
 app.add_api_route("/admin/reset", reset_quota, methods=["POST"])
@@ -236,7 +233,7 @@ app.add_api_route("/v1/_mw/admin/users/{user_id}/openwebui-mapping", map_openweb
 # Quota status & Alert endpoints
 app.add_api_route("/v1/_mw/quota-status", get_quota_status, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/alerts/config", get_alert_config, methods=["GET"])
-app.add_api_route("/v1/_mw/admin/alerts/config", update_alert_config, methods=["PUT"])
+app.add_api_route("/v1/_mw/admin/alerts/config", update_alert_config, methods=["PUT", "POST"])
 app.add_api_route("/v1/_mw/admin/alerts/test-email", test_alert_email, methods=["POST"])
 
 # Notification endpoints
