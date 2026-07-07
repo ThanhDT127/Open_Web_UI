@@ -25,33 +25,23 @@ def get_chat_analytics(request: Request, minutes: int = Query(43200), start: str
     # 1. Open WebUI metrics
     total_chats = 0
     active_users = 0
-    total_messages = 0
     user_chat_counts = {}
     try:
         with db_ow_conn() as conn:
             cursor = conn.cursor()
             start_ts = int(start_dt.timestamp())
             end_ts = int(end_dt.timestamp())
-            
+
             cursor.execute('''
-                SELECT COUNT(id), COUNT(DISTINCT user_id) 
-                FROM chat 
+                SELECT COUNT(id), COUNT(DISTINCT user_id)
+                FROM chat
                 WHERE created_at >= %s AND created_at <= %s
             ''', (start_ts, end_ts))
             row = cursor.fetchone()
             if row:
                 total_chats = row[0]
                 active_users = row[1]
-                
-            cursor.execute('''
-                SELECT COUNT(id)
-                FROM message
-                WHERE created_at >= %s AND created_at <= %s
-            ''', (start_ts, end_ts))
-            row = cursor.fetchone()
-            if row:
-                total_messages = row[0]
-                
+
             cursor.execute('''
                 SELECT user_id, COUNT(id)
                 FROM chat
@@ -63,31 +53,37 @@ def get_chat_analytics(request: Request, minutes: int = Query(43200), start: str
     except Exception as e:
         print(f"Error querying OW DB for chat analytics: {e}")
 
-    # 2. Middleware metrics
-    total_reqs = total_messages # Use OpenWebUI message count for "requests"
+    # 2. Middleware metrics — one row per request (final state per rid),
+    # same counting semantics as the Usage tab (summary_v2)
+    total_reqs = 0
     total_tokens = 0
     total_cost = 0.0
     timeseries_dict = defaultdict(lambda: {"requests": 0, "cost_usd": 0.0})
     hourly_dict = {i: 0 for i in range(24)}
     model_dict = defaultdict(lambda: {"requests": 0, "cost_usd": 0.0})
     user_dict = defaultdict(lambda: {"request_count": 0, "tokens": 0, "cost_usd": 0.0, "models": defaultdict(int)})
-    
+
     is_hourly = minutes <= 1440
-    
+
     try:
         with db_conn() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT user_id, model, tokens_total, cost_usd, ts 
+                SELECT DISTINCT ON (COALESCE(NULLIF(rid, ''), id::text))
+                       user_id, model, tokens_total, cost_usd, ts, status
                 FROM mw_audit_log
                 WHERE ts >= %s AND ts <= %s
+                ORDER BY COALESCE(NULLIF(rid, ''), id::text), ts DESC, id DESC
             ''', (start_dt, end_dt))
-            
+
             for row in cursor.fetchall():
-                u_id, mod, toks, cst, ts = row
-                cst = float(cst) if cst else 0.0
-                toks = int(toks) if toks else 0
-                
+                u_id, mod, toks, cst, ts, status = row
+                # Tokens/cost only count once the request reached a billable final state
+                is_final = status in ('ok', 'reconciled')
+                cst = float(cst) if (cst and is_final) else 0.0
+                toks = int(toks) if (toks and is_final) else 0
+
+                total_reqs += 1
                 total_tokens += toks
                 total_cost += cst
                 
@@ -217,7 +213,7 @@ def get_satisfaction_analytics(request: Request, minutes: int = Query(43200), st
                     
             # 3. Fetch Recent Feedback (Limit 50)
             cursor.execute('''
-                SELECT f.data, f.meta, f.created_at, u.name
+                SELECT f.data, f.meta, f.created_at, u.name, f.user_id
                 FROM feedback f
                 LEFT JOIN "user" u ON f.user_id = u.id
                 WHERE f.created_at >= %s AND f.created_at <= %s
@@ -225,26 +221,52 @@ def get_satisfaction_analytics(request: Request, minutes: int = Query(43200), st
                 ORDER BY f.created_at DESC
                 LIMIT 50
             ''', (start_ts, end_ts))
-            
+
             for row in cursor.fetchall():
-                data_str, meta_str, created_at, user_name = row
+                data_str, meta_str, created_at, user_name, fb_user_id = row
                 try:
                     data = data_str if isinstance(data_str, dict) else (json.loads(data_str) if data_str else {})
                     meta = meta_str if isinstance(meta_str, dict) else (json.loads(meta_str) if meta_str else {})
                 except:
                     continue
-                
+
                 recent_feedback.append({
                     "rating": int(data.get("rating", 0)),
                     "created_at": created_at,
                     "reason": data.get("reason", ""),
                     "comment": data.get("comment", ""),
-                    "user_name": user_name or "Unknown",
+                    "user_name": user_name,
+                    "user_id": fb_user_id,
                     "model_id": meta.get("model_id", "unknown")
                 })
-                
+
     except Exception as e:
         print(f"Error querying OW DB for satisfaction analytics: {e}")
+
+    # Feedback from users deleted in Open WebUI has no name to join against.
+    # Fall back to middleware identity records, which are not tied to OW's user lifecycle:
+    # mw_users mapping -> audit log mapping -> labeled placeholder with the stable id.
+    missing_ids = list({fb["user_id"] for fb in recent_feedback if not fb["user_name"] and fb["user_id"]})
+    resolved = {}
+    if missing_ids:
+        try:
+            with db_conn() as conn:
+                c = conn.cursor()
+                c.execute('SELECT openwebui_user_id, user_id FROM mw_users WHERE openwebui_user_id = ANY(%s)', (missing_ids,))
+                for ow_id, mw_id in c.fetchall():
+                    resolved[ow_id] = mw_id
+                unresolved = [i for i in missing_ids if i not in resolved]
+                if unresolved:
+                    c.execute('''SELECT DISTINCT openwebui_user_id, user_id FROM mw_audit_log
+                                 WHERE openwebui_user_id = ANY(%s) AND user_id IS NOT NULL''', (unresolved,))
+                    for ow_id, mw_id in c.fetchall():
+                        resolved.setdefault(ow_id, mw_id)
+        except Exception as e:
+            print(f"Error resolving deleted user names for satisfaction: {e}")
+    for fb in recent_feedback:
+        if not fb["user_name"]:
+            uid = fb.get("user_id") or ""
+            fb["user_name"] = resolved.get(uid) or (f"Đã xóa ({uid[:8]})" if uid else "Unknown")
         
     model_leaderboard = []
     for m_id, stats in model_stats.items():
