@@ -601,31 +601,63 @@ async def sync_user_now(request: Request):
     mw_role = "admin" if role == "admin" else "user"
     changes = {}
 
+    # Prepare subkey + default quota so a sync that provisions a NEW user gets the
+    # same record shape as lazy provisioning (a bare insert previously left quota
+    # as '{}' — no limits — and no subkey, making the user effectively unlimited).
+    from core.auth import _default_provision_quota
+    defaults = _default_provision_quota()
+    default_quota = {
+        "period": defaults["period"],
+        "timezone": "Asia/Bangkok",
+        "limit_tokens": 0,
+        "limit_cost_usd": defaults["limit_cost_usd"],
+        "limit_image_requests": 0,
+        "period_start": int(datetime.now(timezone.utc).timestamp() * 1000),
+        "used_tokens": 0,
+        "used_cost_usd": 0.0,
+        "used_image_requests": 0
+    }
+    new_subkey_hash = hash_subkey(_generate_subkey())
+
     try:
         with db_conn() as conn:
             cur = conn.cursor()
             # Single UPSERT: create if new, or update active + UUID if already exists.
             # Always overwrites openwebui_user_id so a re-sync also fixes a missing UUID.
+            # On conflict, also repairs records missing a subkey or a well-formed quota
+            # (quota without 'period' can only come from the old bare insert) while
+            # never touching a quota an admin configured deliberately.
             cur.execute("""
-                INSERT INTO mw_users (user_id, openwebui_user_id, active, role, updated_at)
-                VALUES (%s, %s, %s, %s, now())
+                INSERT INTO mw_users (user_id, subkey_hash, openwebui_user_id, active, role, allowed_models, quota, updated_at)
+                VALUES (%s, %s, %s, %s, %s, '["*"]'::jsonb, %s, now())
                 ON CONFLICT (user_id) DO UPDATE SET
                     openwebui_user_id = EXCLUDED.openwebui_user_id,
                     active            = EXCLUDED.active,
                     role              = EXCLUDED.role,
+                    subkey_hash       = COALESCE(mw_users.subkey_hash, EXCLUDED.subkey_hash),
+                    quota             = CASE WHEN mw_users.quota ? 'period'
+                                             THEN mw_users.quota
+                                             ELSE EXCLUDED.quota END,
                     updated_at        = now()
-                RETURNING (xmax = 0) AS inserted
-            """, (user_id, openwebui_uuid, is_active, mw_role))
+                RETURNING (xmax = 0) AS inserted, quota, subkey_hash
+            """, (user_id, new_subkey_hash, openwebui_uuid, is_active, mw_role, json.dumps(default_quota)))
             result_row = cur.fetchone()
             cur.close()
 
         was_inserted = bool(result_row[0]) if result_row else False
+        committed_quota = result_row[1] if result_row else default_quota
+        committed_subkey_hash = result_row[2] if result_row else None
         changes["provisioned"] = was_inserted
         changes["active"] = is_active
         if openwebui_uuid:
             changes["openwebui_user_id"] = str(openwebui_uuid)
+        if was_inserted:
+            changes["default_quota"] = {
+                "period": default_quota["period"],
+                "limit_cost_usd": default_quota["limit_cost_usd"]
+            }
 
-        # Sync active flag and role to JSON backup (best-effort)
+        # Sync committed state to JSON backup (best-effort)
         try:
             from core.auth import _load_users_file, _save_users_file
             users = _load_users_file()
@@ -634,10 +666,17 @@ async def sync_user_now(request: Request):
                 if u.get("user_id") == user_id:
                     u["active"] = is_active
                     u["role"] = mw_role
+                    u.setdefault("subkey_hash", committed_subkey_hash)
+                    if not (u.get("quota") or {}).get("period"):
+                        u["quota"] = committed_quota
                     found = True
                     break
             if not found:
-                users.append({"user_id": user_id, "active": is_active, "role": mw_role})
+                users.append({
+                    "user_id": user_id, "active": is_active, "role": mw_role,
+                    "subkey_hash": committed_subkey_hash, "allowed_models": ["*"],
+                    "quota": committed_quota
+                })
             _save_users_file(users)
         except Exception:
             pass
