@@ -443,7 +443,9 @@
         <div id="usersTab" class="tab-content">
             <div class="insight-banner">
                 <span class="insight-icon">📋</span>
-                <span class="insight-text">Quản lý user & quota — Thêm, sửa, xóa user. Rotate key khi cần.</span>
+                <span class="insight-text">Quản lý user & quota — Thêm, sửa, xóa user. Rotate key khi cần.
+                    User mới (lazy provisioning) nhận mặc định: <b id="defaultQuotaHint">…</b> — đổi tại tab
+                    Settings.</span>
             </div>
             <div class="section">
                 <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -1365,6 +1367,33 @@
                         <div class="form-actions">
                             <button type="button" onclick="window.settingsAPI.saveQuotaThresholds()"
                                 class="btn-apply">Save Thresholds</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Section: Default Quota for New Users (Lazy Provisioning) -->
+                <div class="section">
+                    <div class="section-title">👤 Default Quota (New Users)</div>
+                    <form id="defaultQuotaForm" class="settings-form">
+                        <div class="form-group">
+                            <label>Cost Limit (USD)</label>
+                            <input type="number" id="defaultQuotaCost" step="0.01" min="0.01" placeholder="2.00">
+                        </div>
+                        <div class="form-group">
+                            <label>Period</label>
+                            <select id="defaultQuotaPeriod">
+                                <option value="monthly">monthly</option>
+                                <option value="weekly">weekly</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <span style="font-size: 12px; color: #64748b;">Áp dụng cho user được tự động khởi tạo
+                                (lazy provisioning) từ thời điểm lưu trở đi — không thay đổi quota của các user
+                                hiện có.</span>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" onclick="window.settingsAPI.saveDefaultQuota()"
+                                class="btn-apply">Save Default Quota</button>
                         </div>
                     </form>
                 </div>

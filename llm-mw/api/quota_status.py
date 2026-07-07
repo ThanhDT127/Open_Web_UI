@@ -66,8 +66,24 @@ async def update_alert_config(request: Request):
     except Exception:
         return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
     
+    # Validate provisioning defaults before merging (used by lazy provisioning)
+    dq = (body.get("provisioning") or {}).get("default_quota") if isinstance(body.get("provisioning"), dict) else None
+    if dq is not None:
+        if not isinstance(dq, dict):
+            return JSONResponse(status_code=400, content={"error": "provisioning.default_quota must be an object"})
+        if "period" in dq and dq["period"] not in ("monthly", "weekly"):
+            return JSONResponse(status_code=400, content={"error": "period must be 'monthly' or 'weekly'"})
+        if "limit_cost_usd" in dq:
+            try:
+                cost = float(dq["limit_cost_usd"])
+            except (TypeError, ValueError):
+                return JSONResponse(status_code=400, content={"error": "limit_cost_usd must be a number"})
+            if cost <= 0:
+                return JSONResponse(status_code=400, content={"error": "limit_cost_usd must be greater than 0"})
+            dq["limit_cost_usd"] = cost
+
     config = load_alert_config()
-    
+
     # True deep merge updates
     def deep_merge(d, u):
         for k, v in u.items():

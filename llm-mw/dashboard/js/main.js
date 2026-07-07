@@ -16,7 +16,7 @@ import {
 	deleteUser, rotateUserKey, toggleUserActive, syncUserNow
 } from './users.js';
 import {
-	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, testSMTP
+	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, saveDefaultQuota, testSMTP
 } from './settings.js';
 import { applyRagFilters, resetRagFilters } from './raghealth.js';
 import {
@@ -84,6 +84,7 @@ export async function initAPI() {
 		saveQuotaThresholds,
 		saveBudgets,
 		saveNotifToggles,
+		saveDefaultQuota,
 		testSMTP
 	};
 

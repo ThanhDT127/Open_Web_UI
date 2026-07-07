@@ -49,7 +49,13 @@ export async function loadSettings() {
         document.getElementById('budgetAnthropic').value = budgets.anthropic?.budget_usd || 0;
         document.getElementById('budgetDeepseek').value = budgets.deepseek?.budget_usd || 0;
 
-        // 4. Populate Notification Toggles
+        // 4. Populate Default Quota for lazy-provisioned users
+        const defaultQuota = config.provisioning?.default_quota || {};
+        document.getElementById('defaultQuotaCost').value = defaultQuota.limit_cost_usd ?? 2.0;
+        document.getElementById('defaultQuotaPeriod').value = defaultQuota.period || 'monthly';
+        _renderDefaultQuotaHint(config);
+
+        // 5. Populate Notification Toggles
         document.getElementById('toggleUserEmail').checked = userAlerts.send_email || false;
         document.getElementById('toggleAdminEmail').checked = adminAlerts.send_email_realtime || false;
         document.getElementById('toggleDashboardAlerts').checked = adminAlerts.dashboard_alerts_enabled || false;
@@ -146,6 +152,46 @@ export async function saveBudgets() {
         }
     };
     await _savePartialConfig(data, 'API budgets');
+}
+
+function _renderDefaultQuotaHint(config) {
+    const el = document.getElementById('defaultQuotaHint');
+    if (!el) return;
+    const dq = config?.provisioning?.default_quota || {};
+    const cost = Number(dq.limit_cost_usd ?? 2.0);
+    el.textContent = `$${cost.toFixed(2)} / ${dq.period || 'monthly'}`;
+}
+
+// Called when the Users tab opens — fetches config once and fills the banner hint
+export async function updateDefaultQuotaHint() {
+    try {
+        if (!_configCache) {
+            const res = await mwFetch('/v1/_mw/admin/alerts/config');
+            if (!res || !res.ok) return;
+            _configCache = await res.json();
+        }
+        _renderDefaultQuotaHint(_configCache);
+    } catch (err) {
+        console.error('Failed to load default quota hint:', err);
+    }
+}
+
+export async function saveDefaultQuota() {
+    const cost = parseFloat(document.getElementById('defaultQuotaCost').value);
+    if (!cost || cost <= 0) {
+        alert('Cost Limit must be greater than 0');
+        return;
+    }
+    const data = {
+        provisioning: {
+            default_quota: {
+                limit_cost_usd: cost,
+                period: document.getElementById('defaultQuotaPeriod').value
+            }
+        }
+    };
+    const ok = await _savePartialConfig(data, 'Default provisioning quota');
+    if (ok) _renderDefaultQuotaHint(_configCache);
 }
 
 export async function saveNotifToggles() {

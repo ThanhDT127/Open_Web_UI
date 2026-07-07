@@ -410,6 +410,27 @@ def get_lock() -> Lock:
 
 # ─── Single-user O(1) API ─────────────────────────────────────
 
+def _default_provision_quota() -> Dict[str, Any]:
+    """Read the default quota for lazy-provisioned users from system config.
+
+    Falls back to the built-in defaults (monthly / $2.00) when the config
+    is missing or invalid, so provisioning never fails because of it.
+    """
+    period, limit_cost_usd = "monthly", 2.0
+    try:
+        # Imported lazily: core.alerting imports from core.auth at module level
+        from core.alerting import load_alert_config
+        cfg = (load_alert_config().get("provisioning") or {}).get("default_quota") or {}
+        if cfg.get("period") in ("monthly", "weekly"):
+            period = cfg["period"]
+        cost = float(cfg.get("limit_cost_usd", limit_cost_usd))
+        if cost > 0:
+            limit_cost_usd = cost
+    except Exception as e:
+        logger.warning("default_provision_quota: using built-in defaults: %s", str(e))
+    return {"period": period, "limit_cost_usd": limit_cost_usd}
+
+
 def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
     """
     Check if user exists and is active in Open WebUI database, and if so,
@@ -454,12 +475,13 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
         subkey = f"sk_{secrets.token_urlsafe(32)}"
         subkey_hash = hash_subkey(subkey)
 
-        # Set default quota
+        # Set default quota (limits are admin-configurable via Settings tab)
+        defaults = _default_provision_quota()
         quota = {
-            "period": "monthly",
+            "period": defaults["period"],
             "timezone": "Asia/Bangkok",
             "limit_tokens": 0,
-            "limit_cost_usd": 2.0,
+            "limit_cost_usd": defaults["limit_cost_usd"],
             "limit_image_requests": 0,
             "period_start": int(datetime.now(timezone.utc).timestamp() * 1000),
             "used_tokens": 0,

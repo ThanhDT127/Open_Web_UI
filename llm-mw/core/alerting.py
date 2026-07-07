@@ -52,6 +52,12 @@ DEFAULT_ALERT_CONFIG = {
         "enabled": True,
         "send_email": True,
         "thresholds": [80, 95, 100]
+    },
+    "provisioning": {
+        "default_quota": {
+            "period": "monthly",
+            "limit_cost_usd": 2.0
+        }
     }
 }
 
