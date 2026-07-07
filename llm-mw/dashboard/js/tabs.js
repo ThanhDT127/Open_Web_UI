@@ -3,6 +3,8 @@ import { loadAccessData, connectAccessStream } from './access.js';
 import { loadUsers } from './users.js';
 import { loadLogs } from './logs.js';
 import { loadSettings } from './settings.js';
+import { loadRagHealth } from './raghealth.js';
+import { loadKnowledge } from './knowledge.js';
 import { accessEventSource } from './auth.js';
 
 // FIX: Pass event explicitly
@@ -26,5 +28,9 @@ export function switchTab(e, tabName) {
         loadLogs();
     } else if (tabName === 'settings') {
         loadSettings();
+    } else if (tabName === 'raghealth') {
+        loadRagHealth();
+    } else if (tabName === 'knowledge') {
+        loadKnowledge();
     }
 }

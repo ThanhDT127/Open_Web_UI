@@ -15,6 +15,8 @@ import {
 import {
 	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, testSMTP
 } from './settings.js';
+import { applyRagFilters, resetRagFilters } from './raghealth.js';
+import { applyKnowledgeFilters, resetKnowledgeFilters } from './knowledge.js';
 
 // Expose a stable API for inline HTML handlers (window.dashboardAPI.*)
 export async function initAPI() {
@@ -44,6 +46,16 @@ export async function initAPI() {
 		saveBudgets,
 		saveNotifToggles,
 		testSMTP
+	};
+
+	window.ragHealthAPI = {
+		apply: applyRagFilters,
+		reset: resetRagFilters
+	};
+
+	window.knowledgeAPI = {
+		apply: applyKnowledgeFilters,
+		reset: resetKnowledgeFilters
 	};
 
 	// One-time UI init

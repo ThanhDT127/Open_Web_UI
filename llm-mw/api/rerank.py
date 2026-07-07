@@ -4,9 +4,8 @@ Routes reranking requests through middleware to LiteLLM for monitoring via dashb
 """
 
 import uuid
-from datetime import datetime, timezone
 from fastapi import Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 import httpx
 
 from config import LITELLM_BASE, LITELLM_KEY, logger
@@ -15,7 +14,6 @@ from core.quota import maybe_reset_quota
 from core.cost import load_prices
 from core.audit_state import init_audit_state, set_usage_state, set_error_state
 from services.litellm import get_cost_from_headers
-from utils.logging import write_audit_line
 
 
 # Default rerank cost fallback: $2.0 / 1M tokens (if not in prices.json)
@@ -27,7 +25,8 @@ def _calc_rerank_cost(model: str, total_tokens: int, prices: dict) -> float:
     Calculate rerank cost.
     Uses prices.json if available, otherwise falls back to default rate.
     """
-    price = prices.get(model, {})
+    # prices.json is keyed by the bare model name (e.g. "cohere/rerank-v3.5")
+    price = prices.get(model.replace("openrouter/", ""), {})
     
     # Support input_per_1m format
     if "input_per_1m" in price:
@@ -59,10 +58,9 @@ async def rerank(request: Request):
     
     model = body.get("model", "unknown")
     rid = f"rrk-{uuid.uuid4().hex[:12]}"
-    request.state.mw_request_id = rid
-    
+
     # ── Init audit state ──
-    init_audit_state(request, user_id=user_id, model=model, endpoint="/v1/rerank")
+    init_audit_state(request, user_id=user_id, model=model, endpoint="/v1/rerank", rid=rid)
     
     logger.info(
         "rerank_request rid=%s user=%s model=%s",
@@ -167,22 +165,6 @@ async def rerank(request: Request):
         tokens_total=total_tokens,
         cost_usd=cost_usd,
     )
-    
-    try:
-        write_audit_line({
-            "ts": datetime.now(timezone.utc).isoformat(),
-            "user_id": user_id,
-            "model": model,
-            "endpoint": "rerank",
-            "rid": rid,
-            "tokens_in": total_tokens,
-            "tokens_out": 0,
-            "tokens_total": total_tokens,
-            "cost_usd": cost_usd,
-            "status": "ok",
-        })
-    except Exception as e:
-        logger.error("rerank_audit_fail: %s", e)
     
     logger.info(
         "rerank_done rid=%s user=%s model=%s tokens=%d cost=%.6f",

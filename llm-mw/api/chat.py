@@ -1295,6 +1295,22 @@ async def _handle_streaming(request: Request, user: dict, model: str, body: dict
                     sample_bytes=len(sampled),
                     sample=truncate_text(sampled.decode("utf-8", errors="ignore"), limit=4000),
                 )
+            # Persist the assembled answer text so retrieval-health (citation
+            # hit-rate) can be derived for streamed chats too — mirrors the
+            # non-streaming chat.response event. Logged before RAG image
+            # injection, so it reflects the model's own [N] citation markers.
+            if response_text_holder[0]:
+                detail_log(
+                    "chat.response",
+                    request=request,
+                    rid=request_id,
+                    user_id=user.get("user_id"),
+                    status=resp.status_code,
+                    model=model,
+                    content=truncate_text(response_text_holder[0], limit=2000),
+                    usage=usage_data,
+                    stream=True,
+                )
 
     # Wrap _iter_bytes to inject quota warning after stream ends
     async def _iter_with_quota_warning():
