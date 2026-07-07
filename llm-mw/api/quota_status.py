@@ -37,9 +37,8 @@ async def get_alert_config(request: Request):
     
     Return current alert configuration (admin only).
     """
-    auth = request.headers.get("Authorization", "")
-    if auth != f"Bearer {ADMIN_KEY}":
-        return JSONResponse(status_code=403, content={"error": "Admin key required"})
+    from utils.auth_guard import require_admin_or_session
+    require_admin_or_session(request)
     
     config = load_alert_config()
     # Mask SMTP password env var name but show it exists
@@ -59,23 +58,42 @@ async def update_alert_config(request: Request):
     Update alert configuration (admin only).
     Accepts partial updates — merges with existing config.
     """
-    auth = request.headers.get("Authorization", "")
-    if auth != f"Bearer {ADMIN_KEY}":
-        return JSONResponse(status_code=403, content={"error": "Admin key required"})
+    from utils.auth_guard import require_admin_or_session
+    require_admin_or_session(request)
     
     try:
         body = await request.json()
     except Exception:
         return JSONResponse(status_code=400, content={"error": "Invalid JSON"})
     
+    # Validate provisioning defaults before merging (used by lazy provisioning)
+    dq = (body.get("provisioning") or {}).get("default_quota") if isinstance(body.get("provisioning"), dict) else None
+    if dq is not None:
+        if not isinstance(dq, dict):
+            return JSONResponse(status_code=400, content={"error": "provisioning.default_quota must be an object"})
+        if "period" in dq and dq["period"] not in ("monthly", "weekly"):
+            return JSONResponse(status_code=400, content={"error": "period must be 'monthly' or 'weekly'"})
+        if "limit_cost_usd" in dq:
+            try:
+                cost = float(dq["limit_cost_usd"])
+            except (TypeError, ValueError):
+                return JSONResponse(status_code=400, content={"error": "limit_cost_usd must be a number"})
+            if cost <= 0:
+                return JSONResponse(status_code=400, content={"error": "limit_cost_usd must be greater than 0"})
+            dq["limit_cost_usd"] = cost
+
     config = load_alert_config()
-    
-    # Deep merge updates
-    for key, value in body.items():
-        if isinstance(value, dict) and isinstance(config.get(key), dict):
-            config[key].update(value)
-        else:
-            config[key] = value
+
+    # True deep merge updates
+    def deep_merge(d, u):
+        for k, v in u.items():
+            if isinstance(v, dict) and isinstance(d.get(k), dict):
+                d[k] = deep_merge(d[k], v)
+            else:
+                d[k] = v
+        return d
+        
+    config = deep_merge(config, body)
     
     save_alert_config(config)
     logger.info("alert_config_updated by admin")
@@ -88,9 +106,8 @@ async def test_alert_email(request: Request):
     
     Send a test alert email to verify SMTP configuration (admin only).
     """
-    auth = request.headers.get("Authorization", "")
-    if auth != f"Bearer {ADMIN_KEY}":
-        return JSONResponse(status_code=403, content={"error": "Admin key required"})
+    from utils.auth_guard import require_admin_or_session
+    require_admin_or_session(request)
     
     from core.alerting import _smtp_send
     

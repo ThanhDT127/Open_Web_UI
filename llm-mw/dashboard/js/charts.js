@@ -70,6 +70,33 @@ function lineChartConfig(label, color) {
 }
 
 // Shared donut chart config
+// Render custom HTML legend for donut charts
+function renderCustomLegend(containerId, labels, colors, values = []) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const total = values.reduce((a, b) => a + b, 0);
+    
+    container.innerHTML = labels.map((label, i) => {
+        const color = colors[i] || '#cbd5e1';
+        const value = values[i];
+        let displayLabel = label;
+        
+        if (value !== undefined && total > 0) {
+            const pct = ((value / total) * 100).toFixed(0);
+            displayLabel = `${label} (${pct}%)`;
+        }
+        
+        return `
+            <div class="legend-item" title="${label}">
+                <span class="legend-dot" style="background-color: ${color};"></span>
+                <span class="legend-label">${displayLabel}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+// Shared donut chart config
 function donutChartConfig() {
     return {
         type: 'doughnut',
@@ -80,25 +107,7 @@ function donutChartConfig() {
             cutout: '60%',
             plugins: {
                 legend: {
-                    position: 'bottom',
-                    labels: {
-                        color: '#94a3b8', font: { size: 11 }, padding: 8,
-                        usePointStyle: true, boxWidth: 8,
-                        // Limit legend items to prevent overflow
-                        generateLabels: function (chart) {
-                            const data = chart.data;
-                            if (!data.labels.length) return [];
-                            return data.labels.map((label, i) => ({
-                                text: label.length > 25 ? label.substring(0, 22) + '...' : label,
-                                fillStyle: data.datasets[0].backgroundColor[i],
-                                strokeStyle: 'transparent',
-                                lineWidth: 0,
-                                pointStyle: 'circle',
-                                hidden: false,
-                                index: i
-                            }));
-                        }
-                    }
+                    display: false
                 },
                 tooltip: {
                     backgroundColor: '#1e293b',
@@ -212,6 +221,7 @@ export async function updateCharts(summaryData) {
         requestTypeChart.data.datasets[0].data = values;
         requestTypeChart.data.datasets[0].backgroundColor = COLORS.slice(0, values.length);
         requestTypeChart.update();
+        renderCustomLegend('requestTypeLegend', types, COLORS.slice(0, values.length), values);
     }
 
     // --- User cost donut chart ---
@@ -232,10 +242,12 @@ export function updateUserCostChart(users) {
         userCostChart.data.labels = grouped.labels;
         userCostChart.data.datasets[0].data = grouped.values;
         userCostChart.data.datasets[0].backgroundColor = grouped.colors;
+        renderCustomLegend('userCostLegend', grouped.labels, grouped.colors, grouped.values);
     } else {
         userCostChart.data.labels = ['No data'];
         userCostChart.data.datasets[0].data = [1];
         userCostChart.data.datasets[0].backgroundColor = ['#334155'];
+        renderCustomLegend('userCostLegend', ['No data'], ['#334155']);
     }
     userCostChart.update();
 }
@@ -251,10 +263,12 @@ export function updateModelCostChart(models) {
         modelCostChart.data.labels = grouped.labels;
         modelCostChart.data.datasets[0].data = grouped.values;
         modelCostChart.data.datasets[0].backgroundColor = grouped.colors;
+        renderCustomLegend('modelCostLegend', grouped.labels, grouped.colors, grouped.values);
     } else {
         modelCostChart.data.labels = ['No data'];
         modelCostChart.data.datasets[0].data = [1];
         modelCostChart.data.datasets[0].backgroundColor = ['#334155'];
+        renderCustomLegend('modelCostLegend', ['No data'], ['#334155']);
     }
     modelCostChart.update();
 }

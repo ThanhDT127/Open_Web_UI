@@ -35,6 +35,10 @@ export async function loadUsers() {
             return;
         }
 
+        // Sort by quota usage percentage (descending, unlimited goes to bottom)
+        const getPct = (q) => (q && q.limit_cost_usd > 0) ? (q.used_cost_usd / q.limit_cost_usd) : -1;
+        users.sort((a, b) => getPct(b.quota) - getPct(a.quota));
+
         tbody.innerHTML = users.map(u => {
             const q = u.quota || {};
             const costUsed = q.used_cost_usd || 0;
@@ -84,18 +88,23 @@ export async function loadUsers() {
                 <td class="cost">${formatUsd(costUsed)}</td>
                 <td>${costLimit > 0 ? formatUsd(costLimit) : '∞'}</td>
                 <td class="quota-cell">${quotaBar}</td>
-                <td class="hash-cell" title="${hash}"><code>${maskedHash}</code></td>
                 <td class="actions-cell">
-                    <button class="btn-icon btn-edit" title="Edit" onclick="window.dashboardAPI.showEditUserModal('${uid}')">✏️</button>
-                    <button class="btn-icon btn-key" title="Rotate Key" onclick="window.dashboardAPI.rotateUserKey('${uid}')">🔑</button>
-                    <button class="btn-icon btn-toggle" title="${isActive ? 'Disable' : 'Enable'}" onclick="window.dashboardAPI.toggleUserActive('${uid}', ${!isActive})">${isActive ? '🔴' : '🟢'}</button>
-                    <button class="btn-icon btn-delete" title="Delete" onclick="window.dashboardAPI.deleteUser('${uid}')">🗑️</button>
+                    ${uid === 'admin' ? `
+                        <!-- System only -->
+                    ` : `
+                        <button class="btn-icon btn-edit" title="Edit" onclick="window.dashboardAPI.showEditUserModal('${uid}')">✏️</button>
+                        <button class="btn-icon btn-toggle" title="${isActive ? 'Disable' : 'Enable'}" onclick="window.dashboardAPI.toggleUserActive('${uid}', ${!isActive})">${isActive ? '🔴' : '🟢'}</button>
+                        <button class="btn-icon btn-delete" title="Delete" onclick="window.dashboardAPI.deleteUser('${uid}')">🗑️</button>
+                    `}
                 </td>
             </tr>`;
         }).join('');
+
+        // Load cross-database sync status table
+        await loadSyncStatus();
     } catch (err) {
         console.error('Failed to load users:', err);
-        tbody.innerHTML = '<tr><td colspan="10" class="error-msg">Error: ' + err.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="error-msg">Error: ' + err.message + '</td></tr>';
     }
 }
 
@@ -167,6 +176,7 @@ export async function saveUser() {
                 limit_cost_usd: parseFloat(document.getElementById('modalLimitCost').value) || 0,
                 limit_tokens: parseInt(document.getElementById('modalLimitTokens').value) || 0,
                 limit_image_requests: parseInt(document.getElementById('modalLimitImages').value) || 0,
+                period: document.getElementById('modalPeriod').value,
             };
 
             const res = await mwFetch(`/v1/_mw/admin/users/${encodeURIComponent(_editingUserId)}`, {
@@ -312,4 +322,104 @@ function _showSubkeyModal(subkey, userId) {
     const copyBtn = document.querySelector('#subkeyModal .btn-sm');
     if (copyBtn) copyBtn.textContent = '📋 Copy';
     document.getElementById('subkeyModal').style.display = 'flex';
+}
+
+export async function loadSyncStatus() {
+    const tbody = document.getElementById('syncTable');
+    if (!tbody) return;
+    try {
+        const res = await mwFetch('/v1/_mw/admin/users/sync-status');
+        if (!res || !res.ok) {
+            tbody.innerHTML = '<tr><td colspan="7" class="error-msg">Failed to load sync status</td></tr>';
+            return;
+        }
+        const data = await res.json();
+        const users = data.users || [];
+        if (users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="no-data">No accounts found in databases</td></tr>';
+            return;
+        }
+
+        // Sort by status priority (mismatch -> pending_ow_approval -> pending_sync -> orphan_middleware -> synced)
+        const weight = { 'mismatch': 4, 'pending_ow_approval': 3, 'pending_sync': 2, 'orphan_middleware': 1, 'synced': 0 };
+        users.sort((a, b) => (weight[b.status] || 0) - (weight[a.status] || 0));
+
+        tbody.innerHTML = users.map(u => {
+            const email = u.email || '';
+            const name = u.name || '';
+            const owRole = u.ow_role || 'n/a';
+            const mwActive = u.mw_active !== null ? (u.mw_active ? '🟢 Active' : '🔴 Inactive') : 'n/a';
+
+            // Mask subkey if it exists
+            const rawSubkey = u.subkey || '';
+            const maskedSubkey = rawSubkey ? rawSubkey.slice(0, 8) + '...' + rawSubkey.slice(-8) : 'n/a';
+
+            // Badges
+            let statusBadge = '';
+            if (u.status === 'synced') {
+                statusBadge = '<span class="badge badge-active" style="background:#10b981">✓ Synced</span>';
+            } else if (u.status === 'pending_sync') {
+                statusBadge = '<span class="badge badge-warning" style="background:#f59e0b;color:#000">⏳ Pending Sync</span>';
+            } else if (u.status === 'mismatch') {
+                statusBadge = '<span class="badge badge-danger" style="background:#ef4444">⚠️ Mismatch</span>';
+            } else if (u.status === 'orphan_middleware') {
+                statusBadge = '<span class="badge badge-inactive" style="background:#64748b">👻 Orphan MW</span>';
+            } else if (u.status === 'pending_ow_approval') {
+                statusBadge = '<span class="badge badge-warning" style="background:#64748b;color:#fff">⌛ OW Approval Needed</span>';
+            }
+
+            const uid = encodeURIComponent(email);
+
+            // Render sync action button
+            let actionBtn = '';
+            if (u.status === 'pending_ow_approval') {
+                actionBtn = `<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>Requires Role</button>`;
+            } else if (u.status !== 'synced') {
+                actionBtn = `<button class="btn btn-sm btn-primary" onclick="window.dashboardAPI.syncUserNow('${uid}')">Sync Now</button>`;
+            } else {
+                actionBtn = `<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>Synced</button>`;
+            }
+
+            // Special override for 'admin' system account
+            if (email === 'admin') {
+                statusBadge = '<span class="badge badge-active" style="background:#4f46e5">🔑 Dashboard Manager</span>';
+                actionBtn = '<button class="btn btn-sm btn-secondary" style="opacity: 0.5;" disabled>System Only</button>';
+            }
+
+            return `<tr>
+                <td class="user-id">${email}</td>
+                <td>${name}</td>
+                <td><span class="badge" style="background:#334155">${owRole}</span></td>
+                <td>${mwActive}</td>
+                <td>${statusBadge}</td>
+                <td>${actionBtn}</td>
+            </tr>`;
+        }).join('');
+
+    } catch (err) {
+        console.error('Failed to load sync status:', err);
+        tbody.innerHTML = '<tr><td colspan="6" class="error-msg">Error: ' + err.message + '</td></tr>';
+    }
+}
+
+export async function syncUserNow(userId) {
+    userId = decodeURIComponent(userId);
+    if (!confirm(`Force synchronize and align status for user ${userId}?`)) return;
+
+    try {
+        const res = await mwFetch('/v1/_mw/admin/users/sync-now', {
+            method: 'POST',
+            body: JSON.stringify({ user_id: userId })
+        });
+        if (res && res.ok) {
+            updateStatus('ok', `User ${userId} synced successfully ✓`);
+            // Reload tables
+            await loadUsers();
+        } else {
+            const err = await res.json().catch(() => ({}));
+            alert(`Failed to sync: ${err.error || 'Unknown error'}`);
+        }
+    } catch (err) {
+        alert(`Error: ${err.message}`);
+    }
 }

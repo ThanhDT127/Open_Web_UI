@@ -7,14 +7,31 @@ import { initCharts } from './charts.js';
 import { loadSummary, connectEventStream, refreshTables } from './usage.js';
 import { loadAccessData, connectAccessStream } from './access.js';
 import { applyLogFilters, resetLogFilters, loadMoreLogs, exportLogsToExcel } from './logs.js';
+import { refreshAnalytics, initAnalyticsChart } from './analytics.js';
+import { initGroupAnalyticsChart, fetchData as refreshGroups } from './group_analytics.js';
+import { refreshSatisfaction } from './satisfaction.js';
 import { updateStatus } from './utils.js';
 import {
-	showCreateUserModal, showEditUserModal, closeUserModal, saveUser,
-	deleteUser, rotateUserKey, toggleUserActive
+	loadUsers, showCreateUserModal, showEditUserModal, closeUserModal, saveUser,
+	deleteUser, rotateUserKey, toggleUserActive, syncUserNow
 } from './users.js';
 import {
-	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, testSMTP
+	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, saveDefaultQuota, testSMTP
 } from './settings.js';
+import { applyRagFilters, resetRagFilters } from './raghealth.js';
+import {
+	recalcComparison, resetSimulator, showAddPriceModal, showEditPriceModal,
+	closePriceModal, savePrice, deletePrice
+} from './prices.js';
+import {
+	showPendingModal, closePendingModal, refreshPendingList, reconcilePending, forceClearPending
+} from './pending.js';
+import {
+	connectActiveUsersStream, disconnectActiveUsersStream
+} from './active_users.js';
+import {
+	openExportModal, closeExportModal, downloadReport
+} from './export.js';
 
 // Expose a stable API for inline HTML handlers (window.dashboardAPI.*)
 export async function initAPI() {
@@ -28,27 +45,63 @@ export async function initAPI() {
 		loadMoreLogs,
 		exportLogsToExcel,
 		refreshUsage: refreshTables,
+		loadSummary,
+		refreshAnalytics,
+		refreshSatisfaction,
 		// User CRUD
+		loadUsers,
 		showCreateUserModal,
 		showEditUserModal,
 		closeUserModal,
 		saveUser,
 		deleteUser,
 		rotateUserKey,
-		toggleUserActive
+		toggleUserActive,
+		syncUserNow,
+		// Price CRUD & simulator
+		recalcComparison,
+		resetSimulator,
+		showAddPriceModal,
+		showEditPriceModal,
+		closePriceModal,
+		savePrice,
+		deletePrice,
+		// Pending requests details & actions
+		showPendingModal,
+		closePendingModal,
+		refreshPendingList,
+		reconcilePending,
+		forceClearPending,
+		// Export report modal
+		openExportModal,
+		closeExportModal,
+		downloadReport
 	};
+
 
 	window.settingsAPI = {
 		saveSMTP,
 		saveQuotaThresholds,
 		saveBudgets,
 		saveNotifToggles,
+		saveDefaultQuota,
 		testSMTP
+	};
+
+	window.ragHealthAPI = {
+		apply: applyRagFilters,
+		reset: resetRagFilters
+	};
+
+	window.groupAnalyticsAPI = {
+		fetchData: refreshGroups
 	};
 
 	// One-time UI init
 	try {
 		initCharts();
+		initAnalyticsChart();
+		initGroupAnalyticsChart();
 	} catch (e) {
 		// Chart.js may not be ready yet; summary load will still work.
 		console.warn('Charts init failed:', e);
@@ -60,6 +113,7 @@ export function startDashboard() {
 	// Initial load
 	loadSummary();
 	connectEventStream();
+	connectActiveUsersStream();
 
 	// Refresh summary periodically (keeps charts/metrics fresh)
 	const interval = setInterval(() => {
@@ -79,5 +133,6 @@ export function startDashboard() {
 
 export function stopDashboard() {
 	stopDashboardLoops();
+	disconnectActiveUsersStream();
 	updateStatus('warning', 'Stopped');
 }

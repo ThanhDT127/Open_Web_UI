@@ -52,6 +52,12 @@ DEFAULT_ALERT_CONFIG = {
         "enabled": True,
         "send_email": True,
         "thresholds": [80, 95, 100]
+    },
+    "provisioning": {
+        "default_quota": {
+            "period": "monthly",
+            "limit_cost_usd": 2.0
+        }
     }
 }
 
@@ -67,9 +73,11 @@ def _db_available() -> bool:
 
 # ─── Config helpers (DB + file fallback) ──────────────────────
 
+import copy
+
 def load_alert_config() -> dict:
     """Load alert configuration. DB first, then file fallback."""
-    config = DEFAULT_ALERT_CONFIG.copy()
+    config = copy.deepcopy(DEFAULT_ALERT_CONFIG)
 
     if _db_available():
         try:
@@ -661,7 +669,7 @@ def get_user_quota_status(user_id: str) -> dict:
     Used by /v1/_mw/quota-status endpoint (lightweight, no auth required).
     
     Returns:
-        Dict with percent_used, remaining_usd, unlimited flag
+        Dict with percent_used, remaining_usd, unlimited flag, and subkey.
     """
     from core.quota import get_current_quota_user
 
@@ -673,6 +681,7 @@ def get_user_quota_status(user_id: str) -> dict:
     quota = user.get("quota", {})
     limit = float(quota.get("limit_cost_usd", 0) or 0)
     used = float(quota.get("used_cost_usd", 0) or 0)
+    subkey = user.get("subkey")
 
     if limit <= 0:
         return {
@@ -681,7 +690,8 @@ def get_user_quota_status(user_id: str) -> dict:
             "percent_used": 0,
             "remaining_usd": None,
             "unlimited": True,
-            "alert_level": None
+            "alert_level": None,
+            "subkey": subkey
         }
 
     percent = round(used / limit * 100, 1)
@@ -702,5 +712,6 @@ def get_user_quota_status(user_id: str) -> dict:
         "limit_cost_usd": limit,
         "remaining_usd": remaining,
         "unlimited": False,
-        "alert_level": alert_level
+        "alert_level": alert_level,
+        "subkey": subkey
     }

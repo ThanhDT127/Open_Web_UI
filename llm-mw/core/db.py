@@ -22,6 +22,7 @@ logger = logging.getLogger("llm_mw")
 # ─── Connection pool ─────────────────────────────────────────
 
 _pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
+_ow_pool: Optional[psycopg2.pool.ThreadedConnectionPool] = None
 
 
 def _parse_dsn(database_url: str) -> dict:
@@ -71,7 +72,7 @@ def init_pool(database_url: str, minconn: int = 2, maxconn: int = 10):
     Initialize the connection pool. Called once at startup.
     Creates the target database if it doesn't exist, then creates tables.
     """
-    global _pool
+    global _pool, _ow_pool
     if _pool is not None:
         return
 
@@ -91,11 +92,30 @@ def init_pool(database_url: str, minconn: int = 2, maxconn: int = 10):
                 params["user"], params["host"], params["port"],
                 params["dbname"], minconn, maxconn)
 
+    # Initialize openwebui read-only connection pool on the same host/port
+    try:
+        _ow_pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=minconn,
+            maxconn=maxconn,
+            host=params["host"],
+            port=params["port"],
+            user=params["user"],
+            password=params["password"],
+            dbname="openwebui",
+        )
+        logger.info("Open WebUI DB pool initialized: %s@%s:%s/openwebui (min=%d, max=%d)",
+                    params["user"], params["host"], params["port"], minconn, maxconn)
+    except Exception as e:
+        logger.error("Failed to initialize Open WebUI DB pool: %s", str(e))
+
     # Create tables
     _create_tables()
 
     # Auto-migrate from JSON if tables are empty
     _auto_migrate_if_empty()
+
+    # Verify Open WebUI schema
+    check_ow_schema()
 
 
 def get_conn():
@@ -123,6 +143,58 @@ def db_conn():
         raise
     finally:
         put_conn(conn)
+
+
+def get_ow_conn():
+    """Get a connection from the Open WebUI pool."""
+    if _ow_pool is None:
+        raise RuntimeError("Open WebUI database pool not initialized. Call init_pool() first.")
+    return _ow_pool.getconn()
+
+
+def put_ow_conn(conn):
+    """Return a connection to the Open WebUI pool."""
+    if _ow_pool is not None:
+        _ow_pool.putconn(conn)
+
+
+@contextmanager
+def db_ow_conn():
+    """Context manager for Open WebUI database connections (read-only)."""
+    conn = get_ow_conn()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        put_ow_conn(conn)
+
+
+def check_ow_schema() -> bool:
+    """
+    Verify that the Open WebUI 'user' table has the necessary columns.
+    Logged at startup to prevent runtime errors.
+    """
+    try:
+        with db_ow_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'user' AND column_name IN ('email', 'role', 'name')
+            """)
+            cols = [r[0] for r in cur.fetchall()]
+            cur.close()
+            if len(cols) < 3:
+                logger.error("OW schema check failed: 'user' table is missing required columns (found: %s)", cols)
+                return False
+            logger.info("OW schema check passed: 'user' table has required columns (email, role, name)")
+            return True
+    except Exception as e:
+        logger.error("OW schema check error: %s", str(e))
+        return False
 
 
 # ─── Schema creation ─────────────────────────────────────────
@@ -336,9 +408,10 @@ def _auto_migrate_if_empty():
             _import_pending(conn, cur, BACKUP_DATA_DIR, DATA_DIR)
             logger.info("JSON → DB migration complete")
         else:
-            # Always sync missing users from JSON (ON CONFLICT DO NOTHING)
-            logger.info("DB has %d users — syncing missing users from JSON...", user_count)
+            # Always sync missing users and prices from JSON (ON CONFLICT DO NOTHING)
+            logger.info("DB has %d users — syncing missing users and prices from JSON...", user_count)
             _import_users(conn, cur, BACKUP_DATA_DIR, DATA_DIR)
+            _import_prices(conn, cur, BACKUP_DATA_DIR, DATA_DIR)
 
         # Backfill subkey_hash for users with plaintext subkey but no hash
         _backfill_subkey_hashes(conn, cur)
