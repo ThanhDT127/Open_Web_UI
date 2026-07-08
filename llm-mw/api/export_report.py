@@ -16,7 +16,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
 
-from core.db import db_conn, db_ow_conn, get_conn, put_conn
+from core.db import db_conn, db_ow_conn, get_conn, put_conn, fetch_final_audit_entries
 from utils.auth_guard import require_admin_or_session
 
 
@@ -67,20 +67,13 @@ def _collect_top_users(cutoff, end_time) -> list:
     """Per-user breakdown (requests/cost/tokens/top model) with OW display names."""
     user_stats = defaultdict(lambda: {"requests": 0, "cost_usd": 0.0, "tokens": 0, "models": defaultdict(int)})
     try:
-        with db_conn() as conn:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT user_id, cost_usd, tokens_total, model
-                FROM mw_audit_log
-                WHERE ts >= %s AND ts <= %s AND status IN ('ok', 'reconciled')
-            """, (cutoff, end_time))
-            for user_id, cost, tokens, model in cur.fetchall():
-                stats = user_stats[user_id or "unknown"]
-                stats["requests"] += 1
-                stats["cost_usd"] += float(cost or 0)
-                stats["tokens"] += int(tokens or 0)
-                stats["models"][model or "unknown"] += 1
-            cur.close()
+        for entry in fetch_final_audit_entries(cutoff, end_time):
+            is_final = entry["status"] in ('ok', 'reconciled')
+            stats = user_stats[entry["user_id"] or "unknown"]
+            stats["requests"] += 1
+            stats["cost_usd"] += entry["cost_usd"] if is_final else 0.0
+            stats["tokens"] += entry["tokens_total"] if is_final else 0
+            stats["models"][entry["model"] or "unknown"] += 1
     except Exception:
         pass
 
@@ -114,19 +107,12 @@ def _collect_top_models(cutoff, end_time) -> list:
     """Model breakdown (requests/cost/tokens)."""
     model_stats = defaultdict(lambda: {"requests": 0, "cost_usd": 0.0, "tokens": 0})
     try:
-        with db_conn() as conn:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT model, cost_usd, tokens_total
-                FROM mw_audit_log
-                WHERE ts >= %s AND ts <= %s AND status IN ('ok', 'reconciled')
-            """, (cutoff, end_time))
-            for model, cost, tokens in cur.fetchall():
-                stats = model_stats[model or "unknown"]
-                stats["requests"] += 1
-                stats["cost_usd"] += float(cost or 0)
-                stats["tokens"] += int(tokens or 0)
-            cur.close()
+        for entry in fetch_final_audit_entries(cutoff, end_time):
+            is_final = entry["status"] in ('ok', 'reconciled')
+            stats = model_stats[entry["model"] or "unknown"]
+            stats["requests"] += 1
+            stats["cost_usd"] += entry["cost_usd"] if is_final else 0.0
+            stats["tokens"] += entry["tokens_total"] if is_final else 0
     except Exception:
         pass
 

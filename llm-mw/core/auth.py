@@ -48,7 +48,8 @@ def _load_users_db() -> List[Dict[str, Any]]:
         cur = conn.cursor()
         cur.execute("""
             SELECT user_id, role, openwebui_user_id, subkey_hash, active,
-                   allowed_models, used_tokens, used_cost_usd, quota, alerts_sent
+                   allowed_models, used_tokens, used_cost_usd, quota, alerts_sent,
+                   deleted_at
             FROM mw_users
         """)
         rows = cur.fetchall()
@@ -68,6 +69,7 @@ def _load_users_db() -> List[Dict[str, Any]]:
             "used_cost_usd": row[7] or 0.0,
             "quota": row[8] if row[8] else {},
             "alerts_sent": row[9] if row[9] else {},
+            "deleted_at": row[10].isoformat() if row[10] else None,
         }
         users.append(user)
     return users
@@ -281,6 +283,40 @@ def delete_user(user_id: str) -> bool:
         _save_users_file(users)
         deleted = True
     return deleted
+
+
+def soft_delete_user(user_id: str) -> bool:
+    """
+    Soft-delete: revoke access (inactive + subkey destroyed) but keep the row
+    so historical data (feedback, audit log, leaderboards) still resolves to
+    this identity. Reversible via sync-now when the user re-registers in
+    Open WebUI. Returns True if user was found and marked.
+    """
+    import datetime as _dt
+    marked = False
+    if _db_available():
+        from core.db import db_conn
+        with db_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE mw_users
+                SET active = false, deleted_at = now(), subkey_hash = NULL, updated_at = now()
+                WHERE user_id = %s AND deleted_at IS NULL
+            """, (user_id,))
+            marked = cur.rowcount > 0
+            cur.close()
+    # Mirror into JSON backup
+    users = _load_users_file()
+    for u in users:
+        if u.get("user_id") == user_id and not u.get("deleted_at"):
+            u["active"] = False
+            u["deleted_at"] = _dt.datetime.now(_dt.timezone.utc).isoformat()
+            u["subkey_hash"] = None
+            u.pop("subkey", None)
+            _save_users_file(users)
+            marked = True
+            break
+    return marked
 
 
 def find_user(subkey: str) -> Optional[Dict[str, Any]]:
@@ -514,6 +550,7 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
                         subkey_hash = COALESCE(mw_users.subkey_hash, EXCLUDED.subkey_hash),
                         openwebui_user_id = COALESCE(mw_users.openwebui_user_id, EXCLUDED.openwebui_user_id),
                         active = true
+                    WHERE mw_users.deleted_at IS NULL
                     RETURNING user_id, subkey_hash, openwebui_user_id, active, allowed_models, quota
                 """, (user_id, subkey_hash, openwebui_uuid, mw_role, json.dumps(quota)))
                 row = cur.fetchone()

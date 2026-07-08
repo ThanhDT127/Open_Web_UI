@@ -15,7 +15,8 @@ from pydantic import BaseModel
 from config import USERS_FILE, MW_SECRET, LOG_DIR, BACKUP_LOG_DIR, logger
 from core.auth import (
     load_users, save_users, hash_subkey, find_user,
-    delete_user as auth_delete_user, get_user_by_id, update_user_admin_fields,
+    delete_user as auth_delete_user, soft_delete_user as auth_soft_delete_user,
+    get_user_by_id, update_user_admin_fields,
     create_user_record,
 )
 from threading import Lock
@@ -105,17 +106,20 @@ class MapOpenWebUIUserRequest(BaseModel):
 # API ENDPOINTS
 # ============================================================================
 
-def list_users(request: Request):
+def list_users(request: Request, include_deleted: bool = False):
     """
     GET /v1/_mw/admin/users
-    List all users (scrubbed - no keys/hashes)
+    List all users (scrubbed - no keys/hashes).
+    Soft-deleted users are hidden unless ?include_deleted=true.
     """
     from utils.auth_guard import require_admin_or_session
     require_admin_or_session(request)
-    
+
     users = load_users()
+    if not include_deleted:
+        users = [u for u in users if not u.get("deleted_at")]
     scrubbed_users = [_scrub_user(u) for u in users]
-    
+
     return {
         "users": scrubbed_users,
         "total": len(scrubbed_users)
@@ -348,46 +352,50 @@ async def enable_user(request: Request, user_id: str):
     return {"message": f"User {user_id} enabled successfully", "user": _scrub_user(user)}
 
 
-async def delete_user_endpoint(request: Request, user_id: str):
+async def delete_user_endpoint(request: Request, user_id: str, purge: bool = False):
     """
     DELETE /v1/_mw/admin/users/{user_id}
-    Permanently delete a user
+    Soft-delete a user: access revoked, identity kept for historical data.
+    Pass ?purge=true to permanently remove the row (e.g. legal erasure request).
     """
     from utils.auth_guard import require_admin_or_session
     require_admin_or_session(request)
-    
+
     with _user_lock:
         users = load_users()
-        
+
         # Check user exists
         user = next((u for u in users if u["user_id"] == user_id), None)
         if not user:
             raise HTTPException(404, f"User {user_id} not found")
-        
+
         # Prevent self-deletion
         if hasattr(request.state, 'mw_user_id') and request.state.mw_user_id == user_id:
             raise HTTPException(400, "Cannot delete yourself")
-        
-        # Delete from DB + JSON
-        deleted = auth_delete_user(user_id)
+
+        if purge:
+            deleted = auth_delete_user(user_id)
+        else:
+            deleted = auth_soft_delete_user(user_id)
         if not deleted:
             raise HTTPException(500, f"Failed to delete user {user_id}")
-        
+
         # Audit trail
         _write_admin_audit(
             actor="admin_session",
-            action="delete_user",
+            action="purge_user" if purge else "delete_user",
             target_user=user_id,
-            changes={"deleted": True, "role": user.get("role"), "active": user.get("active")},
+            changes={"deleted": True, "purge": purge, "role": user.get("role"), "active": user.get("active")},
             status="ok",
             request=request
         )
-        
-        logger.info(f"Deleted user: {user_id}")
-        
+
+        logger.info(f"{'Purged' if purge else 'Soft-deleted'} user: {user_id}")
+
         return {
-            "message": f"User {user_id} deleted permanently",
-            "user_id": user_id
+            "message": f"User {user_id} {'deleted permanently' if purge else 'deleted (history preserved)'}",
+            "user_id": user_id,
+            "purge": purge
         }
 
 
@@ -488,7 +496,7 @@ def get_users_sync_status(request: Request):
     try:
         with db_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT user_id, active, subkey_hash, role FROM mw_users")
+            cur.execute("SELECT user_id, active, subkey_hash, role FROM mw_users WHERE deleted_at IS NULL")
             rows = cur.fetchall()
             for r in rows:
                 mw_users_list.append({
@@ -638,6 +646,7 @@ async def sync_user_now(request: Request):
                     quota             = CASE WHEN mw_users.quota ? 'period'
                                              THEN mw_users.quota
                                              ELSE EXCLUDED.quota END,
+                    deleted_at        = NULL,
                     updated_at        = now()
                 RETURNING (xmax = 0) AS inserted, quota, subkey_hash
             """, (user_id, new_subkey_hash, openwebui_uuid, is_active, mw_role, json.dumps(default_quota)))

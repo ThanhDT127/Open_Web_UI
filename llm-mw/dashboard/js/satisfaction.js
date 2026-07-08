@@ -68,12 +68,15 @@ export async function refreshSatisfaction() {
                     const ratingClass = fb.rating === 1 ? 'color: #10b981;' : fb.rating === -1 ? 'color: #ef4444;' : 'color: #94a3b8;';
                     const timeAgo = _formatTimeAgo(fb.created_at);
                     const reasonLabel = fb.reason ? _formatReason(fb.reason) : '';
+                    const deletedTag = fb.user_status === 'deleted'
+                        ? ' <span style="font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 9px; background: rgba(239,68,68,0.15); color: #f87171; vertical-align: middle;">🗑️ đã xóa</span>'
+                        : '';
 
                     return `<div class="event-line" style="padding: 10px 14px; border-bottom: 1px solid #1e293b; display: flex; gap: 12px; align-items: flex-start;">
                         <span style="font-size: 20px; ${ratingClass}">${icon}</span>
                         <div style="flex: 1; min-width: 0;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                <span style="font-weight: 600; color: #e2e8f0;">${escapeHtml(fb.user_name)}</span>
+                                <span style="font-weight: 600; color: #e2e8f0;">${escapeHtml(fb.user_name)}${deletedTag}</span>
                                 <span style="font-size: 12px; color: #64748b;">${escapeHtml(timeAgo)}</span>
                             </div>
                             <div style="font-size: 12px; color: #94a3b8; margin-bottom: 4px;">
