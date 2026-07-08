@@ -52,6 +52,9 @@ async def dashboard_login(request: Request):
         "expires_in_hours": 4
     })
     
+    import os
+    cookie_secure = os.getenv("MW_COOKIE_SECURE", "True").lower() in ("true", "1")
+
     # Set cookie (HttpOnly for security, SameSite=Lax for SSE)
     response.set_cookie(
         key="mw_admin_session",
@@ -59,7 +62,7 @@ async def dashboard_login(request: Request):
         max_age=4 * 3600,  # 4 hours in seconds
         httponly=True,
         samesite="lax",  # Important: allows cookie in SSE requests
-        secure=True,  # HTTPS required (Nginx handles SSL)
+        secure=cookie_secure,  # Configurable for localhost HTTP testing
         path="/"
     )
     
