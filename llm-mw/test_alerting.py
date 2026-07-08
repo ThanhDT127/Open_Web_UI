@@ -39,8 +39,7 @@ try:
         load_system_alerts, save_system_alerts,
         check_and_send_alerts, get_user_quota_status,
         ALERT_CONFIG_FILE, SYSTEM_ALERTS_FILE,
-        _check_per_user_alerts, _check_system_budget_alerts,
-        LEVEL_MAP
+        _quota_alert_kind
     )
     test("core.alerting imports", True)
 except ImportError as e:
@@ -62,31 +61,34 @@ config = load_alert_config()
 test("alert_config.json loads", isinstance(config, dict))
 test("smtp section exists", "smtp" in config)
 test("smtp default disabled", config.get("smtp", {}).get("enabled") == False)
-test("admin thresholds = [50,70,90,100]",
-     config.get("admin_alerts", {}).get("per_user_quota", {}).get("thresholds") == [50, 70, 90, 100])
-test("user thresholds = [80,95]",
-     config.get("user_alerts", {}).get("thresholds") == [80, 95])
+test("admin thresholds = [80, 95, 100]",
+     config.get("admin_alerts", {}).get("per_user_quota", {}).get("thresholds") == [80, 95, 100])
+test("user thresholds = [80, 95, 100]",
+     config.get("user_alerts", {}).get("thresholds") == [80, 95, 100])
 
 sys_alerts = load_system_alerts()
 test("system_alerts.json loads", isinstance(sys_alerts, dict))
 test("system_alerts initially empty", len(sys_alerts) == 0)
 
 
-# ─── Test 3: LEVEL_MAP ────────────────────────────────────
+# ─── Test 3: Level mapping ────────────────────────────────
 print("\n🏷️  Test 3: Level mapping")
-test("50 -> INFO", "INFO" in LEVEL_MAP[50])
-test("70 -> WARNING", "WARNING" in LEVEL_MAP[70])
-test("90 -> CRITICAL", "CRITICAL" in LEVEL_MAP[90])
-test("100 -> EMERGENCY", "EMERGENCY" in LEVEL_MAP[100])
+level_80, type_80, _ = _quota_alert_kind(80)
+level_95, type_95, _ = _quota_alert_kind(95)
+level_100, type_100, _ = _quota_alert_kind(100)
+
+test("80 -> info", level_80 == "info" and type_80 == "quota_warning")
+test("95 -> warning", level_95 == "warning" and type_95 == "quota_critical")
+test("100 -> critical", level_100 == "critical" and type_100 == "quota_blocked")
 
 
 # ─── Test 4: User quota status ────────────────────────────
 print("\n📊 Test 4: Quota status helper")
 
 # Test existing user
-status_admin = get_user_quota_status("admin")
-test("admin found", status_admin.get("found") == True)
-test("admin unlimited (limit=0)", status_admin.get("unlimited") == True)
+status_admin = get_user_quota_status("adminrd")
+test("adminrd found", status_admin.get("found") == True)
+test("adminrd has limit", status_admin.get("unlimited") == False)
 
 status_user1 = get_user_quota_status("user1")
 test("user1 found", status_user1.get("found") == True)
@@ -112,12 +114,13 @@ with lock:
     test_users = json.loads(json.dumps(original_users))  # deep copy
     for u in test_users:
         if u.get("user_id") == "user1":
-            u["quota"]["used_cost_usd"] = 7.5  # 75% of $10 limit
+            u["quota"]["limit_cost_usd"] = 10.0  # Set limit explicitly to 10.0
+            u["quota"]["used_cost_usd"] = 8.5  # 85% of $10 limit
             u["alerts_sent"] = {}
             break
     save_users(test_users)
 
-# Run alert check (should trigger 50% and 70% milestones)
+# Run alert check (should trigger 80% milestone)
 asyncio.run(check_and_send_alerts("user1", add_cost_usd=0.01))
 
 # Check alerts_sent was updated
@@ -125,16 +128,15 @@ updated_users = load_users()
 user1 = next((u for u in updated_users if u.get("user_id") == "user1"), None)
 alerts = user1.get("alerts_sent", {}) if user1 else {}
 
-test("50% milestone logged", "cost_usd_50" in alerts, f"alerts_sent={alerts}")
-test("70% milestone logged", "cost_usd_70" in alerts, f"alerts_sent={alerts}")
-test("90% NOT triggered (75%<90%)", "cost_usd_90" not in alerts, f"alerts_sent={alerts}")
+test("80% milestone logged", "alert_80" in alerts, f"alerts_sent={alerts}")
+test("95% NOT triggered (85%<95%)", "alert_95" not in alerts, f"alerts_sent={alerts}")
 
-# Now bump to 92%
+# Now bump to 97%
 with lock:
     test_users2 = load_users()
     for u in test_users2:
         if u.get("user_id") == "user1":
-            u["quota"]["used_cost_usd"] = 9.2  # 92%
+            u["quota"]["used_cost_usd"] = 9.7  # 97%
             break
     save_users(test_users2)
 
@@ -144,8 +146,8 @@ updated_users2 = load_users()
 user1_v2 = next((u for u in updated_users2 if u.get("user_id") == "user1"), None)
 alerts2 = user1_v2.get("alerts_sent", {}) if user1_v2 else {}
 
-test("90% milestone NOW logged", "cost_usd_90" in alerts2, f"alerts_sent={alerts2}")
-test("100% still NOT triggered (92%<100%)", "cost_usd_100" not in alerts2)
+test("95% milestone NOW logged", "alert_95" in alerts2, f"alerts_sent={alerts2}")
+test("100% still NOT triggered (97%<100%)", "alert_100" not in alerts2)
 
 # Restore original users
 with lock:

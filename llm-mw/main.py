@@ -23,21 +23,25 @@ from api.embeddings import create_embeddings
 from api.rerank import rerank
 from api.media import serve_media
 from api.docling import docling_proxy
-from api.admin import get_usage, reset_quota, reconcile_usage
+from api.admin import get_usage, reset_quota, reconcile_usage, stream_live_metrics, list_pending, force_remove_pending
+from api.analytics import get_chat_analytics, get_satisfaction_analytics
 from api.summary import get_summary
 from api.summary_v2 import get_summary_v2
 from api.stream import stream_audit
 from api.access_logs import get_access_summary, stream_access
 from api.audit_query import parse_audit_filters
 from api.rag_health import get_rag_ingestion, get_rag_retrieval, get_rag_storage
+from api.group_analytics import get_group_analytics, get_group_users
 from api.knowledge_analytics import (
     get_knowledge_inventory, get_knowledge_kb_value, get_knowledge_governance,
 )
 from api.user_admin import (
     list_users, create_user, update_user, 
     rotate_user_key, disable_user, enable_user, get_admin_audit,
-    delete_user_endpoint, reconciliation_report, map_openwebui_user
+    delete_user_endpoint, reconciliation_report, map_openwebui_user, get_users_sync_status, sync_user_now
 )
+from api.price_admin import list_prices, update_price, delete_price
+from api.export_report import export_report
 from api.dashboard_login import dashboard_login, dashboard_logout
 from api.auth_check import get_auth_check
 from api.auth_test import auth_test
@@ -180,9 +184,15 @@ app.add_api_route("/docling-proxy/{path:path}", docling_proxy, methods=["GET", "
 app.add_api_route("/docling-proxy", docling_proxy, methods=["GET", "POST", "PUT", "DELETE"])
 
 # Admin endpoints
+app.add_api_route("/v1/_mw/admin/prices", list_prices, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/prices", update_price, methods=["POST"])
+app.add_api_route("/v1/_mw/admin/prices/{model_name}", delete_price, methods=["DELETE"])
+app.add_api_route("/v1/_mw/admin/active-users/stream", stream_live_metrics, methods=["GET"])
 app.add_api_route("/admin/usage", get_usage, methods=["GET"])
 app.add_api_route("/admin/reset", reset_quota, methods=["POST"])
 app.add_api_route("/admin/reconcile", reconcile_usage, methods=["POST"])
+app.add_api_route("/v1/_mw/admin/analytics/chat", get_chat_analytics, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/analytics/satisfaction", get_satisfaction_analytics, methods=["GET"])
 
 # Summary & Stream endpoints
 app.add_api_route("/v1/_mw/summary", get_summary_v2, methods=["GET"])  # Enhanced version with time range
@@ -192,8 +202,15 @@ app.add_api_route("/v1/_mw/stream", stream_audit, methods=["GET"])
 app.add_api_route("/v1/_mw/access_summary", get_access_summary, methods=["GET"])
 app.add_api_route("/v1/_mw/access_stream", stream_access, methods=["GET"])
 
+# Group Analytics endpoint
+app.add_api_route("/v1/_mw/admin/analytics/groups", get_group_analytics, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/analytics/groups/{group_id}/users", get_group_users, methods=["GET"])
+
 # Audit log query endpoint (Logs tab)
 app.add_api_route("/v1/_mw/audit/query", parse_audit_filters, methods=["GET"])
+
+# Export report endpoint (Excel multi-sheet / CSV streaming)
+app.add_api_route("/v1/_mw/export/report", export_report, methods=["GET"])
 
 # RAG Health endpoints (RAG Health tab)
 app.add_api_route("/v1/_mw/rag-health/ingestion", get_rag_ingestion, methods=["GET"])
@@ -205,6 +222,10 @@ app.add_api_route("/v1/_mw/knowledge-analytics/kb-value", get_knowledge_kb_value
 app.add_api_route("/v1/_mw/knowledge-analytics/governance", get_knowledge_governance, methods=["GET"])
 
 # User management endpoints (admin only)
+app.add_api_route("/v1/_mw/admin/pending", list_pending, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/pending/{request_id}", force_remove_pending, methods=["DELETE"])
+app.add_api_route("/v1/_mw/admin/users/sync-status", get_users_sync_status, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/users/sync-now", sync_user_now, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/users", list_users, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/users", create_user, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/users/{user_id}", update_user, methods=["PATCH"])
@@ -219,7 +240,7 @@ app.add_api_route("/v1/_mw/admin/users/{user_id}/openwebui-mapping", map_openweb
 # Quota status & Alert endpoints
 app.add_api_route("/v1/_mw/quota-status", get_quota_status, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/alerts/config", get_alert_config, methods=["GET"])
-app.add_api_route("/v1/_mw/admin/alerts/config", update_alert_config, methods=["PUT"])
+app.add_api_route("/v1/_mw/admin/alerts/config", update_alert_config, methods=["PUT", "POST"])
 app.add_api_route("/v1/_mw/admin/alerts/test-email", test_alert_email, methods=["POST"])
 
 # Notification endpoints

@@ -33,6 +33,11 @@
                 <div class="status-dot" id="statusDot"></div>
                 <span class="status-message" id="statusMessage">Authenticated ✓</span>
             </div>
+            <!-- Export Report -->
+            <button class="btn-export" style="margin-left: auto;" onclick="window.dashboardAPI.openExportModal()"
+                title="Export a full dashboard report">
+                📥 Export Report
+            </button>
             <!-- Notification Bell -->
             <div class="notif-bell-wrapper">
                 <button class="notif-bell" id="notifBell" onclick="window.notifAPI.toggle()" title="Notifications">
@@ -96,6 +101,10 @@
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'users')">👥 Users</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'logs')">📋 Logs</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'raghealth')">🧬 RAG Health</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'groups')">🏢 Groups</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'analytics')">💬 Chat Analytics</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'satisfaction')">⭐ Satisfaction</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'prices')">💸 Prices</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'knowledge')">📚 Knowledge</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'settings')">⚙️ Settings</button>
         </div>
@@ -153,10 +162,15 @@
                     <div class="metric-value" id="metricUsageMissing">-</div>
                     <div class="metric-detail">OK nhưng thiếu tokens (BUG)</div>
                 </div>
-                <div class="metric-card">
+                <div class="metric-card interactive" onclick="window.dashboardAPI.showPendingModal()">
                     <div class="metric-label">⏳ Pending</div>
                     <div class="metric-value" id="metricPending">-</div>
-                    <div class="metric-detail">Đang chờ xử lý</div>
+                    <div class="metric-detail">Đang chờ xử lý (Xem chi tiết)</div>
+                </div>
+                <div class="metric-card" id="cardActiveUsers">
+                    <div class="metric-label"><span class="pulse-dot"></span> Active Users</div>
+                    <div class="metric-value" id="metricActiveUsers">-</div>
+                    <div class="metric-detail">Hoạt động (Real-time)</div>
                 </div>
             </div>
 
@@ -338,6 +352,49 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════════ -->
+        <!-- GROUP ANALYTICS TAB                                -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="groupsTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">🏢</span>
+                <span class="insight-text">Phân bổ chi phí và thống kê theo phòng ban (Primary Group) — Nhóm được gán tự
+                    động dựa trên group cũ nhất của user bên Open WebUI.</span>
+            </div>
+
+            <div class="section-controls" style="margin-top: 15px;">
+                <div class="section-title">🏆 Top Spenders by Department</div>
+                <button class="btn-apply" style="margin-top:0;"
+                    onclick="window.groupAnalyticsAPI && window.groupAnalyticsAPI.fetchData()">↻ Refresh</button>
+            </div>
+            <div class="chart-table-row">
+                <div class="chart-container small">
+                    <div class="chart-title">🍩 Cost by Department</div>
+                    <canvas id="groupCostChart"></canvas>
+                </div>
+                <div class="table-container" style="flex:2">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID Phòng Ban</th>
+                                <th>Tên Phòng Ban</th>
+                                <th>Requests</th>
+                                <th>Tokens</th>
+                                <th>Chi phí (USD)</th>
+                                <th>Avg Latency (ms)</th>
+                                <th>Model ưa thích (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groupAnalyticsTable">
+                            <tr>
+                                <td colspan="7" class="loading">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
         <!-- ACCESS TAB                                         -->
         <!-- ═══════════════════════════════════════════════════ -->
         <div id="accessTab" class="tab-content">
@@ -387,7 +444,9 @@
         <div id="usersTab" class="tab-content">
             <div class="insight-banner">
                 <span class="insight-icon">📋</span>
-                <span class="insight-text">Quản lý user & quota — Thêm, sửa, xóa user. Rotate key khi cần.</span>
+                <span class="insight-text">Quản lý user & quota — Thêm, sửa, xóa user. Rotate key khi cần.
+                    User mới (lazy provisioning) nhận mặc định: <b id="defaultQuotaHint">…</b> — đổi tại tab
+                    Settings.</span>
             </div>
             <div class="section">
                 <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
@@ -397,30 +456,99 @@
                             Active: <span id="activeUserCount">-</span> / Total: <span id="totalUserCount">-</span>
                         </span>
                     </span>
-                    <button class="btn btn-primary" onclick="window.dashboardAPI.showCreateUserModal()">➕ Add
-                        User</button>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="window.dashboardAPI.loadUsers()" class="btn-apply" style="margin-top:0;">↻
+                            Refresh</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>User ID</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Models</th>
+                                <th>Period</th>
+                                <th>Cost Used</th>
+                                <th>Limit</th>
+                                <th>Quota Usage</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTable">
+                            <tr>
+                                <td colspan="9" class="loading">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="section" style="margin-top: 30px;">
+                <div class="section-title">🔄 User Sync Status (Open WebUI ⇄ Middleware)</div>
+                <div class="insight-banner">
+                    <span class="insight-icon">🔄</span>
+                    <span class="insight-text">Đối chiếu tài khoản chéo giữa Open WebUI DB và Middleware DB. Trạng thái
+                        lệch sẽ tự động hiển thị ở đầu danh sách.</span>
                 </div>
                 <table>
                     <thead>
                         <tr>
-                            <th>User ID</th>
-                            <th>Role</th>
-                            <th>Status</th>
-                            <th>Models</th>
-                            <th>Period</th>
-                            <th>Cost Used</th>
-                            <th>Limit</th>
-                            <th>Quota Usage</th>
-                            <th>Subkey Hash</th>
+                            <th>Email / User ID</th>
+                            <th>Name</th>
+                            <th>Open WebUI Role</th>
+                            <th>Middleware Active</th>
+                            <th>Sync Status</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="usersTable">
+                    <tbody id="syncTable">
                         <tr>
-                            <td colspan="10" class="loading">Loading...</td>
+                            <td colspan="7" class="loading">Loading sync status...</td>
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Pending Requests Details Modal -->
+        <div id="pendingModal" class="modal-overlay" style="display:none">
+            <div class="modal-content" style="max-width: 800px; width: 90%;">
+                <div class="modal-header">
+                    <span id="pendingModalTitle">⏳ Active Pending Requests</span>
+                    <button class="modal-close" onclick="window.dashboardAPI.closePendingModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div style="text-align: right; margin-bottom: 10px;">
+                        <button class="btn btn-secondary" onclick="window.dashboardAPI.refreshPendingList()">↻
+                            Refresh</button>
+                    </div>
+                    <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Request ID</th>
+                                    <th>User ID</th>
+                                    <th>Model</th>
+                                    <th>Endpoint</th>
+                                    <th>Started</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pendingTableBody">
+                                <tr>
+                                    <td colspan="6" style="text-align:center; padding: 20px; color: #64748b;">No active
+                                        pending requests.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer"
+                    style="text-align: right; padding-top: 15px; border-top: 1px solid #1e293b; margin-top: 15px;">
+                    <button class="btn btn-secondary" onclick="window.dashboardAPI.closePendingModal()">Close</button>
+                </div>
             </div>
         </div>
 
@@ -466,7 +594,7 @@
                             <label>Period</label>
                             <select id="modalPeriod">
                                 <option value="monthly">monthly</option>
-                                <option value="daily">daily</option>
+                                <option value="weekly">weekly</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -513,6 +641,82 @@
                 <div class="modal-footer">
                     <button class="btn btn-primary"
                         onclick="document.getElementById('subkeyModal').style.display='none'">I've saved it</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Price Create/Edit Modal -->
+        <div id="priceModal" class="modal-overlay" style="display:none">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <span id="priceModalTitle">Thêm Bảng Giá Model</span>
+                    <button class="modal-close" onclick="window.dashboardAPI.closePriceModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Tên Model (model_name)</label>
+                        <input type="text" id="modalPriceModelName" placeholder="e.g. gpt-4o">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Giá Input (USD / 1M Tokens)</label>
+                            <input type="number" id="modalPriceInput" step="0.0001" min="0" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label>Giá Output (USD / 1M Tokens)</label>
+                            <input type="number" id="modalPriceOutput" step="0.0001" min="0" value="0">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Giá Sinh Ảnh (per_image_usd - Nhập số hoặc để trống)</label>
+                        <input type="number" id="modalPriceImage" step="0.0001" min="0" placeholder="e.g. 0.04">
+                    </div>
+                    <div class="form-group">
+                        <label>Ghi chú (notes)</label>
+                        <input type="text" id="modalPriceNotes" placeholder="e.g. Bảng giá ưu đãi">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="window.dashboardAPI.closePriceModal()">Hủy</button>
+                    <button class="btn btn-primary" id="modalPriceSaveBtn"
+                        onclick="window.dashboardAPI.savePrice()">Lưu</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Export Report Modal -->
+        <div id="exportModal" class="modal-overlay" style="display:none">
+            <div class="modal-content modal-sm">
+                <div class="modal-header">
+                    <span>📥 Export Report</span>
+                    <button class="modal-close" onclick="window.dashboardAPI.closeExportModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Format</label>
+                        <div style="display:flex; gap: 16px;">
+                            <label style="display:flex; align-items:center; gap:6px; font-weight:normal; text-transform:none;">
+                                <input type="radio" name="exportFormat" id="exportFormatXlsx" value="xlsx" checked
+                                    style="width:auto; padding:0;">
+                                Excel (.xlsx) — full 7-sheet report
+                            </label>
+                            <label style="display:flex; align-items:center; gap:6px; font-weight:normal; text-transform:none;">
+                                <input type="radio" name="exportFormat" id="exportFormatCsv" value="csv"
+                                    style="width:auto; padding:0;">
+                                CSV — raw audit log only
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Time Range</label>
+                        <div id="exportTimeRangeDisplay" style="color:#94a3b8; font-size: 13px;">
+                            Uses the dashboard's currently selected time range
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="window.dashboardAPI.closeExportModal()">Cancel</button>
+                    <button class="btn btn-primary" onclick="window.dashboardAPI.downloadReport()">Download</button>
                 </div>
             </div>
         </div>
@@ -681,7 +885,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragIngestFailures">
-                            <tr><td colspan="4" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -704,14 +910,18 @@
                     <div class="metric-card accent-green">
                         <div class="metric-label">🎯 Hit-Rate</div>
                         <div class="metric-value" id="ragRetrHitRate">-</div>
-                        <div class="metric-detail" title="Logged response text is truncated at 2000 chars; late citation markers may be missed.">Citation hit-rate ⓘ</div>
+                        <div class="metric-detail"
+                            title="Logged response text is truncated at 2000 chars; late citation markers may be missed.">
+                            Citation hit-rate ⓘ</div>
                     </div>
                 </div>
                 <div class="chart-container">
                     <div class="chart-title">📊 Hit-Rate by Model</div>
                     <canvas id="ragRetrModelChart"></canvas>
                 </div>
-                <div class="section-title" style="margin-top: 20px;" title="Grouped by source document; the <source id> index is per-request, not a knowledge-base id.">By Source ⓘ</div>
+                <div class="section-title" style="margin-top: 20px;"
+                    title="Grouped by source document; the <source id> index is per-request, not a knowledge-base id.">
+                    By Source ⓘ</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -723,7 +933,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragRetrBySource">
-                            <tr><td colspan="4" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -739,7 +951,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragRetrZeroCite">
-                            <tr><td colspan="4" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -762,7 +976,8 @@
                     <div class="metric-card usage-missing">
                         <div class="metric-label">📐 Chunk Outliers</div>
                         <div class="metric-value" id="ragStorOutlier">-</div>
-                        <div class="metric-detail" title="Heuristic: chunk count vs. estimate from file size.">Anomalously low chunks ⓘ</div>
+                        <div class="metric-detail" title="Heuristic: chunk count vs. estimate from file size.">
+                            Anomalously low chunks ⓘ</div>
                     </div>
                 </div>
                 <div id="ragStorError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
@@ -778,7 +993,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragStorZeroKBTable">
-                            <tr><td colspan="4" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -792,11 +1009,14 @@
                             </tr>
                         </thead>
                         <tbody id="ragStorOrphanTable">
-                            <tr><td colspan="2" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="2" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
-                <div class="section-title" style="margin-top: 20px;" title="Heuristic — chunk count vs. estimate from file size.">Chunk-Count Outliers ⓘ</div>
+                <div class="section-title" style="margin-top: 20px;"
+                    title="Heuristic — chunk count vs. estimate from file size.">Chunk-Count Outliers ⓘ</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -809,9 +1029,193 @@
                             </tr>
                         </thead>
                         <tbody id="ragStorOutlierTable">
-                            <tr><td colspan="5" class="loading">No data</td></tr>
+                            <tr>
+                                <td colspan="5" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- ANALYTICS TAB                                      -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="analyticsTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">💬</span>
+                <span class="insight-text">Chat Analytics — Thống kê tập trung về mức độ sử dụng từ Open WebUI và Chi
+                    phí từ Middleware.</span>
+            </div>
+
+
+
+            <!-- Summary Metrics -->
+            <div class="metrics" style="margin-bottom: 20px;">
+                <div class="metric-card">
+                    <div class="metric-label">💬 Total Chats</div>
+                    <div class="metric-value" id="analyticsTotalChats">-</div>
+                    <div class="metric-detail">Số phiên chat (Open WebUI)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">📩 Total Requests</div>
+                    <div class="metric-value" id="analyticsTotalMessages">-</div>
+                    <div class="metric-detail">Số requests (Middleware)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">🔤 Total Tokens</div>
+                    <div class="metric-value" id="analyticsTotalTokens">-</div>
+                    <div class="metric-detail">Tokens (Middleware)</div>
+                </div>
+                <div class="metric-card accent-green">
+                    <div class="metric-label">💰 Total Cost</div>
+                    <div class="metric-value" id="analyticsTotalCost">-</div>
+                    <div class="metric-detail">Chi phí USD (Middleware)</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">👥 Active Users</div>
+                    <div class="metric-value" id="analyticsActiveUsers">-</div>
+                    <div class="metric-detail">Số người dùng có hoạt động</div>
+                </div>
+            </div>
+
+            <!-- Row 1: Daily Trend & Hourly Activity -->
+            <div class="chart-grid">
+                <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
+                    <div class="chart-title" style="flex-shrink: 0;">📈 Daily Trend (Requests vs Cost)</div>
+                    <div style="position: relative; flex: 1; min-height: 0;">
+                        <canvas id="analyticsDualChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
+                    <div class="chart-title" style="flex-shrink: 0;">🕐 Hourly Activity (0h - 23h)</div>
+                    <div style="position: relative; flex: 1; min-height: 0;">
+                        <canvas id="analyticsHourlyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 2: Model Breakdown & Top Models Table -->
+            <div class="chart-grid">
+                <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
+                    <div class="chart-title" style="flex-shrink: 0;">🍩 Model Breakdown (Cost)</div>
+                    <div style="position: relative; flex: 1; min-height: 0;">
+                        <canvas id="analyticsModelChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
+                    <div class="chart-title" style="flex-shrink: 0;">🤖 Top Models</div>
+                    <div style="overflow-y: auto; flex: 1; min-height: 0;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Model</th>
+                                    <th>Requests</th>
+                                    <th>Cost (USD)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="analyticsTopModelsTable">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Leaderboard Table -->
+            <div class="section">
+                <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🏆 Top Users Leaderboard</span>
+                    <button onclick="window.dashboardAPI.refreshAnalytics()" class="btn-apply" style="margin-top:0;">↻
+                        Refresh</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Email (User ID)</th>
+                            <th>Display Name</th>
+                            <th>Chats</th>
+                            <th>Requests</th>
+                            <th>Tokens</th>
+                            <th>Cost (USD)</th>
+                            <th>Cost Share</th>
+                            <th>Top Model</th>
+                        </tr>
+                    </thead>
+                    <tbody id="analyticsLeaderboardTable">
+                        <tr>
+                            <td colspan="9" class="loading">Loading analytics...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- SATISFACTION TAB                                    -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="satisfactionTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">⭐</span>
+                <span class="insight-text">User Satisfaction — Điểm CSAT, bảng xếp hạng model và phản hồi chi tiết từ
+                    người dùng.</span>
+            </div>
+
+            <!-- CSAT Summary Metrics -->
+            <div class="metrics" style="margin-bottom: 20px;">
+                <div class="metric-card accent-green">
+                    <div class="metric-label">😊 CSAT Score</div>
+                    <div class="metric-value" id="csatScoreValue">-%</div>
+                    <div class="metric-detail">Tỷ lệ đánh giá tích cực</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">👍 Positive</div>
+                    <div class="metric-value" id="csatPositiveCount">-</div>
+                    <div class="metric-detail">Số lượt đánh giá tốt</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">👎 Negative</div>
+                    <div class="metric-value" id="csatNegativeCount">-</div>
+                    <div class="metric-detail">Số lượt đánh giá xấu</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">📊 Total Votes</div>
+                    <div class="metric-value" id="csatTotalCount">-</div>
+                    <div class="metric-detail">Tổng số lượt đánh giá</div>
+                </div>
+            </div>
+
+            <!-- Model Leaderboard -->
+            <div class="section">
+                <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>🏆 Model Satisfaction Leaderboard</span>
+                    <button onclick="window.dashboardAPI.refreshSatisfaction()" class="btn-apply"
+                        style="margin-top:0;">↻ Refresh</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Model</th>
+                            <th>👍 Positive</th>
+                            <th>👎 Negative</th>
+                            <th>Total</th>
+                            <th>CSAT %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="csatModelLeaderboard">
+                        <tr>
+                            <td colspan="6" class="loading">Loading satisfaction data...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Recent Feedback Feed -->
+            <div class="section">
+                <div class="section-title">💬 Phản hồi gần đây</div>
+                <div id="csatRecentFeedback" style="max-height: 500px; overflow-y: auto;">
+                    <div class="loading">Loading feedback...</div>
                 </div>
             </div>
         </div>
@@ -1009,6 +1413,77 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════════ -->
+        <!-- PRICES TAB                                         -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="pricesTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">💸</span>
+                <span class="insight-text">Quản lý bảng giá model LLM & So sánh chi phí mô phỏng token (Cơ sở dữ liệu
+                    mw_prices).</span>
+            </div>
+
+            <!-- Cost Comparison Panel -->
+            <div class="section" style="margin-bottom: 20px;">
+                <div class="section-title">📊 So Sánh Chi Phí Mô Phỏng (Cost Comparison)</div>
+                <p style="font-size: 14px; color: #94a3b8; margin-bottom: 15px;">
+                    Mô phỏng chi phí 1 lượt chat bằng cách nhập số lượng token đầu vào (Input) và đầu ra (Output) dự
+                    kiến.
+                </p>
+                <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: flex-end; flex-wrap: wrap;">
+                    <div class="form-group" style="margin-bottom: 0; min-width: 150px;">
+                        <label style="font-size: 12px; margin-bottom: 4px; display: block;">Input Tokens</label>
+                        <input type="number" id="simInputTokens" value="10000" min="0"
+                            onchange="window.dashboardAPI.recalcComparison()"
+                            style="padding: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; border-radius: 4px; width: 100%;">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0; min-width: 150px;">
+                        <label style="font-size: 12px; margin-bottom: 4px; display: block;">Output Tokens</label>
+                        <input type="number" id="simOutputTokens" value="2000" min="0"
+                            onchange="window.dashboardAPI.recalcComparison()"
+                            style="padding: 8px; background: #1e293b; border: 1px solid #475569; color: #fff; border-radius: 4px; width: 100%;">
+                    </div>
+                    <button onclick="window.dashboardAPI.resetSimulator()" class="btn-secondary"
+                        style="height: 38px;">Mặc định</button>
+                </div>
+
+                <div id="comparisonList" style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
+                    <!-- Comparison bars will be rendered dynamically here -->
+                </div>
+            </div>
+
+            <!-- Pricing CRUD Table -->
+            <div class="section">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <div class="section-title" style="margin-bottom: 0;">📋 Bảng Giá Chi Tiết</div>
+                    <button onclick="window.dashboardAPI.showAddPriceModal()" class="btn-apply" style="margin-top:0;">➕
+                        Thêm Bảng Giá</button>
+                </div>
+
+                <div style="margin-bottom: 15px; font-size: 14px; color: #94a3b8;">
+                    Tổng số model đã cấu hình: <span id="totalPricesCount">-</span>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tên Model</th>
+                            <th>Giá Input (1M Tokens)</th>
+                            <th>Giá Output (1M Tokens)</th>
+                            <th>Giá Sinh Ảnh</th>
+                            <th>Ghi chú</th>
+                            <th style="text-align: right; width: 120px;">Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pricesTable">
+                        <tr>
+                            <td colspan="6" class="loading">Đang tải bảng giá...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
         <!-- SETTINGS TAB                                       -->
         <!-- ═══════════════════════════════════════════════════ -->
         <div id="settingsTab" class="tab-content">
@@ -1047,6 +1522,10 @@
                             <input type="text" name="from_email" id="smtpFrom" placeholder="noreply@example.com">
                         </div>
                         <div class="form-group">
+                            <label>Admin Alert Emails (comma-separated)</label>
+                            <input type="text" id="adminEmails" placeholder="admin1@example.com, admin2@example.com">
+                        </div>
+                        <div class="form-group">
                             <label>Password Env Var</label>
                             <input type="text" name="password_env" id="smtpPassEnv" placeholder="SMTP_PASSWORD">
                         </div>
@@ -1071,12 +1550,8 @@
                     <div class="section-title">📊 Quota Thresholds (%)</div>
                     <form id="quotaThresholdForm" class="settings-form">
                         <div class="form-group">
-                            <label>Info Threshold (%)</label>
-                            <input type="number" id="thresholdInfo" value="80">
-                        </div>
-                        <div class="form-group">
                             <label>Warning Threshold (%)</label>
-                            <input type="number" id="thresholdWarning" value="95">
+                            <input type="number" id="thresholdWarning" value="80">
                         </div>
                         <div class="form-group">
                             <label>Critical Threshold (%)</label>
@@ -1085,6 +1560,33 @@
                         <div class="form-actions">
                             <button type="button" onclick="window.settingsAPI.saveQuotaThresholds()"
                                 class="btn-apply">Save Thresholds</button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Section: Default Quota for New Users (Lazy Provisioning) -->
+                <div class="section">
+                    <div class="section-title">👤 Default Quota (New Users)</div>
+                    <form id="defaultQuotaForm" class="settings-form">
+                        <div class="form-group">
+                            <label>Cost Limit (USD)</label>
+                            <input type="number" id="defaultQuotaCost" step="0.01" min="0.01" placeholder="2.00">
+                        </div>
+                        <div class="form-group">
+                            <label>Period</label>
+                            <select id="defaultQuotaPeriod">
+                                <option value="monthly">monthly</option>
+                                <option value="weekly">weekly</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <span style="font-size: 12px; color: #64748b;">Áp dụng cho user được tự động khởi tạo
+                                (lazy provisioning) từ thời điểm lưu trở đi — không thay đổi quota của các user
+                                hiện có.</span>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" onclick="window.settingsAPI.saveDefaultQuota()"
+                                class="btn-apply">Save Default Quota</button>
                         </div>
                     </form>
                 </div>
@@ -1100,6 +1602,18 @@
                         <div class="form-group">
                             <label>Gemini Budget ($)</label>
                             <input type="number" step="0.01" id="budgetGemini">
+                        </div>
+                        <div class="form-group">
+                            <label>xAI (Grok) Budget ($)</label>
+                            <input type="number" step="0.01" id="budgetXai">
+                        </div>
+                        <div class="form-group">
+                            <label>Anthropic Budget ($)</label>
+                            <input type="number" step="0.01" id="budgetAnthropic">
+                        </div>
+                        <div class="form-group">
+                            <label>DeepSeek Budget ($)</label>
+                            <input type="number" step="0.01" id="budgetDeepseek">
                         </div>
                         <div class="form-actions">
                             <button type="button" onclick="window.settingsAPI.saveBudgets()" class="btn-apply">Save
@@ -1165,7 +1679,14 @@
             resetLogFilters: () => console.warn('Dashboard still loading...'),
             loadMoreLogs: () => console.warn('Dashboard still loading...'),
             exportLogsToExcel: () => console.warn('Dashboard still loading...'),
-            refreshUsage: () => console.warn('Dashboard still loading...')
+            refreshUsage: () => console.warn('Dashboard still loading...'),
+            recalcComparison: () => console.warn('Dashboard still loading...'),
+            resetSimulator: () => console.warn('Dashboard still loading...'),
+            showAddPriceModal: () => console.warn('Dashboard still loading...'),
+            closePriceModal: () => console.warn('Dashboard still loading...'),
+            savePrice: () => console.warn('Dashboard still loading...'),
+            editPrice: () => console.warn('Dashboard still loading...'),
+            deletePrice: () => console.warn('Dashboard still loading...')
         };
     </script>
 

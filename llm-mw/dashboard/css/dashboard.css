@@ -313,6 +313,46 @@ body {
     box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
+.metric-card.interactive {
+    cursor: pointer;
+}
+
+.metric-card.interactive:hover {
+    border-color: #6366f1;
+    background: #1f2937 !important;
+}
+
+.pulse-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background-color: #10b981;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    animation: pulse 1.6s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    }
+
+    70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+    }
+
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    }
+}
+
+
+
 .metric-card.accent-green {
     border-left-color: #10b981;
 }
@@ -399,7 +439,8 @@ body {
 .chart-content-wrapper {
     display: flex;
     flex-direction: column;
-    height: calc(100% - 24px); /* 100% minus title height */
+    height: calc(100% - 24px);
+    /* 100% minus title height */
     justify-content: flex-start;
     align-items: center;
 }
@@ -443,7 +484,8 @@ body {
     align-items: center;
     gap: 6px;
     font-size: 11px;
-    color: #e2e8f0; /* Bright readable text color */
+    color: #e2e8f0;
+    /* Bright readable text color */
     font-weight: 500;
     white-space: nowrap;
 }
@@ -1254,7 +1296,6 @@ td.cost {
 /* ─── Notification Bell ──────────────────────────────────── */
 .notif-bell-wrapper {
     position: relative;
-    margin-left: auto;
 }
 
 .notif-bell {
@@ -1517,4 +1558,19 @@ input:checked+.slider:before {
     font-size: 12px;
     color: #94a3b8;
     font-weight: 600;
+}
+
+
+/* ─── Scrollable Enhancements ────────────────────────────── */
+.table-container {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.table-container thead th {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: #1e293b;
+    /* match header bg to cover rows underneath */
 }

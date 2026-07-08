@@ -120,12 +120,12 @@
     "input_per_1m": 1.00,
     "output_per_1m": 5.00
   },
-  "deepseek-v4-pro": {
+  "chat-deepseek-v4-pro": {
     "input_per_1m": 1.74,
     "output_per_1m": 3.48,
     "notes": "DeepSeek V4 Pro via OpenRouter - 1.6T/49B active, 1M context"
   },
-  "deepseek-v4-flash": {
+  "chat-deepseek-v4-flash": {
     "input_per_1m": 0.14,
     "output_per_1m": 0.28,
     "notes": "DeepSeek V4 Flash via OpenRouter - 284B/13B active, 1M context"

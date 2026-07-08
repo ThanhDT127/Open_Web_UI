@@ -901,6 +901,22 @@ async def chat_completions(request: Request):
         body = await request.json()
     except UnicodeDecodeError as e:
         raise HTTPException(400, f"Invalid UTF-8 encoding in request body: {str(e)}")
+        
+    # --- User Sync via Forward Headers (Standard) ---
+    # Open WebUI sends X-OpenWebUI-User-Email when ENABLE_FORWARD_USER_INFO_HEADERS=true.
+    # If the request is authenticated as 'admin' (Global Connection key), we look up the
+    # actual user from this header and attribute usage to them via lazy provisioning.
+    if user.get("user_id") == "admin":
+        ow_email = request.headers.get("X-OpenWebUI-User-Email", "")
+        if ow_email:
+            from core.auth import get_user_by_id, lazy_provision_user
+            actual_user = get_user_by_id(ow_email)
+            if not actual_user:
+                actual_user = lazy_provision_user(ow_email)
+            if actual_user and actual_user.get("active", True):
+                user = actual_user
+                request.state.mw_user_id = user.get("user_id")
+                logger.info("user_sync: impersonated admin -> %s via header", ow_email)
     
     model = body.get("model")
     if not model:

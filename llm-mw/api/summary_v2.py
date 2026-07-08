@@ -22,6 +22,35 @@ def _db_available() -> bool:
         return False
 
 
+def _get_global_pending_count() -> int:
+    """Get the count of all active pending requests from DB or fallback file."""
+    if _db_available():
+        try:
+            from core.db import db_conn
+            with db_conn() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT count(*) FROM mw_pending")
+                count = cur.fetchone()[0]
+                cur.close()
+            return count or 0
+        except Exception:
+            pass
+            
+    # Fallback to pending.csv
+    import csv
+    from config import PENDING_CSV
+    if not os.path.exists(PENDING_CSV):
+        return 0
+    try:
+        with open(PENDING_CSV, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            rows = list(reader)
+        # Exclude header
+        return max(0, len(rows) - 1)
+    except Exception:
+        return 0
+
+
 def _load_entries_from_db(cutoff, end_time) -> List[Dict[str, Any]]:
     """Load audit entries from mw_audit_log table as dicts."""
     from core.db import db_conn
@@ -259,7 +288,7 @@ def get_summary_v2(
 
         # Calculate totals from rid_status (control-grade: last status per rid)
         requests_total = len(rid_status)
-        pending_open_count = sum(1 for _, (_, status) in rid_status.items() if status == "pending")
+        pending_open_count = _get_global_pending_count()
         error_count = sum(1 for _, (_, status) in rid_status.items() if status == "error")
         requests_ok = sum(1 for _, (_, status) in rid_status.items() if status in ["ok", "reconciled"])
         
