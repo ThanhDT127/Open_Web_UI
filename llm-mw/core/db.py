@@ -92,26 +92,19 @@ def init_pool(database_url: str, minconn: int = 2, maxconn: int = 10):
                 params["user"], params["host"], params["port"],
                 params["dbname"], minconn, maxconn)
 
-    # Initialize openwebui read-only connection pool
+    # Initialize openwebui read-only connection pool on the same host/port
     try:
-        ow_db_url = os.getenv("OPENWEBUI_DATABASE_URL", "").strip()
-        if ow_db_url:
-            ow_params = _parse_dsn(ow_db_url)
-        else:
-            ow_params = params.copy()
-            ow_params["dbname"] = "openwebui"
-
         _ow_pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=minconn,
             maxconn=maxconn,
-            host=ow_params["host"],
-            port=ow_params["port"],
-            user=ow_params["user"],
-            password=ow_params["password"],
-            dbname=ow_params["dbname"],
+            host=params["host"],
+            port=params["port"],
+            user=params["user"],
+            password=params["password"],
+            dbname="openwebui",
         )
-        logger.info("Open WebUI DB pool initialized: %s@%s:%s/%s (min=%d, max=%d)",
-                    ow_params["user"], ow_params["host"], ow_params["port"], ow_params["dbname"], minconn, maxconn)
+        logger.info("Open WebUI DB pool initialized: %s@%s:%s/openwebui (min=%d, max=%d)",
+                    params["user"], params["host"], params["port"], minconn, maxconn)
     except Exception as e:
         logger.error("Failed to initialize Open WebUI DB pool: %s", str(e))
 

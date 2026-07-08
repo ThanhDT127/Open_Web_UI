@@ -32,6 +32,7 @@ import {
 import {
 	openExportModal, closeExportModal, downloadReport
 } from './export.js';
+import { applyKnowledgeFilters, resetKnowledgeFilters } from './knowledge.js';
 
 // Expose a stable API for inline HTML handlers (window.dashboardAPI.*)
 export async function initAPI() {
@@ -95,6 +96,11 @@ export async function initAPI() {
 
 	window.groupAnalyticsAPI = {
 		fetchData: refreshGroups
+	};
+
+	window.knowledgeAPI = {
+		apply: applyKnowledgeFilters,
+		reset: resetKnowledgeFilters
 	};
 
 	// One-time UI init
