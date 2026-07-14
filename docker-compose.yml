@@ -16,7 +16,7 @@ services:
       postgres -c max_connections=300 -c shared_buffers=4GB -c work_mem=16MB -c effective_cache_size=8GB -c maintenance_work_mem=256MB -c wal_buffers=64MB -c random_page_cost=1.1 -c checkpoint_completion_target=0.9
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init_pgvector.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./scripts/sql/init_pgvector.sql:/docker-entrypoint-initdb.d/init.sql:ro
     # Step 5: Port closed for security (internal only)
     # ports:
     #   - "5432:5432"
@@ -90,6 +90,8 @@ services:
       - ADMIN_KEY=${ADMIN_KEY}
       - JWT_SECRET=${JWT_SECRET}
       - MW_SECRET=${MW_SECRET}
+      # Dùng chung với Open WebUI để middleware xác minh cookie phiên `token` trong luồng OAuth
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
       - OPENWEBUI_SERVICE_KEY=${SUBKEY_ADMIN}
       - MW_PUBLIC_URL=${MW_PUBLIC_URL:-https://your-domain.example.com}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
@@ -104,6 +106,7 @@ services:
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       - OFFICE365_CLIENT_ID=${OFFICE365_CLIENT_ID:-}
       - OFFICE365_CLIENT_SECRET=${OFFICE365_CLIENT_SECRET:-}
+      - OFFICE365_TENANT_ID=${OFFICE365_TENANT_ID:-common}
       - MW_RAG_IMAGE_INJECT=True
       - MW_RAG_IMAGE_MAX=3
     volumes:

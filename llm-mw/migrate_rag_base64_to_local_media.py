@@ -55,7 +55,7 @@ def process_base64_string(val: str) -> str:
             filename = save_bytes_to_media(webp_bytes, mime="image/webp")
             
             # Public access URL
-            public_url = f"https://localhost:3000/v1/_mw/media/{filename}"
+            public_url = f"/v1/_mw/media/{filename}"
             
             # We want to replace the original match in the unescaped string
             # Also handle potential escaped/raw format of original match in original val

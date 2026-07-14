@@ -12,6 +12,7 @@ from fastapi import HTTPException, Request
 from threading import Lock
 
 from config import USERS_FILE, MW_SECRET, logger
+from config import USERS_FILE, MW_SECRET, logger
 
 # Thread lock for user operations (backward compat)
 _lock = Lock()
@@ -243,6 +244,8 @@ def snapshot_users_to_json() -> int:
 
 def create_user_record(user: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Create exactly one user without replacing concurrent user state."""
+    if "subkey" in user and not user.get("subkey_hash"):
+        user["subkey_hash"] = hash_subkey(user["subkey"])
     if _db_available():
         from core.db import create_user_db
         return create_user_db(user)
@@ -328,6 +331,38 @@ def find_user(subkey: str) -> Optional[Dict[str, Any]]:
     return _find_user_file(subkey)
 
 
+def provision_from_forward_headers(request: Request, forwarded_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Resolve an Open WebUI user that has no openwebui_user_id mapping yet, using the
+    X-OpenWebUI-User-Email header, then pin the mapping so later requests take the
+    indexed lookup. Without this a newly registered user gets 401 on every call
+    (empty model list) until an admin maps them by hand.
+
+    Only reachable for callers presenting OPENWEBUI_SERVICE_KEY, and the email is
+    still verified against the Open WebUI `user` table by lazy_provision_user(),
+    so this trusts nothing the service key does not already imply.
+    """
+    email = request.headers.get("X-OpenWebUI-User-Email", "").strip()
+    if not email:
+        return None
+
+    user = get_user_by_id(email)  # lazy-provisions when the account is active in Open WebUI
+    if not user:
+        return None
+
+    if user.get("openwebui_user_id") != forwarded_id:
+        updated = update_user_admin_fields(
+            user["user_id"],
+            openwebui_user_id=forwarded_id,
+            update_openwebui_mapping=True,
+        )
+        user = updated or user
+        user["openwebui_user_id"] = forwarded_id
+        logger.info("user_sync: mapped Open WebUI user %s -> %s", email, forwarded_id)
+
+    return user
+
+
 def require_user(request: Request) -> Dict[str, Any]:
     """
     Require valid user authentication from Authorization header.
@@ -353,6 +388,8 @@ def require_user(request: Request) -> Dict[str, Any]:
     forwarded_id = request.headers.get("X-OpenWebUI-User-Id", "").strip()
     if forwarded_id and subkey == OPENWEBUI_SERVICE_KEY and OPENWEBUI_SERVICE_KEY:
         user = get_user_by_openwebui_id(forwarded_id)
+        if not user:
+            user = provision_from_forward_headers(request, forwarded_id)
         auth_source = "openwebui_service"
     else:
         user = find_user(subkey)
@@ -366,6 +403,39 @@ def require_user(request: Request) -> Dict[str, Any]:
             hashed_prefix, req_path, client_ip,
         )
         raise HTTPException(401, "Invalid sub-key")
+
+    # Sync block: check if user has been deactivated/banned in Open WebUI
+    if _db_available() and user.get("user_id"):
+        from core.db import db_ow_conn, db_conn
+        try:
+            with db_ow_conn() as conn:
+                cur = conn.cursor()
+                cur.execute('SELECT role FROM "user" WHERE email = %s LIMIT 1', (user["user_id"],))
+                row = cur.fetchone()
+                cur.close()
+            if row:
+                role = row[0]
+                if role not in ("user", "admin"):
+                    # User is banned/pending in Open WebUI! Invalidate Middleware DB state.
+                    with db_conn() as conn:
+                        cur = conn.cursor()
+                        cur.execute("UPDATE mw_users SET active = false, updated_at = now() WHERE user_id = %s", (user["user_id"],))
+                        cur.close()
+                    # Also update JSON backup
+                    try:
+                        users = _load_users_file()
+                        for u in users:
+                            if u.get("user_id") == user["user_id"]:
+                                u["active"] = False
+                                break
+                        _save_users_file(users)
+                    except Exception:
+                        pass
+                    # Update local state
+                    user["active"] = False
+                    logger.info("auth: user %s has been deactivated due to role change in Open WebUI (role=%s)", user["user_id"], role)
+        except Exception as e:
+            logger.warning("auth: failed to verify Open WebUI active status for user %s: %s", user["user_id"], str(e))
 
     # Sync block: check if user has been deactivated/banned in Open WebUI
     if _db_available() and user.get("user_id"):
@@ -446,27 +516,6 @@ def get_lock() -> Lock:
 
 # ─── Single-user O(1) API ─────────────────────────────────────
 
-def _default_provision_quota() -> Dict[str, Any]:
-    """Read the default quota for lazy-provisioned users from system config.
-
-    Falls back to the built-in defaults (monthly / $2.00) when the config
-    is missing or invalid, so provisioning never fails because of it.
-    """
-    period, limit_cost_usd = "monthly", 2.0
-    try:
-        # Imported lazily: core.alerting imports from core.auth at module level
-        from core.alerting import load_alert_config
-        cfg = (load_alert_config().get("provisioning") or {}).get("default_quota") or {}
-        if cfg.get("period") in ("monthly", "weekly"):
-            period = cfg["period"]
-        cost = float(cfg.get("limit_cost_usd", limit_cost_usd))
-        if cost > 0:
-            limit_cost_usd = cost
-    except Exception as e:
-        logger.warning("default_provision_quota: using built-in defaults: %s", str(e))
-    return {"period": period, "limit_cost_usd": limit_cost_usd}
-
-
 def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
     """
     Check if user exists and is active in Open WebUI database, and if so,
@@ -511,13 +560,12 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
         subkey = f"sk_{secrets.token_urlsafe(32)}"
         subkey_hash = hash_subkey(subkey)
 
-        # Set default quota (limits are admin-configurable via Settings tab)
-        defaults = _default_provision_quota()
+        # Set default quota
         quota = {
-            "period": defaults["period"],
+            "period": "monthly",
             "timezone": "Asia/Bangkok",
             "limit_tokens": 0,
-            "limit_cost_usd": defaults["limit_cost_usd"],
+            "limit_cost_usd": 2.0,
             "limit_image_requests": 0,
             "period_start": int(datetime.now(timezone.utc).timestamp() * 1000),
             "used_tokens": 0,
@@ -525,49 +573,32 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
             "used_image_requests": 0
         }
 
-        # Resolve openwebui UUID so Path A (service-key) auth works immediately
-        openwebui_uuid = None
         try:
-            with db_ow_conn() as conn:
-                cur = conn.cursor()
-                cur.execute('SELECT id FROM "user" WHERE email = %s LIMIT 1', (user_id,))
-                uuid_row = cur.fetchone()
-                cur.close()
-                if uuid_row:
-                    openwebui_uuid = uuid_row[0]
-        except Exception as e:
-            logger.warning("lazy_provision: could not resolve openwebui UUID for %s: %s", user_id, str(e))
-
-        try:
-            mw_role = "admin" if role == "admin" else "user"
             with db_conn() as conn:
                 cur = conn.cursor()
-                # NOTE: 'subkey' column was dropped in security migration — use subkey_hash only
+                # mw_users chỉ lưu subkey_hash — subkey thô không còn cột trong DB
                 cur.execute("""
-                    INSERT INTO mw_users (user_id, subkey_hash, openwebui_user_id, active, role, allowed_models, quota)
-                    VALUES (%s, %s, %s, true, %s, '["*"]'::jsonb, %s)
+                    INSERT INTO mw_users (user_id, subkey_hash, active, allowed_models, quota)
+                    VALUES (%s, %s, true, '["*"]'::jsonb, %s)
                     ON CONFLICT (user_id) DO UPDATE SET
                         subkey_hash = COALESCE(mw_users.subkey_hash, EXCLUDED.subkey_hash),
-                        openwebui_user_id = COALESCE(mw_users.openwebui_user_id, EXCLUDED.openwebui_user_id),
-                        active = true
-                    WHERE mw_users.deleted_at IS NULL
-                    RETURNING user_id, subkey_hash, openwebui_user_id, active, allowed_models, quota
-                """, (user_id, subkey_hash, openwebui_uuid, mw_role, json.dumps(quota)))
+                        active = true,
+                        updated_at = now()
+                    RETURNING user_id, subkey_hash, active, allowed_models, quota
+                """, (user_id, subkey_hash, json.dumps(quota)))
                 row = cur.fetchone()
                 cur.close()
-
+                
             if row:
-                logger.info(
-                    "lazy_provision: successfully provisioned user %s (openwebui_uuid=%s)",
-                    user_id, openwebui_uuid
-                )
+                logger.info("lazy_provision: successfully provisioned user %s", user_id)
                 # Also save to JSON file backup
                 try:
                     users = _load_users_file()
                     if not any(u.get("user_id") == user_id for u in users):
                         new_user = {
                             "user_id": user_id,
-                            "role": mw_role,
+                            "role": "user",
+                            "subkey": subkey,
                             "subkey_hash": subkey_hash,
                             "active": True,
                             "allowed_models": ["*"],
@@ -582,14 +613,13 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
 
                 return {
                     "user_id": row[0],
-                    "subkey": None,
+                    "subkey": subkey,
                     "subkey_hash": row[1],
-                    "openwebui_user_id": row[2],
-                    "active": row[3],
-                    "allowed_models": row[4] if row[4] else ["*"],
+                    "active": row[2],
+                    "allowed_models": row[3] if row[3] else ["*"],
                     "used_tokens": 0,
                     "used_cost_usd": 0.0,
-                    "quota": row[5] if row[5] else {},
+                    "quota": row[4] if row[4] else {},
                     "alerts_sent": {}
                 }
         except Exception as e:
@@ -603,6 +633,7 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     """
     Get a single user by user_id. O(1) indexed query.
     Uses DB if available, falls back to JSON file linear search.
+    If not found and database is available, attempts Lazy Provisioning.
     If not found and database is available, attempts Lazy Provisioning.
     """
     if _db_available():

@@ -1,5 +1,6 @@
 // Users tab — Full CRUD management with modals
 import { mwFetch, updateStatus } from './utils.js';
+import { loadUserToolAccess, resetUserToolAccess, saveUserToolAccess } from './tool_access.js';
 
 // Track current edit mode
 let _editingUserId = null; // null = create mode, string = edit mode
@@ -63,7 +64,7 @@ export async function loadUsers() {
                         <div class="quota-gauge-fill" style="width: ${quotaPct}%; background: ${color}"></div>
                     </div>
                     <span class="quota-text" style="color: ${color}">${quotaPct.toFixed(0)}%</span>
-                    <span class="quota-detail">${formatUsd(costUsed)} / ${formatUsd(costLimit)}</span>
+                    <span class="quota-detail">$${costUsed.toFixed(4)} / $${costLimit.toFixed(4)}</span>
                 `;
             } else {
                 quotaBar = '<span class="quota-unlimited">∞ Unlimited</span>';
@@ -85,8 +86,8 @@ export async function loadUsers() {
                 <td>${statusBadge}</td>
                 <td class="models-cell" title="${models}">${models.length > 25 ? models.slice(0, 25) + '...' : models}</td>
                 <td>${period}</td>
-                <td class="cost">${formatUsd(costUsed)}</td>
-                <td>${costLimit > 0 ? formatUsd(costLimit) : '∞'}</td>
+                <td class="cost">$${costUsed.toFixed(4)}</td>
+                <td>$${costLimit > 0 ? costLimit.toFixed(4) : '∞'}</td>
                 <td class="quota-cell">${quotaBar}</td>
                 <td class="actions-cell">
                     ${uid === 'admin' ? `
@@ -99,6 +100,9 @@ export async function loadUsers() {
                 </td>
             </tr>`;
         }).join('');
+
+        // Load cross-database sync status table
+        await loadSyncStatus();
 
         // Load cross-database sync status table
         await loadSyncStatus();
@@ -124,6 +128,8 @@ export function showCreateUserModal() {
     document.getElementById('modalPeriod').value = 'monthly';
     document.getElementById('modalActive').value = 'true';
     document.getElementById('modalSaveBtn').textContent = 'Create User';
+    // Quyền tool gắn với user Open WebUI; user mới chưa map nên chưa cấp được ở đây.
+    resetUserToolAccess();
     document.getElementById('userModal').style.display = 'flex';
 }
 
@@ -148,12 +154,14 @@ export function showEditUserModal(userId) {
     document.getElementById('modalActive').value = String(user.active !== false);
     document.getElementById('modalSaveBtn').textContent = 'Save Changes';
     document.getElementById('userModal').style.display = 'flex';
+    loadUserToolAccess(user.openwebui_user_id);
 }
 
 
 export function closeUserModal() {
     document.getElementById('userModal').style.display = 'none';
     _editingUserId = null;
+    resetUserToolAccess();
 }
 
 
@@ -189,6 +197,8 @@ export async function saveUser() {
                 const err = await res.json().catch(() => ({}));
                 throw new Error(err.detail || 'Update failed');
             }
+
+            await saveUserToolAccess();
 
             updateStatus('ok', `User ${_editingUserId} updated ✓`);
         } else {
@@ -349,7 +359,7 @@ export async function loadSyncStatus() {
             const name = u.name || '';
             const owRole = u.ow_role || 'n/a';
             const mwActive = u.mw_active !== null ? (u.mw_active ? '🟢 Active' : '🔴 Inactive') : 'n/a';
-
+            
             // Mask subkey if it exists
             const rawSubkey = u.subkey || '';
             const maskedSubkey = rawSubkey ? rawSubkey.slice(0, 8) + '...' + rawSubkey.slice(-8) : 'n/a';
@@ -369,7 +379,7 @@ export async function loadSyncStatus() {
             }
 
             const uid = encodeURIComponent(email);
-
+            
             // Render sync action button
             let actionBtn = '';
             if (u.status === 'pending_ow_approval') {

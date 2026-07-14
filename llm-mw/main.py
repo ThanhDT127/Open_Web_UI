@@ -23,7 +23,7 @@ from api.embeddings import create_embeddings
 from api.rerank import rerank
 from api.media import serve_media
 from api.docling import docling_proxy
-from api.admin import get_usage, reset_quota, reconcile_usage, stream_live_metrics, list_pending, force_remove_pending
+from api.admin import get_usage, reset_quota, reconcile_usage, stream_active_users, list_pending, force_remove_pending
 from api.analytics import get_chat_analytics, get_satisfaction_analytics
 from api.summary import get_summary
 from api.summary_v2 import get_summary_v2
@@ -32,15 +32,22 @@ from api.access_logs import get_access_summary, stream_access
 from api.audit_query import parse_audit_filters
 from api.rag_health import get_rag_ingestion, get_rag_retrieval, get_rag_storage
 from api.group_analytics import get_group_analytics, get_group_users
-from api.knowledge_analytics import (
-    get_knowledge_inventory, get_knowledge_kb_value, get_knowledge_governance,
-)
+from api.knowledge_analytics import get_knowledge_inventory, get_knowledge_kb_value, get_knowledge_governance
 from api.user_admin import (
-    list_users, create_user, update_user, 
+    list_users, create_user, update_user,
     rotate_user_key, disable_user, enable_user, get_admin_audit,
-    delete_user_endpoint, reconciliation_report, map_openwebui_user, get_users_sync_status, sync_user_now
+    delete_user_endpoint, get_users_sync_status, sync_user_now,
+    reconciliation_report, map_openwebui_user
 )
 from api.price_admin import list_prices, update_price, delete_price
+from api.tool_access import (
+    get_group_tool_access,
+    get_user_tool_access,
+    list_tool_access_groups,
+    list_tool_access_tools,
+    update_group_tool_access,
+    update_user_tool_access,
+)
 from api.export_report import export_report
 from api.dashboard_login import dashboard_login, dashboard_logout
 from api.auth_check import get_auth_check
@@ -187,10 +194,15 @@ app.add_api_route("/docling-proxy", docling_proxy, methods=["GET", "POST", "PUT"
 app.add_api_route("/v1/_mw/admin/prices", list_prices, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/prices", update_price, methods=["POST"])
 app.add_api_route("/v1/_mw/admin/prices/{model_name}", delete_price, methods=["DELETE"])
-app.add_api_route("/v1/_mw/admin/active-users/stream", stream_live_metrics, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/alerts/config", get_alert_config, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/alerts/config", update_alert_config, methods=["POST"])
+app.add_api_route("/v1/_mw/admin/alerts/test-email", test_alert_email, methods=["POST"])
+app.add_api_route("/v1/_mw/admin/active-users/stream", stream_active_users, methods=["GET"])
 app.add_api_route("/admin/usage", get_usage, methods=["GET"])
 app.add_api_route("/admin/reset", reset_quota, methods=["POST"])
 app.add_api_route("/admin/reconcile", reconcile_usage, methods=["POST"])
+app.add_api_route("/v1/_mw/admin/analytics/chat", get_chat_analytics, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/analytics/satisfaction", get_satisfaction_analytics, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/analytics/chat", get_chat_analytics, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/analytics/satisfaction", get_satisfaction_analytics, methods=["GET"])
 
@@ -205,6 +217,14 @@ app.add_api_route("/v1/_mw/access_stream", stream_access, methods=["GET"])
 # Group Analytics endpoint
 app.add_api_route("/v1/_mw/admin/analytics/groups", get_group_analytics, methods=["GET"])
 app.add_api_route("/v1/_mw/admin/analytics/groups/{group_id}/users", get_group_users, methods=["GET"])
+
+# Tool access endpoints — bật/tắt tool theo group / theo user (bảng access_grant của Open WebUI)
+app.add_api_route("/v1/_mw/admin/tool-access/tools", list_tool_access_tools, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/tool-access/groups", list_tool_access_groups, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/tool-access/groups/{group_id}", get_group_tool_access, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/tool-access/groups/{group_id}", update_group_tool_access, methods=["PUT"])
+app.add_api_route("/v1/_mw/admin/tool-access/users/{openwebui_user_id}", get_user_tool_access, methods=["GET"])
+app.add_api_route("/v1/_mw/admin/tool-access/users/{openwebui_user_id}", update_user_tool_access, methods=["PUT"])
 
 # Audit log query endpoint (Logs tab)
 app.add_api_route("/v1/_mw/audit/query", parse_audit_filters, methods=["GET"])

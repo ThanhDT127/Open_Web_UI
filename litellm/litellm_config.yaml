@@ -1,19 +1,3 @@
-model_list:
-  - model_name: llama-3.1-8b-instant
-    litellm_params:
-      model: groq/llama-3.1-8b-instant
-      api_key: "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"
-      
-  - model_name: gpt-oss-120b
-    litellm_params:
-      model: groq/openai/gpt-oss-120b
-      api_key: "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"
-
-  - model_name: gpt-oss-20b
-    litellm_params:
-      model: groq/openai/gpt-oss-20b
-      api_key: "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"
-
 server_settings:
   host: "0.0.0.0"
   port: 4000
@@ -27,7 +11,7 @@ general_settings:
   log_level: "info"
 
 logging:
-  file: "D:\\ktlt\\Works\\Open_Web_UI\\litellm\\litellm.log"
+  file: "/app/logs/litellm.log"
   level: INFO
 
 model_list:

@@ -16,6 +16,9 @@ import {
 	deleteUser, rotateUserKey, toggleUserActive, syncUserNow
 } from './users.js';
 import {
+	loadGroupToolAccess, showGroupToolModal, closeGroupToolModal, saveGroupTools
+} from './tool_access.js';
+import {
 	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, saveDefaultQuota, testSMTP
 } from './settings.js';
 import { applyRagFilters, resetRagFilters } from './raghealth.js';
@@ -29,10 +32,10 @@ import {
 import {
 	connectActiveUsersStream, disconnectActiveUsersStream
 } from './active_users.js';
+import { startNotifications, stopNotifications } from './notifications.js';
 import {
 	openExportModal, closeExportModal, downloadReport
 } from './export.js';
-import { applyKnowledgeFilters, resetKnowledgeFilters } from './knowledge.js';
 
 // Expose a stable API for inline HTML handlers (window.dashboardAPI.*)
 export async function initAPI() {
@@ -59,6 +62,11 @@ export async function initAPI() {
 		rotateUserKey,
 		toggleUserActive,
 		syncUserNow,
+		// Tool access (bật/tắt tool theo group / theo user)
+		loadGroupToolAccess,
+		showGroupToolModal,
+		closeGroupToolModal,
+		saveGroupTools,
 		// Price CRUD & simulator
 		recalcComparison,
 		resetSimulator,
@@ -79,7 +87,6 @@ export async function initAPI() {
 		downloadReport
 	};
 
-
 	window.settingsAPI = {
 		saveSMTP,
 		saveQuotaThresholds,
@@ -96,11 +103,6 @@ export async function initAPI() {
 
 	window.groupAnalyticsAPI = {
 		fetchData: refreshGroups
-	};
-
-	window.knowledgeAPI = {
-		apply: applyKnowledgeFilters,
-		reset: resetKnowledgeFilters
 	};
 
 	// One-time UI init
@@ -120,6 +122,7 @@ export function startDashboard() {
 	loadSummary();
 	connectEventStream();
 	connectActiveUsersStream();
+	startNotifications();
 
 	// Refresh summary periodically (keeps charts/metrics fresh)
 	const interval = setInterval(() => {
@@ -140,5 +143,6 @@ export function startDashboard() {
 export function stopDashboard() {
 	stopDashboardLoops();
 	disconnectActiveUsersStream();
+	stopNotifications();
 	updateStatus('warning', 'Stopped');
 }

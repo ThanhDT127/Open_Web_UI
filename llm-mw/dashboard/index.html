@@ -105,7 +105,6 @@
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'analytics')">💬 Chat Analytics</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'satisfaction')">⭐ Satisfaction</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'prices')">💸 Prices</button>
-            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'knowledge')">📚 Knowledge</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'settings')">⚙️ Settings</button>
         </div>
 
@@ -350,6 +349,8 @@
                 </div>
             </div>
         </div>
+        <!-- /usageTab. Thiếu thẻ đóng này thì mọi tab sau đều lồng vào trong Usage
+             và bị display:none theo nó khi chuyển tab. -->
 
         <!-- ═══════════════════════════════════════════════════ -->
         <!-- GROUP ANALYTICS TAB                                -->
@@ -391,6 +392,35 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+
+            <div class="section-controls" style="margin-top: 25px;">
+                <div class="section-title">🔧 Phân quyền Tool theo phòng ban</div>
+                <button class="btn-apply" style="margin-top:0;"
+                    onclick="window.dashboardAPI.loadGroupToolAccess()">↻ Refresh</button>
+            </div>
+            <div class="insight-banner">
+                <span class="insight-icon">🔐</span>
+                <span class="insight-text">Bật tool cho một phòng ban là mọi thành viên phòng đó thấy tool trong tool
+                    picker của khung chat. Phòng ban <strong>0 thành viên</strong> thì bật cũng không ai dùng được —
+                    gán thành viên trong Open WebUI → Admin → Groups.</span>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Phòng ban</th>
+                            <th>Thành viên</th>
+                            <th>Tool được bật</th>
+                            <th>Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody id="groupToolAccessTable">
+                        <tr>
+                            <td colspan="4" class="loading">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -605,11 +635,49 @@
                             </select>
                         </div>
                     </div>
+
+                    <!-- Tool access — chỉ hiện khi sửa user đã map sang Open WebUI -->
+                    <div id="modalToolsSection" class="tool-access" style="display:none">
+                        <div class="tool-access-header">
+                            <label>🔧 Tool được phép dùng</label>
+                            <span class="tool-access-hint" id="modalToolsGroups"></span>
+                        </div>
+                        <div id="modalToolsList" class="tool-access-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" onclick="window.dashboardAPI.closeUserModal()">Cancel</button>
                     <button class="btn btn-primary" id="modalSaveBtn"
                         onclick="window.dashboardAPI.saveUser()">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Group Tool Access Modal -->
+        <div id="groupToolModal" class="modal-overlay" style="display:none">
+            <div class="modal-content modal-sm">
+                <div class="modal-header">
+                    <span id="groupToolModalTitle">Edit Group</span>
+                    <button class="modal-close" onclick="window.dashboardAPI.closeGroupToolModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="tool-access">
+                        <div class="tool-access-header">
+                            <label>🔧 Tool được phép dùng</label>
+                            <span class="tool-access-hint" id="groupToolMembers"></span>
+                        </div>
+                        <div id="groupToolList" class="tool-access-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary"
+                        onclick="window.dashboardAPI.closeGroupToolModal()">Cancel</button>
+                    <button class="btn btn-primary" id="groupToolSaveBtn"
+                        onclick="window.dashboardAPI.saveGroupTools()">Save Changes</button>
                 </div>
             </div>
         </div>
@@ -888,6 +956,9 @@
                             <tr>
                                 <td colspan="4" class="loading">No data</td>
                             </tr>
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -913,12 +984,18 @@
                         <div class="metric-detail"
                             title="Logged response text is truncated at 2000 chars; late citation markers may be missed.">
                             Citation hit-rate ⓘ</div>
+                        <div class="metric-detail"
+                            title="Logged response text is truncated at 2000 chars; late citation markers may be missed.">
+                            Citation hit-rate ⓘ</div>
                     </div>
                 </div>
                 <div class="chart-container">
                     <div class="chart-title">📊 Hit-Rate by Model</div>
                     <canvas id="ragRetrModelChart"></canvas>
                 </div>
+                <div class="section-title" style="margin-top: 20px;"
+                    title="Grouped by source document; the <source id> index is per-request, not a knowledge-base id.">
+                    By Source ⓘ</div>
                 <div class="section-title" style="margin-top: 20px;"
                     title="Grouped by source document; the <source id> index is per-request, not a knowledge-base id.">
                     By Source ⓘ</div>
@@ -933,6 +1010,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragRetrBySource">
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                             <tr>
                                 <td colspan="4" class="loading">No data</td>
                             </tr>
@@ -951,6 +1031,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragRetrZeroCite">
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                             <tr>
                                 <td colspan="4" class="loading">No data</td>
                             </tr>
@@ -978,6 +1061,8 @@
                         <div class="metric-value" id="ragStorOutlier">-</div>
                         <div class="metric-detail" title="Heuristic: chunk count vs. estimate from file size.">
                             Anomalously low chunks ⓘ</div>
+                        <div class="metric-detail" title="Heuristic: chunk count vs. estimate from file size.">
+                            Anomalously low chunks ⓘ</div>
                     </div>
                 </div>
                 <div id="ragStorError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
@@ -993,6 +1078,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragStorZeroKBTable">
+                            <tr>
+                                <td colspan="4" class="loading">No data</td>
+                            </tr>
                             <tr>
                                 <td colspan="4" class="loading">No data</td>
                             </tr>
@@ -1012,9 +1100,14 @@
                             <tr>
                                 <td colspan="2" class="loading">No data</td>
                             </tr>
+                            <tr>
+                                <td colspan="2" class="loading">No data</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
+                <div class="section-title" style="margin-top: 20px;"
+                    title="Heuristic — chunk count vs. estimate from file size.">Chunk-Count Outliers ⓘ</div>
                 <div class="section-title" style="margin-top: 20px;"
                     title="Heuristic — chunk count vs. estimate from file size.">Chunk-Count Outliers ⓘ</div>
                 <div class="table-container">
@@ -1029,6 +1122,9 @@
                             </tr>
                         </thead>
                         <tbody id="ragStorOutlierTable">
+                            <tr>
+                                <td colspan="5" class="loading">No data</td>
+                            </tr>
                             <tr>
                                 <td colspan="5" class="loading">No data</td>
                             </tr>
@@ -1221,198 +1317,6 @@
         </div>
 
         <!-- ═══════════════════════════════════════════════════ -->
-        <!-- KNOWLEDGE ANALYTICS TAB                            -->
-        <!-- ═══════════════════════════════════════════════════ -->
-        <div id="knowledgeTab" class="tab-content">
-            <div class="insight-banner">
-                <span class="insight-icon">📚</span>
-                <span class="insight-text">Knowledge-base adoption &amp; value — what's created, what's actually
-                    used, and where storage is wasted. Read-only. Usage reflects logged chats only; a filename
-                    shared across several KBs is shown as ambiguous rather than credited to one.</span>
-            </div>
-
-            <!-- Date-range filter (applies to growth + usage-derived signals) -->
-            <div class="log-filters"
-                style="display: grid; grid-template-columns: repeat(2, 1fr) auto; gap: 15px; margin-bottom: 20px; padding: 15px; background: #1e293b; border-radius: 8px; align-items: flex-end;">
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Start</label>
-                    <input type="datetime-local" id="knStart" class="filter-select">
-                </div>
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">End</label>
-                    <input type="datetime-local" id="knEnd" class="filter-select">
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button onclick="window.knowledgeAPI.apply()" class="btn-apply">Apply</button>
-                    <button onclick="window.knowledgeAPI.reset()" class="btn-secondary">Reset</button>
-                </div>
-            </div>
-
-            <!-- ── Inventory ── -->
-            <div class="section">
-                <div class="section-title">📦 Inventory &amp; Growth</div>
-                <div class="metrics">
-                    <div class="metric-card">
-                        <div class="metric-label">📚 Knowledge Bases</div>
-                        <div class="metric-value" id="knTotKB">-</div>
-                        <div class="metric-detail">Total KBs</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">📄 Files</div>
-                        <div class="metric-value" id="knTotFiles">-</div>
-                        <div class="metric-detail">Uploaded documents</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">🧩 Chunks</div>
-                        <div class="metric-value" id="knTotChunks">-</div>
-                        <div class="metric-detail">Embedded vectors</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">💽 Storage</div>
-                        <div class="metric-value" id="knTotStorage">-</div>
-                        <div class="metric-detail">Total file bytes</div>
-                    </div>
-                </div>
-                <div class="chart-container">
-                    <div class="chart-title">📈 KB &amp; File Growth Over Time</div>
-                    <canvas id="knGrowthChart"></canvas>
-                </div>
-                <div class="section-title" style="margin-top: 20px;">File Types</div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Content Type</th>
-                                <th>Files</th>
-                                <th>Bytes</th>
-                            </tr>
-                        </thead>
-                        <tbody id="knTypeTable">
-                            <tr><td colspan="3" class="loading">No data</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- ── KB Value Matrix ── -->
-            <div class="section">
-                <div class="section-title">⭐ KB Value Matrix</div>
-                <div class="metrics">
-                    <div class="metric-card accent-green">
-                        <div class="metric-label">⭐ Star</div>
-                        <div class="metric-value" id="knCatStar">-</div>
-                        <div class="metric-detail">Used + cited well</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">🛠️ Needs Tuning</div>
-                        <div class="metric-value" id="knCatTuning">-</div>
-                        <div class="metric-detail">Used but rarely cited</div>
-                    </div>
-                    <div class="metric-card usage-missing">
-                        <div class="metric-label">💀 Dead Knowledge</div>
-                        <div class="metric-value" id="knCatDead">-</div>
-                        <div class="metric-detail">Has chunks, never used</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">🌱 Unproven</div>
-                        <div class="metric-value" id="knCatUnproven">-</div>
-                        <div class="metric-detail" title="Fewer than the minimum attachments to judge quality.">Too little usage ⓘ</div>
-                    </div>
-                </div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Knowledge Base</th>
-                                <th>Owner</th>
-                                <th title="Chats that attached one of this KB's documents (logged only).">Demand ⓘ</th>
-                                <th title="Share of attachments whose answer produced a [N] citation.">Hit-Rate ⓘ</th>
-                                <th>Files</th>
-                                <th>Chunks</th>
-                                <th>Size</th>
-                                <th>Last Used</th>
-                                <th>Category</th>
-                            </tr>
-                        </thead>
-                        <tbody id="knValueTable">
-                            <tr><td colspan="9" class="loading">No data</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="section-title" style="margin-top: 20px;" title="A source filename that exists in more than one KB — usage cannot be pinned to a single KB.">Ambiguous Usage ⓘ</div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Source (filename stem)</th>
-                                <th>Attachments</th>
-                                <th>Appears in # KBs</th>
-                            </tr>
-                        </thead>
-                        <tbody id="knAmbiguousTable">
-                            <tr><td colspan="3" class="loading">None 🎉</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- ── Governance ── -->
-            <div class="section">
-                <div class="section-title">🏛️ Governance</div>
-                <div class="metrics">
-                    <div class="metric-card usage-missing">
-                        <div class="metric-label">♻️ Reclaimable</div>
-                        <div class="metric-value" id="knReclaimable">-</div>
-                        <div class="metric-detail">Wasted on duplicate files</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">🧾 Ad-hoc Files</div>
-                        <div class="metric-value" id="knAdhoc">-</div>
-                        <div class="metric-detail">Uploaded outside any KB</div>
-                    </div>
-                    <div class="metric-card usage-missing">
-                        <div class="metric-label">🔗 Dangling Files</div>
-                        <div class="metric-value" id="knDangling">-</div>
-                        <div class="metric-detail" title="Files whose knowledge_id points to a deleted KB.">KB deleted ⓘ</div>
-                    </div>
-                </div>
-                <div class="section-title" style="margin-top: 20px;">Duplicate Files (by content hash)</div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Filename</th>
-                                <th>Copies</th>
-                                <th># KBs</th>
-                                <th>Size</th>
-                                <th>Reclaimable</th>
-                            </tr>
-                        </thead>
-                        <tbody id="knDupTable">
-                            <tr><td colspan="5" class="loading">None 🎉</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="section-title" style="margin-top: 20px;">Owner Concentration</div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Owner</th>
-                                <th>KBs</th>
-                                <th>Files</th>
-                                <th>Storage</th>
-                            </tr>
-                        </thead>
-                        <tbody id="knOwnerTable">
-                            <tr><td colspan="4" class="loading">No data</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══════════════════════════════════════════════════ -->
         <!-- PRICES TAB                                         -->
         <!-- ═══════════════════════════════════════════════════ -->
         <div id="pricesTab" class="tab-content">
@@ -1526,6 +1430,10 @@
                             <input type="text" id="adminEmails" placeholder="admin1@example.com, admin2@example.com">
                         </div>
                         <div class="form-group">
+                            <label>Admin Alert Emails (comma-separated)</label>
+                            <input type="text" id="adminEmails" placeholder="admin1@example.com, admin2@example.com">
+                        </div>
+                        <div class="form-group">
                             <label>Password Env Var</label>
                             <input type="text" name="password_env" id="smtpPassEnv" placeholder="SMTP_PASSWORD">
                         </div>
@@ -1551,6 +1459,7 @@
                     <form id="quotaThresholdForm" class="settings-form">
                         <div class="form-group">
                             <label>Warning Threshold (%)</label>
+                            <input type="number" id="thresholdWarning" value="80">
                             <input type="number" id="thresholdWarning" value="80">
                         </div>
                         <div class="form-group">
@@ -1602,6 +1511,18 @@
                         <div class="form-group">
                             <label>Gemini Budget ($)</label>
                             <input type="number" step="0.01" id="budgetGemini">
+                        </div>
+                        <div class="form-group">
+                            <label>xAI (Grok) Budget ($)</label>
+                            <input type="number" step="0.01" id="budgetXai">
+                        </div>
+                        <div class="form-group">
+                            <label>Anthropic Budget ($)</label>
+                            <input type="number" step="0.01" id="budgetAnthropic">
+                        </div>
+                        <div class="form-group">
+                            <label>DeepSeek Budget ($)</label>
+                            <input type="number" step="0.01" id="budgetDeepseek">
                         </div>
                         <div class="form-group">
                             <label>xAI (Grok) Budget ($)</label>
@@ -1686,7 +1607,11 @@
             closePriceModal: () => console.warn('Dashboard still loading...'),
             savePrice: () => console.warn('Dashboard still loading...'),
             editPrice: () => console.warn('Dashboard still loading...'),
-            deletePrice: () => console.warn('Dashboard still loading...')
+            deletePrice: () => console.warn('Dashboard still loading...'),
+            loadGroupToolAccess: () => console.warn('Dashboard still loading...'),
+            showGroupToolModal: () => console.warn('Dashboard still loading...'),
+            closeGroupToolModal: () => console.warn('Dashboard still loading...'),
+            saveGroupTools: () => console.warn('Dashboard still loading...')
         };
     </script>
 

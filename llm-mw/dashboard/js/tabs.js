@@ -7,8 +7,8 @@ import { loadRagHealth } from './raghealth.js';
 import { loadPrices } from './prices.js';
 import { refreshAnalytics } from './analytics.js';
 import { fetchData as refreshGroups } from './group_analytics.js';
+import { loadGroupToolAccess } from './tool_access.js';
 import { refreshSatisfaction } from './satisfaction.js';
-import { loadKnowledge } from './knowledge.js';
 import { accessEventSource } from './auth.js';
 
 // FIX: Pass event explicitly
@@ -41,9 +41,8 @@ export function switchTab(e, tabName) {
         refreshAnalytics();
     } else if (tabName === 'groups') {
         refreshGroups();
+        loadGroupToolAccess();
     } else if (tabName === 'satisfaction') {
         refreshSatisfaction();
-    } else if (tabName === 'knowledge') {
-        loadKnowledge();
     }
 }
