@@ -55,7 +55,12 @@ class Tools:
                 logger.error(f"Error reading outputs dir: {e}")
 
         # 2. Tiền xử lý mã nguồn: tự động tiêm Agg backend và cấu hình lưu ảnh cho matplotlib.pyplot.show()
-        setup_code = """import os
+        #    Chỉ tiêm khi code thực sự sử dụng matplotlib/plt để tránh warning không cần thiết
+        needs_matplotlib = any(kw in code for kw in ['matplotlib', 'plt.', 'plt ', 'import plt', 'pyplot'])
+        
+        if needs_matplotlib:
+            setup_code = """import os
+os.environ['MPLCONFIGDIR'] = '/tmp/matplotlib_config'
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -72,7 +77,9 @@ def _auto_show_wrapper():
         plt.close(fig)
 plt.show = _auto_show_wrapper
 """
-        full_code = setup_code + "\n" + code
+            full_code = setup_code + "\n" + code
+        else:
+            full_code = code
 
         # 3. Tạo kernel mới trong Sandbox
         try:
@@ -111,10 +118,10 @@ plt.show = _auto_show_wrapper
                 "metadata": {},
                 "content": {
                     "code": full_code,
-                    "silent": false,
-                    "store_history": true,
+                    "silent": False,
+                    "store_history": True,
                     "user_expressions": {},
-                    "allow_stdin": false
+                    "allow_stdin": False
                 },
                 "parent_header": {}
             }

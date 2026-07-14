@@ -244,6 +244,8 @@ def snapshot_users_to_json() -> int:
 
 def create_user_record(user: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Create exactly one user without replacing concurrent user state."""
+    if "subkey" in user and not user.get("subkey_hash"):
+        user["subkey_hash"] = hash_subkey(user["subkey"])
     if _db_available():
         from core.db import create_user_db
         return create_user_db(user)

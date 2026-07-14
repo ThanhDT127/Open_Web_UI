@@ -373,6 +373,13 @@ async def delete_user_endpoint(request: Request, user_id: str, purge: bool = Fal
         if hasattr(request.state, 'mw_user_id') and request.state.mw_user_id == user_id:
             raise HTTPException(400, "Cannot delete yourself")
 
+        if not purge and user.get("deleted_at"):
+            return {
+                "status": "ok",
+                "message": f"User {user_id} was already deleted",
+                "user": _scrub_user(user)
+            }
+
         if purge:
             deleted = auth_delete_user(user_id)
         else:

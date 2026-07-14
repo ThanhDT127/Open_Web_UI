@@ -197,7 +197,7 @@ def query_retrieval_health(
     conditions_req = [
         "ts >= %s", "ts <= %s",
         "payload->>'event' = 'chat.request'",
-        "(payload->'body')::text LIKE '%%<source id=%%'",
+        r"(payload->'body')::text ~* '<source\s+id\s*='",
     ]
     params_req: List[Any] = [start, end]
     if model:
