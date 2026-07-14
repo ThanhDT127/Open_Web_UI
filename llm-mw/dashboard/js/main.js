@@ -10,16 +10,14 @@ import { applyLogFilters, resetLogFilters, loadMoreLogs, exportLogsToExcel } fro
 import { refreshAnalytics, initAnalyticsChart } from './analytics.js';
 import { initGroupAnalyticsChart, fetchData as refreshGroups } from './group_analytics.js';
 import { refreshSatisfaction } from './satisfaction.js';
-import { refreshAnalytics, initAnalyticsChart } from './analytics.js';
-import { initGroupAnalyticsChart, fetchData as refreshGroups } from './group_analytics.js';
-import { refreshSatisfaction } from './satisfaction.js';
 import { updateStatus } from './utils.js';
 import {
 	loadUsers, showCreateUserModal, showEditUserModal, closeUserModal, saveUser,
 	deleteUser, rotateUserKey, toggleUserActive, syncUserNow
-	loadUsers, showCreateUserModal, showEditUserModal, closeUserModal, saveUser,
-	deleteUser, rotateUserKey, toggleUserActive, syncUserNow
 } from './users.js';
+import {
+	loadGroupToolAccess, showGroupToolModal, closeGroupToolModal, saveGroupTools
+} from './tool_access.js';
 import {
 	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, saveDefaultQuota, testSMTP
 } from './settings.js';
@@ -35,6 +33,7 @@ import {
 import {
 	connectActiveUsersStream, disconnectActiveUsersStream
 } from './active_users.js';
+import { startNotifications, stopNotifications } from './notifications.js';
 import {
 	openExportModal, closeExportModal, downloadReport
 } from './export.js';
@@ -54,11 +53,7 @@ export async function initAPI() {
 		loadSummary,
 		refreshAnalytics,
 		refreshSatisfaction,
-		loadSummary,
-		refreshAnalytics,
-		refreshSatisfaction,
 		// User CRUD
-		loadUsers,
 		loadUsers,
 		showCreateUserModal,
 		showEditUserModal,
@@ -68,6 +63,11 @@ export async function initAPI() {
 		rotateUserKey,
 		toggleUserActive,
 		syncUserNow,
+		// Tool access (bật/tắt tool theo group / theo user)
+		loadGroupToolAccess,
+		showGroupToolModal,
+		closeGroupToolModal,
+		saveGroupTools,
 		// Price CRUD & simulator
 		recalcComparison,
 		resetSimulator,
@@ -87,8 +87,6 @@ export async function initAPI() {
 		closeExportModal,
 		downloadReport
 	};
-
-
 
 	window.settingsAPI = {
 		saveSMTP,
@@ -118,8 +116,6 @@ export async function initAPI() {
 		initCharts();
 		initAnalyticsChart();
 		initGroupAnalyticsChart();
-		initAnalyticsChart();
-		initGroupAnalyticsChart();
 	} catch (e) {
 		// Chart.js may not be ready yet; summary load will still work.
 		console.warn('Charts init failed:', e);
@@ -132,7 +128,7 @@ export function startDashboard() {
 	loadSummary();
 	connectEventStream();
 	connectActiveUsersStream();
-	connectActiveUsersStream();
+	startNotifications();
 
 	// Refresh summary periodically (keeps charts/metrics fresh)
 	const interval = setInterval(() => {
@@ -153,6 +149,6 @@ export function startDashboard() {
 export function stopDashboard() {
 	stopDashboardLoops();
 	disconnectActiveUsersStream();
-	disconnectActiveUsersStream();
+	stopNotifications();
 	updateStatus('warning', 'Stopped');
 }
