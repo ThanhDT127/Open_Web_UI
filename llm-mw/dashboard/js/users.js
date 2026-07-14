@@ -1,5 +1,6 @@
 // Users tab — Full CRUD management with modals
 import { mwFetch, updateStatus } from './utils.js';
+import { loadUserToolAccess, resetUserToolAccess, saveUserToolAccess } from './tool_access.js';
 
 // Track current edit mode
 let _editingUserId = null; // null = create mode, string = edit mode
@@ -127,6 +128,8 @@ export function showCreateUserModal() {
     document.getElementById('modalPeriod').value = 'monthly';
     document.getElementById('modalActive').value = 'true';
     document.getElementById('modalSaveBtn').textContent = 'Create User';
+    // Quyền tool gắn với user Open WebUI; user mới chưa map nên chưa cấp được ở đây.
+    resetUserToolAccess();
     document.getElementById('userModal').style.display = 'flex';
 }
 
@@ -151,12 +154,14 @@ export function showEditUserModal(userId) {
     document.getElementById('modalActive').value = String(user.active !== false);
     document.getElementById('modalSaveBtn').textContent = 'Save Changes';
     document.getElementById('userModal').style.display = 'flex';
+    loadUserToolAccess(user.openwebui_user_id);
 }
 
 
 export function closeUserModal() {
     document.getElementById('userModal').style.display = 'none';
     _editingUserId = null;
+    resetUserToolAccess();
 }
 
 
@@ -192,6 +197,8 @@ export async function saveUser() {
                 const err = await res.json().catch(() => ({}));
                 throw new Error(err.detail || 'Update failed');
             }
+
+            await saveUserToolAccess();
 
             updateStatus('ok', `User ${_editingUserId} updated ✓`);
         } else {
