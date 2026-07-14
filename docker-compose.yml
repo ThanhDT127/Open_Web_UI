@@ -16,7 +16,7 @@ services:
       postgres -c max_connections=300 -c shared_buffers=4GB -c work_mem=16MB -c effective_cache_size=8GB -c maintenance_work_mem=256MB -c wal_buffers=64MB -c random_page_cost=1.1 -c checkpoint_completion_target=0.9
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init_pgvector.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./scripts/sql/init_pgvector.sql:/docker-entrypoint-initdb.d/init.sql:ro
     # Step 5: Port closed for security (internal only)
     # ports:
     #   - "5432:5432"
