@@ -331,6 +331,38 @@ def find_user(subkey: str) -> Optional[Dict[str, Any]]:
     return _find_user_file(subkey)
 
 
+def provision_from_forward_headers(request: Request, forwarded_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Resolve an Open WebUI user that has no openwebui_user_id mapping yet, using the
+    X-OpenWebUI-User-Email header, then pin the mapping so later requests take the
+    indexed lookup. Without this a newly registered user gets 401 on every call
+    (empty model list) until an admin maps them by hand.
+
+    Only reachable for callers presenting OPENWEBUI_SERVICE_KEY, and the email is
+    still verified against the Open WebUI `user` table by lazy_provision_user(),
+    so this trusts nothing the service key does not already imply.
+    """
+    email = request.headers.get("X-OpenWebUI-User-Email", "").strip()
+    if not email:
+        return None
+
+    user = get_user_by_id(email)  # lazy-provisions when the account is active in Open WebUI
+    if not user:
+        return None
+
+    if user.get("openwebui_user_id") != forwarded_id:
+        updated = update_user_admin_fields(
+            user["user_id"],
+            openwebui_user_id=forwarded_id,
+            update_openwebui_mapping=True,
+        )
+        user = updated or user
+        user["openwebui_user_id"] = forwarded_id
+        logger.info("user_sync: mapped Open WebUI user %s -> %s", email, forwarded_id)
+
+    return user
+
+
 def require_user(request: Request) -> Dict[str, Any]:
     """
     Require valid user authentication from Authorization header.
@@ -356,6 +388,8 @@ def require_user(request: Request) -> Dict[str, Any]:
     forwarded_id = request.headers.get("X-OpenWebUI-User-Id", "").strip()
     if forwarded_id and subkey == OPENWEBUI_SERVICE_KEY and OPENWEBUI_SERVICE_KEY:
         user = get_user_by_openwebui_id(forwarded_id)
+        if not user:
+            user = provision_from_forward_headers(request, forwarded_id)
         auth_source = "openwebui_service"
     else:
         user = find_user(subkey)
@@ -542,15 +576,16 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
         try:
             with db_conn() as conn:
                 cur = conn.cursor()
+                # mw_users chỉ lưu subkey_hash — subkey thô không còn cột trong DB
                 cur.execute("""
-                    INSERT INTO mw_users (user_id, subkey, subkey_hash, active, allowed_models, quota)
-                    VALUES (%s, %s, %s, true, '["*"]'::jsonb, %s)
+                    INSERT INTO mw_users (user_id, subkey_hash, active, allowed_models, quota)
+                    VALUES (%s, %s, true, '["*"]'::jsonb, %s)
                     ON CONFLICT (user_id) DO UPDATE SET
-                        subkey = COALESCE(mw_users.subkey, EXCLUDED.subkey),
                         subkey_hash = COALESCE(mw_users.subkey_hash, EXCLUDED.subkey_hash),
-                        active = true
-                    RETURNING user_id, subkey, subkey_hash, active, allowed_models, quota
-                """, (user_id, subkey, subkey_hash, json.dumps(quota)))
+                        active = true,
+                        updated_at = now()
+                    RETURNING user_id, subkey_hash, active, allowed_models, quota
+                """, (user_id, subkey_hash, json.dumps(quota)))
                 row = cur.fetchone()
                 cur.close()
                 
@@ -578,13 +613,13 @@ def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
 
                 return {
                     "user_id": row[0],
-                    "subkey": row[1],
-                    "subkey_hash": row[2],
-                    "active": row[3],
-                    "allowed_models": row[4] if row[4] else ["*"],
+                    "subkey": subkey,
+                    "subkey_hash": row[1],
+                    "active": row[2],
+                    "allowed_models": row[3] if row[3] else ["*"],
                     "used_tokens": 0,
                     "used_cost_usd": 0.0,
-                    "quota": row[5] if row[5] else {},
+                    "quota": row[4] if row[4] else {},
                     "alerts_sent": {}
                 }
         except Exception as e:
@@ -603,20 +638,6 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     """
     if _db_available():
         from core.db import get_user_by_id_db
-        user = get_user_by_id_db(user_id)
-        if user:
-            return user
-        
-        # Lazy provision if email contains '@'
-        if "@" in user_id:
-            user = lazy_provision_user(user_id)
-            if user:
-                return user
-    else:
-        # File fallback: linear search (unavoidable without index)
-        for u in _load_users_file():
-            if u.get("user_id") == user_id:
-                return u
         user = get_user_by_id_db(user_id)
         if user:
             return user

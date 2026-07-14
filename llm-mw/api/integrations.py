@@ -9,6 +9,7 @@ import requests
 from fastapi import APIRouter, Request, HTTPException, Depends
 import logging
 
+from config import OPENWEBUI_SERVICE_KEY
 from utils.crypto import decrypt, encrypt
 from core.auth import require_user
 from core.db import db_conn
@@ -39,6 +40,10 @@ def _refresh_oauth_token(provider: str, refresh_token: str) -> dict:
         "refresh_token": refresh_token,
         "grant_type": "refresh_token"
     }
+    # Microsoft identity platform yêu cầu `scope` khi đổi refresh_token; access token mới
+    # chỉ có đúng các scope gửi kèm, nên phải gửi lại toàn bộ scopes của provider.
+    if prov_cfg.get("refresh_send_scope"):
+        data["scope"] = prov_cfg["scopes"]
     headers = {"Accept": "application/json"}
 
     res = requests.post(prov_cfg["token_url"], data=data, headers=headers, timeout=10)
@@ -58,8 +63,16 @@ def get_token(
     """
     # Authenticate user via bearer token (subkey)
     user = require_user(request)
-    
-    if openwebui_user_id and user.get("role") == "admin":
+
+    # Custom tool chạy trong Open WebUI gọi bằng service key kèm openwebui_user_id để lấy
+    # token CỦA CHÍNH user đó. Cho phép nhánh này theo service key thay vì theo role: tài
+    # khoản dịch vụ trong users.json không mang role 'admin', nên nếu chỉ xét role thì mọi
+    # tool sẽ đọc token dưới hash của tài khoản dịch vụ — tức dùng chung một danh tính.
+    auth_header = request.headers.get("Authorization", "")
+    bearer = auth_header.split(" ", 1)[1].strip() if auth_header.startswith("Bearer ") else ""
+    is_service_caller = bool(OPENWEBUI_SERVICE_KEY) and bearer == OPENWEBUI_SERVICE_KEY
+
+    if openwebui_user_id and (is_service_caller or user.get("role") == "admin"):
         with db_conn() as conn:
             cur = conn.cursor()
             cur.execute(
