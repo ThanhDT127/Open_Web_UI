@@ -503,13 +503,16 @@ def get_users_sync_status(request: Request):
     try:
         with db_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT user_id, active, subkey FROM mw_users")
+            # mw_users chỉ lưu subkey_hash — subkey thô không lấy lại được (một chiều),
+            # nên cột subkey ở dashboard hiển thị n/a; chỉ báo user đã có key hay chưa.
+            cur.execute("SELECT user_id, active, subkey_hash IS NOT NULL FROM mw_users")
             rows = cur.fetchall()
             for r in rows:
                 mw_users_list.append({
                     "user_id": r[0],
                     "active": r[1],
-                    "subkey": r[2]
+                    "has_subkey": r[2],
+                    "subkey": None
                 })
             cur.close()
     except Exception as e:
@@ -553,6 +556,7 @@ def get_users_sync_status(request: Request):
             "ow_role": ow_role,
             "mw_active": mw_active,
             "subkey": subkey,
+            "has_subkey": bool(mw_u and mw_u.get("has_subkey")),
             "status": status
         })
 
