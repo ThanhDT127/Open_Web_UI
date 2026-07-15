@@ -93,26 +93,19 @@ def init_pool(database_url: str, minconn: int = 2, maxconn: int = 10):
                 params["user"], params["host"], params["port"],
                 params["dbname"], minconn, maxconn)
 
-    # Initialize openwebui read-only connection pool
+    # Initialize openwebui read-only connection pool on the same host/port
     try:
-        ow_db_url = os.getenv("OPENWEBUI_DATABASE_URL", "").strip()
-        if ow_db_url:
-            ow_params = _parse_dsn(ow_db_url)
-        else:
-            ow_params = params.copy()
-            ow_params["dbname"] = "openwebui"
-
         _ow_pool = psycopg2.pool.ThreadedConnectionPool(
             minconn=minconn,
             maxconn=maxconn,
-            host=ow_params["host"],
-            port=ow_params["port"],
-            user=ow_params["user"],
-            password=ow_params["password"],
-            dbname=ow_params["dbname"],
+            host=params["host"],
+            port=params["port"],
+            user=params["user"],
+            password=params["password"],
+            dbname="openwebui",
         )
-        logger.info("Open WebUI DB pool initialized: %s@%s:%s/%s (min=%d, max=%d)",
-                    ow_params["user"], ow_params["host"], ow_params["port"], ow_params["dbname"], minconn, maxconn)
+        logger.info("Open WebUI DB pool initialized: %s@%s:%s/openwebui (min=%d, max=%d)",
+                    params["user"], params["host"], params["port"], minconn, maxconn)
     except Exception as e:
         logger.error("Failed to initialize Open WebUI DB pool: %s", str(e))
 
@@ -191,40 +184,6 @@ def db_ow_conn():
         raise
     finally:
         put_ow_conn(conn)
-
-
-def fetch_final_audit_entries(start_dt, end_dt) -> list:
-    """One row per request from mw_audit_log: the latest entry per rid.
-
-    A request is logged multiple times over its lifecycle (pending -> ok /
-    reconciled / error); every consumer that counts "requests" must count each
-    rid exactly once, from its final state. This is the single definition of
-    that rule — analytics, group analytics and report export all go through it.
-    Rows without a rid are treated as individual requests.
-    """
-    with db_conn() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT DISTINCT ON (COALESCE(NULLIF(rid, ''), id::text))
-                   user_id, model, tokens_total, cost_usd, ts, status, latency_ms
-            FROM mw_audit_log
-            WHERE ts >= %s AND ts <= %s
-            ORDER BY COALESCE(NULLIF(rid, ''), id::text), ts DESC, id DESC
-        """, (start_dt, end_dt))
-        rows = cur.fetchall()
-        cur.close()
-    return [
-        {
-            "user_id": r[0],
-            "model": r[1],
-            "tokens_total": int(r[2] or 0),
-            "cost_usd": float(r[3] or 0.0),
-            "ts": r[4],
-            "status": r[5] or "ok",
-            "latency_ms": float(r[6]) if r[6] is not None else None,
-        }
-        for r in rows
-    ]
 
 
 def check_ow_schema() -> bool:

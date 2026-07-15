@@ -437,6 +437,39 @@ def require_user(request: Request) -> Dict[str, Any]:
         except Exception as e:
             logger.warning("auth: failed to verify Open WebUI active status for user %s: %s", user["user_id"], str(e))
 
+    # Sync block: check if user has been deactivated/banned in Open WebUI
+    if _db_available() and user.get("user_id"):
+        from core.db import db_ow_conn, db_conn
+        try:
+            with db_ow_conn() as conn:
+                cur = conn.cursor()
+                cur.execute('SELECT role FROM "user" WHERE email = %s LIMIT 1', (user["user_id"],))
+                row = cur.fetchone()
+                cur.close()
+            if row:
+                role = row[0]
+                if role not in ("user", "admin"):
+                    # User is banned/pending in Open WebUI! Invalidate Middleware DB state.
+                    with db_conn() as conn:
+                        cur = conn.cursor()
+                        cur.execute("UPDATE mw_users SET active = false, updated_at = now() WHERE user_id = %s", (user["user_id"],))
+                        cur.close()
+                    # Also update JSON backup
+                    try:
+                        users = _load_users_file()
+                        for u in users:
+                            if u.get("user_id") == user["user_id"]:
+                                u["active"] = False
+                                break
+                        _save_users_file(users)
+                    except Exception:
+                        pass
+                    # Update local state
+                    user["active"] = False
+                    logger.info("auth: user %s has been deactivated due to role change in Open WebUI (role=%s)", user["user_id"], role)
+        except Exception as e:
+            logger.warning("auth: failed to verify Open WebUI active status for user %s: %s", user["user_id"], str(e))
+
     if not user.get("active", True):
         logger.warning(
             "auth_fail reason=user_inactive user_id=%s path=%s client_ip=%s",
@@ -482,27 +515,6 @@ def get_lock() -> Lock:
 
 
 # ─── Single-user O(1) API ─────────────────────────────────────
-
-def _default_provision_quota() -> Dict[str, Any]:
-    """Read the default quota for lazy-provisioned users from system config.
-
-    Falls back to the built-in defaults (monthly / $2.00) when the config
-    is missing or invalid, so provisioning never fails because of it.
-    """
-    period, limit_cost_usd = "monthly", 2.0
-    try:
-        # Imported lazily: core.alerting imports from core.auth at module level
-        from core.alerting import load_alert_config
-        cfg = (load_alert_config().get("provisioning") or {}).get("default_quota") or {}
-        if cfg.get("period") in ("monthly", "weekly"):
-            period = cfg["period"]
-        cost = float(cfg.get("limit_cost_usd", limit_cost_usd))
-        if cost > 0:
-            limit_cost_usd = cost
-    except Exception as e:
-        logger.warning("default_provision_quota: using built-in defaults: %s", str(e))
-    return {"period": period, "limit_cost_usd": limit_cost_usd}
-
 
 def lazy_provision_user(user_id: str) -> Optional[Dict[str, Any]]:
     """

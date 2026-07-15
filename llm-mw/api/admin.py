@@ -200,9 +200,9 @@ async def force_remove_pending(request_id: str, request: Request):
         raise HTTPException(500, f"Failed to force clear pending request: {str(e)}")
 
 
-def get_live_metrics() -> dict:
+def get_active_users_count() -> int:
     """
-    Get real-time metrics: unique active users (last 5 mins) and current pending requests.
+    Count unique user IDs active right now (in mw_pending or active in last 5 mins).
     """
     from core.db import db_conn, _pool
     db_available = _pool is not None
@@ -236,7 +236,7 @@ def get_live_metrics() -> dict:
                 metrics["pending_count"] = cur.fetchone()[0] or 0
 
                 cur.close()
-            return metrics
+            return count or 0
         except Exception as e:
             print(f"[SSE Live Metrics] DB query failed, falling back to files: {e}")
 
@@ -257,7 +257,6 @@ def get_live_metrics() -> dict:
                 reader = csv.reader(f)
                 rows = list(reader)[1:]
                 for row in rows:
-                    pending_count += 1
                     if len(row) >= 2:
                         active_users.add(row[1])  # user_id
         except Exception as e:
@@ -292,6 +291,7 @@ def get_live_metrics() -> dict:
 
 
 async def active_users_generator(request: Request):
+async def active_users_generator(request: Request):
     """
     SSE Generator yielding live metrics (active users + pending count) periodically.
     """
@@ -305,10 +305,10 @@ async def active_users_generator(request: Request):
             break
 
         try:
-            current_metrics = get_live_metrics()
-            if current_metrics != last_metrics:
-                last_metrics = current_metrics
-                yield f"event: live_metrics\ndata: {json.dumps(current_metrics)}\n\n"
+            current_count = get_active_users_count()
+            if current_count != last_count:
+                last_count = current_count
+                yield f"event: active_users\ndata: {json.dumps({'active_users': current_count})}\n\n"
             else:
                 yield ": ping\n\n"
         except Exception as e:
@@ -318,7 +318,9 @@ async def active_users_generator(request: Request):
 
 
 async def stream_active_users(request: Request):
+async def stream_active_users(request: Request):
     """
+    SSE endpoint streaming real-time active users.
     SSE endpoint streaming real-time active users.
     """
     from fastapi.responses import StreamingResponse
@@ -327,6 +329,7 @@ async def stream_active_users(request: Request):
     require_admin_or_session(request)
     
     return StreamingResponse(
+        active_users_generator(request),
         active_users_generator(request),
         media_type="text/event-stream",
         headers={

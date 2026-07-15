@@ -380,6 +380,13 @@ async def delete_user_endpoint(request: Request, user_id: str, purge: bool = Fal
                 "user": _scrub_user(user)
             }
 
+        if not purge and user.get("deleted_at"):
+            return {
+                "status": "ok",
+                "message": f"User {user_id} was already deleted",
+                "user": _scrub_user(user)
+            }
+
         if purge:
             deleted = auth_delete_user(user_id)
         else:
@@ -516,6 +523,8 @@ def get_users_sync_status(request: Request):
                     "active": r[1],
                     "has_subkey": r[2],
                     "subkey": None
+                    "has_subkey": r[2],
+                    "subkey": None
                 })
             cur.close()
     except Exception as e:
@@ -549,6 +558,7 @@ def get_users_sync_status(request: Request):
             # Exists in both
             ow_is_active = (ow_role in ("user", "admin"))
             if ow_is_active == mw_active:
+            if ow_is_active == mw_active:
                 status = "synced"
             else:
                 status = "mismatch"
@@ -559,6 +569,7 @@ def get_users_sync_status(request: Request):
             "ow_role": ow_role,
             "mw_active": mw_active,
             "subkey": subkey,
+            "has_subkey": bool(mw_u and mw_u.get("has_subkey")),
             "has_subkey": bool(mw_u and mw_u.get("has_subkey")),
             "status": status
         })
@@ -576,8 +587,6 @@ async def sync_user_now(request: Request):
     """
     POST /v1/_mw/admin/users/sync-now
     Force synchronization of a specific user.
-    Always resolves and writes openwebui_user_id so Path A auth works immediately,
-    even when re-syncing a user that already exists in mw_users.
     """
     from utils.auth_guard import require_admin_or_session
     require_admin_or_session(request)
@@ -591,120 +600,68 @@ async def sync_user_now(request: Request):
     if not user_id:
         raise HTTPException(400, "user_id is required")
 
-    from core.auth import _db_available
+    from core.auth import lazy_provision_user, _db_available
     if not _db_available():
         raise HTTPException(400, "Database connection not available")
 
     from core.db import db_conn, db_ow_conn
 
-    # Step 1: Fetch role, name AND uuid from Open WebUI in one query
-    role, name, openwebui_uuid = None, None, None
+    # Check if user exists in Open WebUI
+    role, name = None, None
     try:
         with db_ow_conn() as conn:
             cur = conn.cursor()
-            cur.execute('SELECT role, name, id FROM "user" WHERE email = %s LIMIT 1', (user_id,))
+            cur.execute('SELECT role, name FROM "user" WHERE email = %s LIMIT 1', (user_id,))
             row = cur.fetchone()
             cur.close()
             if row:
-                role, name, openwebui_uuid = row[0], row[1], row[2]
+                role, name = row[0], row[1]
     except Exception as e:
         raise HTTPException(500, f"Open WebUI DB error: {str(e)}")
 
     if not role:
         raise HTTPException(404, f"User {user_id} not found in Open WebUI")
 
-    logger.info("sync_user_now: user=%s ow_role=%s openwebui_uuid=%s", user_id, role, openwebui_uuid)
-
-    is_active = role in ("user", "admin")
-    mw_role = "admin" if role == "admin" else "user"
+    # Audit log changes
     changes = {}
 
-    # Prepare subkey + default quota so a sync that provisions a NEW user gets the
-    # same record shape as lazy provisioning (a bare insert previously left quota
-    # as '{}' — no limits — and no subkey, making the user effectively unlimited).
-    from core.auth import _default_provision_quota
-    defaults = _default_provision_quota()
-    default_quota = {
-        "period": defaults["period"],
-        "timezone": "Asia/Bangkok",
-        "limit_tokens": 0,
-        "limit_cost_usd": defaults["limit_cost_usd"],
-        "limit_image_requests": 0,
-        "period_start": int(datetime.now(timezone.utc).timestamp() * 1000),
-        "used_tokens": 0,
-        "used_cost_usd": 0.0,
-        "used_image_requests": 0
-    }
-    new_subkey_hash = hash_subkey(_generate_subkey())
-
-    try:
-        with db_conn() as conn:
-            cur = conn.cursor()
-            # Single UPSERT: create if new, or update active + UUID if already exists.
-            # Always overwrites openwebui_user_id so a re-sync also fixes a missing UUID.
-            # On conflict, also repairs records missing a subkey or a well-formed quota
-            # (quota without 'period' can only come from the old bare insert) while
-            # never touching a quota an admin configured deliberately.
-            cur.execute("""
-                INSERT INTO mw_users (user_id, subkey_hash, openwebui_user_id, active, role, allowed_models, quota, updated_at)
-                VALUES (%s, %s, %s, %s, %s, '["*"]'::jsonb, %s, now())
-                ON CONFLICT (user_id) DO UPDATE SET
-                    openwebui_user_id = EXCLUDED.openwebui_user_id,
-                    active            = EXCLUDED.active,
-                    role              = EXCLUDED.role,
-                    subkey_hash       = COALESCE(mw_users.subkey_hash, EXCLUDED.subkey_hash),
-                    quota             = CASE WHEN mw_users.quota ? 'period'
-                                             THEN mw_users.quota
-                                             ELSE EXCLUDED.quota END,
-                    deleted_at        = NULL,
-                    updated_at        = now()
-                RETURNING (xmax = 0) AS inserted, quota, subkey_hash
-            """, (user_id, new_subkey_hash, openwebui_uuid, is_active, mw_role, json.dumps(default_quota)))
-            result_row = cur.fetchone()
-            cur.close()
-
-        was_inserted = bool(result_row[0]) if result_row else False
-        committed_quota = result_row[1] if result_row else default_quota
-        committed_subkey_hash = result_row[2] if result_row else None
-        changes["provisioned"] = was_inserted
-        changes["active"] = is_active
-        if openwebui_uuid:
-            changes["openwebui_user_id"] = str(openwebui_uuid)
-        if was_inserted:
-            changes["default_quota"] = {
-                "period": default_quota["period"],
-                "limit_cost_usd": default_quota["limit_cost_usd"]
-            }
-
-        # Sync committed state to JSON backup (best-effort)
+    if role in ("user", "admin"):
+        # Provision/Activate
+        user = lazy_provision_user(user_id)
+        if not user:
+            # If already exists, make sure it is activated
+            try:
+                with db_conn() as conn:
+                    cur = conn.cursor()
+                    cur.execute("UPDATE mw_users SET active = true, updated_at = now() WHERE user_id = %s", (user_id,))
+                    cur.close()
+                changes["active"] = True
+            except Exception as e:
+                raise HTTPException(500, f"Failed to activate user: {str(e)}")
+        else:
+            changes["provisioned"] = True
+            changes["active"] = True
+    else:
+        # Banned/pending in Open WebUI, force deactivate in Middleware
         try:
-            from core.auth import _load_users_file, _save_users_file
-            users = _load_users_file()
-            found = False
-            for u in users:
-                if u.get("user_id") == user_id:
-                    u["active"] = is_active
-                    u["role"] = mw_role
-                    u.setdefault("subkey_hash", committed_subkey_hash)
-                    if not (u.get("quota") or {}).get("period"):
-                        u["quota"] = committed_quota
-                    found = True
-                    break
-            if not found:
-                users.append({
-                    "user_id": user_id, "active": is_active, "role": mw_role,
-                    "subkey_hash": committed_subkey_hash, "allowed_models": ["*"],
-                    "quota": committed_quota
-                })
-            _save_users_file(users)
-        except Exception:
-            pass
-
-        logger.info("sync_user_now: success user=%s provisioned=%s active=%s uuid=%s",
-                    user_id, was_inserted, is_active, openwebui_uuid)
-
-    except Exception as e:
-        raise HTTPException(500, f"Failed to sync user: {str(e)}")
+            with db_conn() as conn:
+                cur = conn.cursor()
+                cur.execute("UPDATE mw_users SET active = false, updated_at = now() WHERE user_id = %s", (user_id,))
+                cur.close()
+            # Sync to JSON backup
+            try:
+                from core.auth import _load_users_file, _save_users_file
+                users = _load_users_file()
+                for u in users:
+                    if u.get("user_id") == user_id:
+                        u["active"] = False
+                        break
+                _save_users_file(users)
+            except Exception:
+                pass
+            changes["active"] = False
+        except Exception as e:
+            raise HTTPException(500, f"Failed to deactivate user: {str(e)}")
 
     # Audit trail
     _write_admin_audit(
