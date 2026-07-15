@@ -148,15 +148,22 @@ async function toggleGroupDrilldown(row) {
             return;
         }
 
-        const userRows = data.users.map(u => `
+        const userRows = data.users.map(u => {
+            const statusTag = u.user_status === 'deleted'
+                ? ' <span style="font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 9px; background: rgba(239,68,68,0.15); color: #f87171;">🗑️ đã xóa</span>'
+                : u.user_status === 'disabled'
+                    ? ' <span style="font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 9px; background: rgba(245,158,11,0.15); color: #fbbf24;">🔒 disabled</span>'
+                    : '';
+            return `
             <tr style="background: transparent;">
                 <td style="border: none; padding: 6px 12px; font-family: monospace; color: #94a3b8;">${u.user_id}</td>
-                <td style="border: none; padding: 6px 12px;">${u.user_name}</td>
+                <td style="border: none; padding: 6px 12px;">${u.user_name}${statusTag}</td>
                 <td style="border: none; padding: 6px 12px;">${u.total_requests.toLocaleString()}</td>
                 <td style="border: none; padding: 6px 12px;">${u.total_tokens.toLocaleString()}</td>
                 <td style="border: none; padding: 6px 12px; color: #10b981;">$${u.total_cost.toFixed(4)}</td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
 
         // Reusing max-height and overflow-y-auto to match quota management tables
         drilldownRow.innerHTML = `<td colspan="7" style="padding: 0; background: #0f172a; border-bottom: 1px solid #1e293b;">

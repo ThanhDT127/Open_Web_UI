@@ -193,6 +193,40 @@ def db_ow_conn():
         put_ow_conn(conn)
 
 
+def fetch_final_audit_entries(start_dt, end_dt) -> list:
+    """One row per request from mw_audit_log: the latest entry per rid.
+
+    A request is logged multiple times over its lifecycle (pending -> ok /
+    reconciled / error); every consumer that counts "requests" must count each
+    rid exactly once, from its final state. This is the single definition of
+    that rule — analytics, group analytics and report export all go through it.
+    Rows without a rid are treated as individual requests.
+    """
+    with db_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT ON (COALESCE(NULLIF(rid, ''), id::text))
+                   user_id, model, tokens_total, cost_usd, ts, status, latency_ms
+            FROM mw_audit_log
+            WHERE ts >= %s AND ts <= %s
+            ORDER BY COALESCE(NULLIF(rid, ''), id::text), ts DESC, id DESC
+        """, (start_dt, end_dt))
+        rows = cur.fetchall()
+        cur.close()
+    return [
+        {
+            "user_id": r[0],
+            "model": r[1],
+            "tokens_total": int(r[2] or 0),
+            "cost_usd": float(r[3] or 0.0),
+            "ts": r[4],
+            "status": r[5] or "ok",
+            "latency_ms": float(r[6]) if r[6] is not None else None,
+        }
+        for r in rows
+    ]
+
+
 def check_ow_schema() -> bool:
     """
     Verify that the Open WebUI 'user' table has the necessary columns.

@@ -889,17 +889,9 @@
                     citation hit-rate, and vector-storage anomalies. All data is read-only.</span>
             </div>
 
-            <!-- Shared filters (apply to all three sections) -->
+            <!-- Model/User filters — time range comes from the shared dashboard control above -->
             <div class="log-filters"
-                style="display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 15px; margin-bottom: 20px; padding: 15px; background: #1e293b; border-radius: 8px; align-items: flex-end;">
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Start</label>
-                    <input type="datetime-local" id="ragStart" class="filter-select">
-                </div>
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">End</label>
-                    <input type="datetime-local" id="ragEnd" class="filter-select">
-                </div>
+                style="display: grid; grid-template-columns: repeat(2, 1fr) auto; gap: 15px; margin-bottom: 20px; padding: 15px; background: #1e293b; border-radius: 8px; align-items: flex-end;">
                 <div>
                     <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Model</label>
                     <select id="ragModel" class="filter-select">
@@ -1146,22 +1138,7 @@
                     shared across several KBs is shown as ambiguous rather than credited to one.</span>
             </div>
 
-            <!-- Date-range filter (applies to growth + usage-derived signals) -->
-            <div class="log-filters"
-                style="display: grid; grid-template-columns: repeat(2, 1fr) auto; gap: 15px; margin-bottom: 20px; padding: 15px; background: #1e293b; border-radius: 8px; align-items: flex-end;">
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Start</label>
-                    <input type="datetime-local" id="knStart" class="filter-select">
-                </div>
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">End</label>
-                    <input type="datetime-local" id="knEnd" class="filter-select">
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button onclick="window.knowledgeAPI.apply()" class="btn-apply">Apply</button>
-                    <button onclick="window.knowledgeAPI.reset()" class="btn-secondary">Reset</button>
-                </div>
-            </div>
+            <!-- Time range comes from the shared dashboard control above; no tab-local filters. -->
 
             <!-- ── Inventory ── -->
             <div class="section">
