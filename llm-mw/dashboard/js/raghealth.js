@@ -1,18 +1,23 @@
 // RAG Health tab — ingestion, retrieval and storage health.
 // Data comes from /v1/_mw/rag-health/{ingestion,retrieval,storage}.
 import { mwFetch, escapeHtml } from './utils.js';
+import { currentTimeRange } from './filters.js';
 
 let ingestChart = null;
 let modelChart = null;
 let loading = false;
 
-// Read the shared filter controls into query params.
+// Use the dashboard-wide shared time range (same as the other tabs), then layer
+// on the tab-specific model/user filters passed in `extra`.
 function buildParams(extra = {}) {
     const params = new URLSearchParams();
-    const start = document.getElementById('ragStart')?.value;
-    const end = document.getElementById('ragEnd')?.value;
-    if (start) params.append('start', new Date(start).toISOString().replace('Z', '+00:00'));
-    if (end) params.append('end', new Date(end).toISOString().replace('Z', '+00:00'));
+    if (currentTimeRange?.minutes) {
+        params.append('start', new Date(Date.now() - currentTimeRange.minutes * 60000).toISOString().replace('Z', '+00:00'));
+        params.append('end', new Date().toISOString().replace('Z', '+00:00'));
+    } else if (currentTimeRange?.start && currentTimeRange?.end) {
+        params.append('start', currentTimeRange.start);
+        params.append('end', currentTimeRange.end);
+    }
     for (const [k, v] of Object.entries(extra)) {
         if (v) params.append(k, v);
     }
@@ -228,7 +233,7 @@ export function applyRagFilters() {
 }
 
 export function resetRagFilters() {
-    ['ragStart', 'ragEnd'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    // Time range is the shared dashboard control; only the tab-local filters reset here.
     ['ragModel', 'ragUser'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     loadRagHealth();
 }

@@ -26,6 +26,7 @@ def get_chat_analytics(request: Request, minutes: int = Query(43200), start: str
     total_chats = 0
     active_users = 0
     total_messages = 0
+    total_messages = 0
     user_chat_counts = {}
     try:
         with db_ow_conn() as conn:
@@ -33,7 +34,10 @@ def get_chat_analytics(request: Request, minutes: int = Query(43200), start: str
             start_ts = int(start_dt.timestamp())
             end_ts = int(end_dt.timestamp())
             
+            
             cursor.execute('''
+                SELECT COUNT(id), COUNT(DISTINCT user_id) 
+                FROM chat 
                 SELECT COUNT(id), COUNT(DISTINCT user_id) 
                 FROM chat 
                 WHERE created_at >= %s AND created_at <= %s
@@ -42,6 +46,16 @@ def get_chat_analytics(request: Request, minutes: int = Query(43200), start: str
             if row:
                 total_chats = row[0]
                 active_users = row[1]
+                
+            cursor.execute('''
+                SELECT COUNT(id)
+                FROM message
+                WHERE created_at >= %s AND created_at <= %s
+            ''', (start_ts, end_ts))
+            row = cursor.fetchone()
+            if row:
+                total_messages = row[0]
+                
                 
             cursor.execute('''
                 SELECT COUNT(id)
@@ -217,7 +231,7 @@ def get_satisfaction_analytics(request: Request, minutes: int = Query(43200), st
                     
             # 3. Fetch Recent Feedback (Limit 50)
             cursor.execute('''
-                SELECT f.data, f.meta, f.created_at, u.name
+                SELECT f.data, f.meta, f.created_at, u.name, f.user_id, u.email
                 FROM feedback f
                 LEFT JOIN "user" u ON f.user_id = u.id
                 WHERE f.created_at >= %s AND f.created_at <= %s
@@ -227,7 +241,7 @@ def get_satisfaction_analytics(request: Request, minutes: int = Query(43200), st
             ''', (start_ts, end_ts))
             
             for row in cursor.fetchall():
-                data_str, meta_str, created_at, user_name = row
+                data_str, meta_str, created_at, user_name, fb_user_id, ow_email = row
                 try:
                     data = data_str if isinstance(data_str, dict) else (json.loads(data_str) if data_str else {})
                     meta = meta_str if isinstance(meta_str, dict) else (json.loads(meta_str) if meta_str else {})
@@ -239,13 +253,64 @@ def get_satisfaction_analytics(request: Request, minutes: int = Query(43200), st
                     "created_at": created_at,
                     "reason": data.get("reason", ""),
                     "comment": data.get("comment", ""),
-                    "user_name": user_name or "Unknown",
+                    "user_name": user_name,
+                    "user_id": fb_user_id,
+                    # Current OW email when the account still exists; resolved below otherwise
+                    "email": ow_email,
                     "model_id": meta.get("model_id", "unknown")
                 })
                 
     except Exception as e:
         print(f"Error querying OW DB for satisfaction analytics: {e}")
-        
+
+    # Feedback from users deleted in Open WebUI has no name/email to join against.
+    # Fall back to middleware identity records, which are not tied to OW's user lifecycle:
+    # mw_users mapping -> audit log mapping -> stable email.
+    missing_ids = list({fb["user_id"] for fb in recent_feedback if not fb["email"] and fb["user_id"]})
+    resolved = {}
+    if missing_ids:
+        try:
+            with db_conn() as conn:
+                c = conn.cursor()
+                c.execute('SELECT openwebui_user_id, user_id FROM mw_users WHERE openwebui_user_id = ANY(%s)', (missing_ids,))
+                for ow_id, mw_id in c.fetchall():
+                    resolved[ow_id] = mw_id
+                unresolved = [i for i in missing_ids if i not in resolved]
+                if unresolved:
+                    c.execute('''SELECT DISTINCT openwebui_user_id, user_id FROM mw_audit_log
+                                 WHERE openwebui_user_id = ANY(%s) AND user_id IS NOT NULL''', (unresolved,))
+                    for ow_id, mw_id in c.fetchall():
+                        resolved.setdefault(ow_id, mw_id)
+        except Exception as e:
+            print(f"Error resolving deleted user names for satisfaction: {e}")
+
+    # The badge must reflect each account's CURRENT middleware status, keyed by
+    # email — so a deleted-then-recreated account (same email, new uuid) is no
+    # longer tagged as deleted even on feedback it left under the old uuid.
+    mw_status = {}
+    try:
+        with db_conn() as conn:
+            c = conn.cursor()
+            c.execute('SELECT user_id, active, deleted_at FROM mw_users')
+            for uid, active, deleted_at in c.fetchall():
+                mw_status[uid] = "deleted" if deleted_at else ("active" if active else "disabled")
+    except Exception as e:
+        print(f"Error loading user status for satisfaction: {e}")
+
+    for fb in recent_feedback:
+        email = fb.get("email") or resolved.get(fb.get("user_id") or "")
+        if email and email in mw_status:
+            fb["user_status"] = mw_status[email]
+        elif email:
+            # Present in Open WebUI but not provisioned in middleware -> not deleted
+            fb["user_status"] = "active"
+        else:
+            fb["user_status"] = "deleted" if fb.get("user_id") else "unknown"
+        if not fb["user_name"]:
+            uid = fb.get("user_id") or ""
+            fb["user_name"] = email or (f"Đã xóa ({uid[:8]})" if uid else "Unknown")
+        fb.pop("email", None)
+
     model_leaderboard = []
     for m_id, stats in model_stats.items():
         model_leaderboard.append({

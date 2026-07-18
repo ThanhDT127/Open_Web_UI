@@ -380,6 +380,13 @@ async def delete_user_endpoint(request: Request, user_id: str, purge: bool = Fal
                 "user": _scrub_user(user)
             }
 
+        if not purge and user.get("deleted_at"):
+            return {
+                "status": "ok",
+                "message": f"User {user_id} was already deleted",
+                "user": _scrub_user(user)
+            }
+
         if purge:
             deleted = auth_delete_user(user_id)
         else:
@@ -505,12 +512,17 @@ def get_users_sync_status(request: Request):
             cur = conn.cursor()
             # mw_users chỉ lưu subkey_hash — subkey thô không lấy lại được (một chiều),
             # nên cột subkey ở dashboard hiển thị n/a; chỉ báo user đã có key hay chưa.
-            cur.execute("SELECT user_id, active, subkey_hash IS NOT NULL FROM mw_users")
+            # Soft-deleted rows are excluded so a deleted-then-recreated account
+            # (same email, new Open WebUI uuid) surfaces as pending_sync, not a
+            # false "mismatch" against the stale identity we kept for history.
+            cur.execute("SELECT user_id, active, subkey_hash IS NOT NULL FROM mw_users WHERE deleted_at IS NULL")
             rows = cur.fetchall()
             for r in rows:
                 mw_users_list.append({
                     "user_id": r[0],
                     "active": r[1],
+                    "has_subkey": r[2],
+                    "subkey": None
                     "has_subkey": r[2],
                     "subkey": None
                 })
@@ -546,6 +558,7 @@ def get_users_sync_status(request: Request):
             # Exists in both
             ow_is_active = (ow_role in ("user", "admin"))
             if ow_is_active == mw_active:
+            if ow_is_active == mw_active:
                 status = "synced"
             else:
                 status = "mismatch"
@@ -556,6 +569,7 @@ def get_users_sync_status(request: Request):
             "ow_role": ow_role,
             "mw_active": mw_active,
             "subkey": subkey,
+            "has_subkey": bool(mw_u and mw_u.get("has_subkey")),
             "has_subkey": bool(mw_u and mw_u.get("has_subkey")),
             "status": status
         })

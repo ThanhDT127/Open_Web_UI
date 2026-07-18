@@ -4,6 +4,7 @@ import { loadUsers } from './users.js';
 import { loadLogs } from './logs.js';
 import { loadSettings, updateDefaultQuotaHint } from './settings.js';
 import { loadRagHealth } from './raghealth.js';
+import { loadKnowledge } from './knowledge.js';
 import { loadPrices } from './prices.js';
 import { refreshAnalytics } from './analytics.js';
 import { fetchData as refreshGroups } from './group_analytics.js';
@@ -35,6 +36,8 @@ export function switchTab(e, tabName) {
         loadSettings();
     } else if (tabName === 'raghealth') {
         loadRagHealth();
+    } else if (tabName === 'knowledge') {
+        loadKnowledge();
     } else if (tabName === 'prices') {
         loadPrices();
     } else if (tabName === 'analytics') {
