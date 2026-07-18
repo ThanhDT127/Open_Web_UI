@@ -35,6 +35,13 @@ export async function setTimeRange(e, minutes) {
     if (window.groupAnalyticsAPI && window.groupAnalyticsAPI.fetchData) {
         window.groupAnalyticsAPI.fetchData();
     }
+    // RAG Health & Knowledge share this range too; reload them when open.
+    if (document.getElementById('raghealthTab')?.classList.contains('active') && window.ragHealthAPI?.apply) {
+        window.ragHealthAPI.apply();
+    }
+    if (document.getElementById('knowledgeTab')?.classList.contains('active') && window.knowledgeAPI?.apply) {
+        window.knowledgeAPI.apply();
+    }
 }
 
 export async function applyCustomRange() {
@@ -82,6 +89,13 @@ export async function applyCustomRange() {
     }
     if (window.groupAnalyticsAPI && window.groupAnalyticsAPI.fetchData) {
         window.groupAnalyticsAPI.fetchData();
+    }
+    // RAG Health & Knowledge share this range too; reload them when open.
+    if (document.getElementById('raghealthTab')?.classList.contains('active') && window.ragHealthAPI?.apply) {
+        window.ragHealthAPI.apply();
+    }
+    if (document.getElementById('knowledgeTab')?.classList.contains('active') && window.knowledgeAPI?.apply) {
+        window.knowledgeAPI.apply();
     }
 }
 

@@ -1,6 +1,7 @@
 // Knowledge Analytics tab — inventory, KB value matrix and governance.
 // Data comes from /v1/_mw/knowledge-analytics/{inventory,kb-value,governance}.
 import { mwFetch, escapeHtml } from './utils.js';
+import { currentTimeRange } from './filters.js';
 
 let growthChart = null;
 let loading = false;
@@ -14,10 +15,14 @@ const CATEGORY_LABEL = {
 
 function buildParams(extra = {}) {
     const params = new URLSearchParams();
-    const start = document.getElementById('knStart')?.value;
-    const end = document.getElementById('knEnd')?.value;
-    if (start) params.append('start', new Date(start).toISOString().replace('Z', '+00:00'));
-    if (end) params.append('end', new Date(end).toISOString().replace('Z', '+00:00'));
+    // Use the dashboard-wide shared time range (same as the other tabs).
+    if (currentTimeRange?.minutes) {
+        params.append('start', new Date(Date.now() - currentTimeRange.minutes * 60000).toISOString().replace('Z', '+00:00'));
+        params.append('end', new Date().toISOString().replace('Z', '+00:00'));
+    } else if (currentTimeRange?.start && currentTimeRange?.end) {
+        params.append('start', currentTimeRange.start);
+        params.append('end', currentTimeRange.end);
+    }
     for (const [k, v] of Object.entries(extra)) {
         if (v) params.append(k, v);
     }
@@ -180,6 +185,6 @@ export function applyKnowledgeFilters() {
 }
 
 export function resetKnowledgeFilters() {
-    ['knStart', 'knEnd'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    // Time range is the shared dashboard control; nothing tab-local to reset.
     loadKnowledge();
 }
