@@ -31,6 +31,10 @@ export async function loadUsers() {
         if (totalEl) totalEl.textContent = users.length;
         if (activeEl) activeEl.textContent = users.filter(u => u.active !== false).length;
 
+        // Total Users inventory card (reuses the same loaded list — no extra fetch)
+        const totalUsersCard = document.getElementById('metricTotalUsers');
+        if (totalUsersCard) totalUsersCard.textContent = users.length;
+
         if (users.length === 0) {
             tbody.innerHTML = '<tr><td colspan="10" class="no-data">No users</td></tr>';
             return;

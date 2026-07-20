@@ -7,6 +7,12 @@ import { eventSource, setEventSource, setRetryCount, retryCount, MAX_RETRY_DELAY
 // Cache latest data for re-rendering on sort/top-N change
 let _lastSummaryData = null;
 
+// Accessor so other tabs (e.g. Overview) can reuse the global-range summary
+// without issuing a duplicate /summary fetch.
+export function getLastSummary() {
+    return _lastSummaryData;
+}
+
 // Load summary data
 export async function loadSummary() {
     try {
@@ -26,6 +32,9 @@ export async function loadSummary() {
 
         const data = await res.json();
         _lastSummaryData = data;
+
+        // Notify dependent tabs (Overview) that fresh global-range summary is available
+        try { document.dispatchEvent(new CustomEvent('summary:updated', { detail: data })); } catch (e) { /* noop */ }
 
         if (!data || !data.totals) {
             document.getElementById('topUsersTable').innerHTML = '<tr><td colspan="8" class="no-data">No data in selected time range.<br>Try "Last 7d" or "Last 30d"</td></tr>';

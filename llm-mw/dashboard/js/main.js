@@ -22,6 +22,7 @@ import {
 	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, saveDefaultQuota, testSMTP
 } from './settings.js';
 import { applyRagFilters, resetRagFilters } from './raghealth.js';
+import { loadOverview } from './overview.js';
 import { applyKnowledgeFilters, resetKnowledgeFilters } from './knowledge.js';
 import {
 	recalcComparison, resetSimulator, showAddPriceModal, showEditPriceModal,
@@ -109,6 +110,10 @@ export async function initAPI() {
 
 	window.groupAnalyticsAPI = {
 		fetchData: refreshGroups
+	};
+
+	window.overviewAPI = {
+		refresh: loadOverview
 	};
 
 	// One-time UI init

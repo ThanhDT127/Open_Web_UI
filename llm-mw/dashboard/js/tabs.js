@@ -10,6 +10,7 @@ import { refreshAnalytics } from './analytics.js';
 import { fetchData as refreshGroups } from './group_analytics.js';
 import { loadGroupToolAccess } from './tool_access.js';
 import { refreshSatisfaction } from './satisfaction.js';
+import { loadOverview } from './overview.js';
 import { accessEventSource } from './auth.js';
 
 // FIX: Pass event explicitly
@@ -47,5 +48,7 @@ export function switchTab(e, tabName) {
         loadGroupToolAccess();
     } else if (tabName === 'satisfaction') {
         refreshSatisfaction();
+    } else if (tabName === 'overview') {
+        loadOverview();
     }
 }

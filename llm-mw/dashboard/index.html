@@ -97,6 +97,7 @@
         <!-- Tab Navigation -->
         <div class="tabs">
             <button class="tab active" onclick="window.dashboardAPI.switchTab(event, 'usage')">📈 Usage</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'overview')">🎯 Overview</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'access')">🌐 Access</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'users')">👥 Users</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'logs')">📋 Logs</button>
@@ -107,6 +108,64 @@
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'satisfaction')">⭐ Satisfaction</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'prices')">💸 Prices</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'settings')">⚙️ Settings</button>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- OVERVIEW TAB (Phase 1 — executive summary cards)   -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="overviewTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">🎯</span>
+                <span class="insight-text">Tổng quan cấp lãnh đạo — chi phí, mức áp dụng, chất lượng và sức khỏe
+                    hệ thống trong một màn hình. Trừ "Chi phí tháng này" (cố định theo tháng), các thẻ khác theo
+                    khoảng thời gian đang chọn ở bộ lọc.</span>
+            </div>
+            <div class="metrics metrics-lg">
+                <!-- Cost MTD (fixed: current month, ignores global range) -->
+                <div class="metric-card" id="ovCardSpend">
+                    <div class="metric-label">💸 Chi phí tháng này</div>
+                    <div class="metric-q">Đang tiêu bao nhiêu từ đầu tháng?</div>
+                    <div class="metric-value" id="ovSpendValue">-</div>
+                    <div class="metric-hint">Tháng này (đến hiện tại) · không theo khoảng đang xem</div>
+                </div>
+                <!-- CSAT (global range) -->
+                <div class="metric-card" id="ovCardCsat">
+                    <div class="metric-label">⭐ Mức hài lòng</div>
+                    <div class="metric-q">Người dùng có hài lòng không?</div>
+                    <div class="metric-value" id="ovCsatValue">-</div>
+                    <div class="metric-detail" id="ovCsatDetail">- lượt đánh giá</div>
+                    <div class="metric-hint">Theo khoảng đang xem</div>
+                </div>
+                <!-- System Health (global range) -->
+                <div class="metric-card" id="ovCardHealth">
+                    <div class="metric-label">🩺 Sức khỏe hệ thống</div>
+                    <div class="metric-q">Hệ thống có đang lỗi/chậm không?</div>
+                    <div class="metric-value" id="ovHealthValue">-</div>
+                    <div class="metric-detail" id="ovHealthDetail">P95: -</div>
+                    <div class="metric-hint">Tỷ lệ lỗi · theo khoảng đang xem</div>
+                </div>
+                <!-- Cost Concentration (global range) -->
+                <div class="metric-card" id="ovCardConcentration">
+                    <div class="metric-label">📊 Mức tập trung chi phí</div>
+                    <div class="metric-q">Chi phí có dồn vào một nhóm nhỏ?</div>
+                    <div class="metric-value" id="ovConcentrationValue">-</div>
+                    <div class="metric-hint">Top 10% người dùng chiếm ?% tổng chi · theo khoảng đang xem</div>
+                </div>
+                <!-- Adoption rate (placeholder — Phase 4) -->
+                <div class="metric-card" id="ovCardAdoption">
+                    <div class="metric-label">📈 Tỷ lệ sử dụng</div>
+                    <div class="metric-q">Bao nhiêu nhân viên thật sự dùng?</div>
+                    <div class="metric-value">—</div>
+                    <div class="metric-hint">Đã dùng / đã cấp · chờ Phase 4</div>
+                </div>
+                <!-- Cost per active user (placeholder — Phase 4) -->
+                <div class="metric-card" id="ovCardCpu">
+                    <div class="metric-label">👤 Chi phí / người dùng thật</div>
+                    <div class="metric-q">Thêm 1 người dùng tốn thêm bao nhiêu?</div>
+                    <div class="metric-value">—</div>
+                    <div class="metric-hint">Cần "active theo range" · chờ Phase 4</div>
+                </div>
+            </div>
         </div>
 
         <!-- ═══════════════════════════════════════════════════ -->
@@ -510,12 +569,19 @@
                     User mới (lazy provisioning) nhận mặc định: <b id="defaultQuotaHint">…</b> — đổi tại tab
                     Settings.</span>
             </div>
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-label">👥 Total Users</div>
+                    <div class="metric-value" id="metricTotalUsers">-</div>
+                    <div class="metric-detail">Tổng tài khoản đã cấp (chưa xóa)</div>
+                </div>
+            </div>
             <div class="section">
                 <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>👥 User Management & Quota
                         <span id="userCountBadge" class="badge"
                             style="margin-left:10px; background:#334155; font-size:12px; padding:3px 10px; border-radius:12px;">
-                            Active: <span id="activeUserCount">-</span> / Total: <span id="totalUserCount">-</span>
+                            Đang bật: <span id="activeUserCount">-</span> · Tổng: <span id="totalUserCount">-</span>
                         </span>
                     </span>
                     <div style="display: flex; gap: 10px;">
