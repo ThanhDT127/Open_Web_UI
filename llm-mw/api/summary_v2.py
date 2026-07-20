@@ -381,7 +381,18 @@ def get_summary_v2(
         
         # Sort by cost descending
         breakdown_by_user.sort(key=lambda x: x["cost_usd"], reverse=True)
-        
+
+        # Cost concentration: share of total cost held by the top 10% of users.
+        # Computed over the FULL user population (before the [:20] truncation below)
+        # so the figure reflects everyone, not just the top 20 returned. Reused by
+        # the Overview "Cost Concentration" card and later by Phase 4 (Pareto).
+        top10_pct_cost_share = 0.0
+        n_users = len(breakdown_by_user)
+        if n_users > 0 and total_cost > 0:
+            top_k = (n_users + 9) // 10  # ceil(n * 0.10), at least 1 when n > 0
+            top_cost = sum(u["cost_usd"] for u in breakdown_by_user[:top_k])
+            top10_pct_cost_share = min(100.0, top_cost / total_cost * 100)
+
         # Format breakdown by model
         breakdown_by_model = []
         for model, stats in model_data.items():
@@ -446,7 +457,9 @@ def get_summary_v2(
                 # NEW: Billable metrics
                 "billable_calls": billable_calls,
                 "nonbillable_calls": nonbillable_calls,
-                "usage_missing_calls": usage_missing_calls
+                "usage_missing_calls": usage_missing_calls,
+                # NEW: cost concentration (top 10% of users' share of total cost)
+                "top10_pct_cost_share": round(top10_pct_cost_share, 1)
             },
             "breakdown_by_user": breakdown_by_user[:20],  # Top 20
             "breakdown_by_model": breakdown_by_model[:20],  # Top 20
