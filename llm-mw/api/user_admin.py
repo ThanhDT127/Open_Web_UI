@@ -523,8 +523,6 @@ def get_users_sync_status(request: Request):
                     "active": r[1],
                     "has_subkey": r[2],
                     "subkey": None
-                    "has_subkey": r[2],
-                    "subkey": None
                 })
             cur.close()
     except Exception as e:
@@ -558,7 +556,6 @@ def get_users_sync_status(request: Request):
             # Exists in both
             ow_is_active = (ow_role in ("user", "admin"))
             if ow_is_active == mw_active:
-            if ow_is_active == mw_active:
                 status = "synced"
             else:
                 status = "mismatch"
@@ -569,7 +566,6 @@ def get_users_sync_status(request: Request):
             "ow_role": ow_role,
             "mw_active": mw_active,
             "subkey": subkey,
-            "has_subkey": bool(mw_u and mw_u.get("has_subkey")),
             "has_subkey": bool(mw_u and mw_u.get("has_subkey")),
             "status": status
         })
