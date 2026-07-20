@@ -1,14 +1,14 @@
-## Yêu cầu BỔ SUNG (ADDED Requirements)
+## ADDED Requirements
 
 ### Requirement: API Endpoint Phân tích hợp nhất
-Hệ thống PHẢI cung cấp một API endpoint (`GET /v1/_mw/admin/analytics/chat`) trả về số liệu thống kê gộp từ cả Database của Open WebUI và Database của Middleware.
+Hệ thống SHALL cung cấp một API endpoint (`GET /v1/_mw/admin/analytics/chat`) trả về số liệu thống kê gộp từ cả Database của Open WebUI và Database của Middleware.
 
 #### Scenario: Yêu cầu lấy phân tích trong 24 giờ
 - **WHEN** Admin gửi request yêu cầu lấy analytics với tham số `time_range=24h`
 - **THEN** Hệ thống trả về tổng số lượng chat, số lượng tin nhắn, số lượng token, và tổng chi phí USD trong 24 giờ qua, được gom nhóm theo từng giờ.
 
 ### Requirement: Các biểu đồ chi tiết (Detailed Charts)
-Hệ thống PHẢI cung cấp đa dạng các biểu đồ để phân tích sâu hơn về hành vi người dùng và chi phí mô hình.
+Hệ thống SHALL cung cấp đa dạng các biểu đồ để phân tích sâu hơn về hành vi người dùng và chi phí mô hình.
 
 #### Scenario: Phân tích theo giờ và theo mô hình
 - **WHEN** Admin xem tab Analytics

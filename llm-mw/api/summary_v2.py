@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from fastapi import Request, HTTPException
 from collections import defaultdict
 
-from config import AUDIT_LOG_FILE, LOG_DIR
+from config import AUDIT_LOG_FILE, LOG_DIR, logger
 
 
 def _db_available() -> bool:
@@ -106,21 +106,16 @@ def _load_entries_from_files(cutoff, end_time) -> List[Dict[str, Any]]:
     return entries
 
 
-def get_summary_v2(
-    request: Request,
+def _resolve_range(
     minutes: Optional[int] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    bucket: str = "auto"
+    bucket: str = "auto",
 ):
     """
-    Enhanced admin endpoint: Aggregate usage statistics with time range support.
-    Uses DB if available, falls back to audit.jsonl files.
+    Phase 1: resolve request params into a concrete time window and bucket size.
+    Pure — no Request object, no auth. Raises HTTPException on invalid input.
     """
-    from utils.auth_guard import require_admin_or_session
-    require_admin_or_session(request)
-
-    
     # Determine time range
     now_utc = dt.datetime.now(tz=dt.timezone.utc)
     
@@ -165,7 +160,20 @@ def get_summary_v2(
             bucket_size = "day"
     else:
         bucket_size = bucket
-    
+
+    return cutoff, end_time, bucket_size
+
+
+def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
+    """
+    Phase 2+3: load audit entries for the window, aggregate them, and format the result.
+
+    Pure — takes no Request, performs no auth, raises no HTTP errors. This is the single
+    aggregation implementation for mw_audit_log; every dashboard endpoint needing these
+    numbers MUST call this instead of re-aggregating the table itself.
+
+    Breakdown lists are returned UNTRUNCATED; callers decide whether to cap them.
+    """
     # Define LLM endpoints
     LLM_ENDPOINTS = {
         "/v1/chat/completions": "chat",
@@ -188,6 +196,9 @@ def get_summary_v2(
         "errors": 0
     })
     
+    # Hour-of-day activity: 0..23 -> set of distinct rids (same discipline as timeseries)
+    hourly_rids: Dict[int, set] = defaultdict(set)
+
     # Breakdown data (use sets for distinct rid counting)
     user_data: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
         "requests": set(),
@@ -195,7 +206,8 @@ def get_summary_v2(
         "errors": 0,
         "tokens_total": 0,
         "cost_total": 0.0,
-        "latencies": []
+        "latencies": [],
+        "models": defaultdict(int)
     })
     
     model_data: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
@@ -253,6 +265,11 @@ def get_summary_v2(
             bucket_key = _get_bucket_key(entry_time, bucket_size)
             timeseries_data[bucket_key]["requests"].add(rid)
 
+            # Hour-of-day bucketing. Counting distinct rids keeps a request that
+            # straddles an hour boundary (pending 14:59 -> reconciled 15:01) from
+            # being counted in both hours.
+            hourly_rids[entry_time.hour].add(rid)
+
             # Only aggregate tokens/cost from final status (ok/reconciled)
             if status in ["ok", "reconciled"]:
                 tokens = entry.get("tokens_total", 0)
@@ -267,6 +284,7 @@ def get_summary_v2(
                 user_data[user_id]["requests_ok"].add(rid)
                 user_data[user_id]["tokens_total"] += tokens
                 user_data[user_id]["cost_total"] += cost
+                user_data[user_id]["models"][model] += 1
                 if latency:
                     user_data[user_id]["latencies"].append(latency)
 
@@ -282,6 +300,10 @@ def get_summary_v2(
                 timeseries_data[bucket_key]["errors"] += 1
                 user_data[user_id]["requests"].add(rid)
                 user_data[user_id]["errors"] += 1
+                # Count the model here too, mirroring model_data below. Otherwise a user
+                # whose requests all failed reports top_model="unknown" while the model
+                # breakdown still lists the model they were calling.
+                user_data[user_id]["models"][model] += 1
                 model_data[model]["requests"].add(rid)
                 model_data[model]["errors"] += 1
 
@@ -368,6 +390,9 @@ def get_summary_v2(
                 p95_idx = int(len(sorted_lat) * 0.95)
                 user_p95 = sorted_lat[p95_idx] if p95_idx < len(sorted_lat) else sorted_lat[-1]
             
+            user_models = stats["models"]
+            user_top_model = max(user_models.items(), key=lambda kv: kv[1])[0] if user_models else "unknown"
+
             breakdown_by_user.append({
                 "user_id": user_id,
                 "requests_total": user_requests_total,
@@ -376,7 +401,8 @@ def get_summary_v2(
                 "error_rate_percent": round(user_error_rate, 2),
                 "tokens_total": stats["tokens_total"],
                 "cost_usd": round(stats["cost_total"], 6),
-                "p95_latency_ms": round(user_p95, 2) if user_p95 else None
+                "p95_latency_ms": round(user_p95, 2) if user_p95 else None,
+                "top_model": user_top_model
             })
         
         # Sort by cost descending
@@ -431,8 +457,9 @@ def get_summary_v2(
                 "cost_usd": round(data["cost_total"], 6),
                 "errors": data["errors"]
             })
-        
 
+        # Format hour-of-day activity: always all 24 slots so the chart keeps its shape.
+        hourly_activity = [{"hour": h, "count": len(hourly_rids.get(h, ()))} for h in range(24)]
 
         return {
             "time_range": {
@@ -461,13 +488,43 @@ def get_summary_v2(
                 # NEW: cost concentration (top 10% of users' share of total cost)
                 "top10_pct_cost_share": round(top10_pct_cost_share, 1)
             },
-            "breakdown_by_user": breakdown_by_user[:20],  # Top 20
-            "breakdown_by_model": breakdown_by_model[:20],  # Top 20
-            "timeseries": timeseries
+            # Returned in full; callers cap these themselves (get_summary_v2 takes top 20).
+            "breakdown_by_user": breakdown_by_user,
+            "breakdown_by_model": breakdown_by_model,
+            "timeseries": timeseries,
+            "hourly_activity": hourly_activity
         }
     
     except Exception as e:
+        # This is the single aggregation both the Usage and Chat Analytics tabs depend on.
+        # Returning the error without logging it makes both tabs render zeros with no trace.
+        logger.error("compute_usage_summary failed (%s -> %s): %s", cutoff, end_time, e, exc_info=True)
         return {"error": str(e)}
+
+
+def get_summary_v2(
+    request: Request,
+    minutes: Optional[int] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    bucket: str = "auto"
+):
+    """
+    Enhanced admin endpoint: Aggregate usage statistics with time range support.
+    Uses DB if available, falls back to audit.jsonl files.
+    """
+    from utils.auth_guard import require_admin_or_session
+    require_admin_or_session(request)
+
+    cutoff, end_time, bucket_size = _resolve_range(minutes, start, end, bucket)
+    result = compute_usage_summary(cutoff, end_time, bucket_size)
+
+    # This endpoint caps the leaderboards; compute_usage_summary returns them in full.
+    if "breakdown_by_user" in result:
+        result["breakdown_by_user"] = result["breakdown_by_user"][:20]
+    if "breakdown_by_model" in result:
+        result["breakdown_by_model"] = result["breakdown_by_model"][:20]
+    return result
 
 
 def _get_audit_log_files() -> List[str]:
