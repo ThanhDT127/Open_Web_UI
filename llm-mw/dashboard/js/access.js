@@ -1,19 +1,13 @@
 // Access tab logic - HTTP access logs
 import { mwFetch } from './utils.js';
-import { currentTimeRange } from './filters.js';
+import { buildRangeParams } from './filters.js';
 import { accessEventSource, setAccessEventSource } from './auth.js';
 import { escapeHtml } from './utils.js';
 
 // Load access summary data
 export async function loadAccessData() {
     try {
-        const params = new URLSearchParams();
-        if (currentTimeRange.minutes) {
-            params.append('minutes', currentTimeRange.minutes);
-        } else {
-            params.append('start', currentTimeRange.start);
-            params.append('end', currentTimeRange.end);
-        }
+        const params = buildRangeParams();
 
         const res = await mwFetch(`/v1/_mw/access_summary?${params}`);
         if (!res || !res.ok) return;

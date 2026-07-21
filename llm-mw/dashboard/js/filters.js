@@ -2,8 +2,66 @@
 import { updateStatus } from './utils.js';
 import { escapeHtml } from './utils.js';
 
-// Time range state
+// Time range state — the admin's SELECTION, not the window used for fetching.
+// Kept in its original shape ({minutes} or {start,end}) because callers still read it
+// for display and for bucket-size hints (see buildRangeParams below).
 export let currentTimeRange = { minutes: 60 }; // Default: last 1h
+
+// The selection resolved into an absolute window, pinned once per refresh cycle.
+// Every tab in a cycle fetches the same window, so two tabs showing the same metric
+// cannot disagree just because they were loaded a few seconds apart.
+let resolvedWindow = null;
+
+function toIsoParam(date) {
+    // Backends parse with fromisoformat(); normalise the 'Z' suffix they choke on.
+    return date.toISOString().replace('Z', '+00:00');
+}
+
+// Recompute the absolute window from the current selection. Call at the start of a
+// refresh cycle and whenever the selection changes — presets keep rolling forward,
+// they are just pinned for the duration of one cycle.
+// Announce that the admin picked a different range. compare_data.js listens and drops
+// its cache. An event rather than a direct call, so filters.js and compare_data.js do
+// not import each other into a cycle.
+function announceRangeChange() {
+    try { document.dispatchEvent(new CustomEvent('range:changed')); } catch (e) { /* noop */ }
+}
+
+export function resolveTimeWindow() {
+    if (currentTimeRange.start && currentTimeRange.end) {
+        resolvedWindow = { start: currentTimeRange.start, end: currentTimeRange.end };
+    } else {
+        const minutes = currentTimeRange.minutes || 60;
+        const end = new Date();
+        const start = new Date(end.getTime() - minutes * 60 * 1000);
+        resolvedWindow = { start: toIsoParam(start), end: toIsoParam(end) };
+    }
+    return resolvedWindow;
+}
+
+export function getTimeWindow() {
+    return resolvedWindow || resolveTimeWindow();
+}
+
+// Single builder for every dashboard request's time parameters.
+// Replaces 10 hand-rolled copies that each evaluated their own Date.now().
+export function buildRangeParams(extra = {}) {
+    const win = getTimeWindow();
+    const params = new URLSearchParams();
+    params.append('start', win.start);
+    params.append('end', win.end);
+    // `minutes` still travels for preset selections. The window always comes from
+    // start/end — every backend resolver prefers those when present — but
+    // get_chat_analytics keys its bucket size off `minutes`, so dropping it would
+    // silently switch that tab's chart from hourly to daily buckets.
+    if (currentTimeRange.minutes) {
+        params.append('minutes', currentTimeRange.minutes);
+    }
+    for (const [k, v] of Object.entries(extra)) {
+        if (v) params.append(k, v);
+    }
+    return params;
+}
 
 // Recent audit event filters (client-side)
 export let auditEvents = [];
@@ -19,6 +77,8 @@ export async function setTimeRange(e, minutes) {
 
     // Update state and reload
     currentTimeRange = { minutes };
+    resolveTimeWindow();
+    announceRangeChange();
 
     // Reload data
     if (window.dashboardAPI) {
@@ -74,6 +134,8 @@ export async function applyCustomRange() {
         start: new Date(start).toISOString().replace('Z', '+00:00'),
         end: new Date(end).toISOString().replace('Z', '+00:00')
     };
+    resolveTimeWindow();
+    announceRangeChange();
 
     // Reload data
     if (window.dashboardAPI) {

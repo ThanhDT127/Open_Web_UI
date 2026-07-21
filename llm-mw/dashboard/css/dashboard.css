@@ -1736,3 +1736,48 @@ input:checked+.slider:before {
 .metrics-lg .metric-value {
     font-size: 34px;
 }
+
+/* ─── Comparison badge (CK/KT) ────────────────────────────────
+   Two lines per card: previous period first, same-period-last-year second.
+   Colour comes from the metric's declared polarity in metrics_registry.js,
+   never from the sign of the number. */
+.delta-badge {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 7px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+.delta-line {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.delta-line.d-green {
+    color: #34d399;
+}
+
+.delta-line.d-red {
+    color: #f87171;
+}
+
+.delta-line.d-neutral {
+    color: #94a3b8;
+}
+
+/* No data for that window — dimmed, no arrow, no percentage. */
+.delta-line.d-dim {
+    color: #64748b;
+    font-weight: 400;
+}
+
+/* The compared window and its absolute value, always printed. */
+.delta-abs {
+    color: #64748b;
+    font-weight: 400;
+}

@@ -1,7 +1,7 @@
 // RAG Health tab — ingestion, retrieval and storage health.
 // Data comes from /v1/_mw/rag-health/{ingestion,retrieval,storage}.
 import { mwFetch, escapeHtml } from './utils.js';
-import { currentTimeRange } from './filters.js';
+import { buildRangeParams } from './filters.js';
 
 let ingestChart = null;
 let modelChart = null;
@@ -10,18 +10,7 @@ let loading = false;
 // Use the dashboard-wide shared time range (same as the other tabs), then layer
 // on the tab-specific model/user filters passed in `extra`.
 function buildParams(extra = {}) {
-    const params = new URLSearchParams();
-    if (currentTimeRange?.minutes) {
-        params.append('start', new Date(Date.now() - currentTimeRange.minutes * 60000).toISOString().replace('Z', '+00:00'));
-        params.append('end', new Date().toISOString().replace('Z', '+00:00'));
-    } else if (currentTimeRange?.start && currentTimeRange?.end) {
-        params.append('start', currentTimeRange.start);
-        params.append('end', currentTimeRange.end);
-    }
-    for (const [k, v] of Object.entries(extra)) {
-        if (v) params.append(k, v);
-    }
-    return params;
+    return buildRangeParams(extra);
 }
 
 function fmtPct(v) {

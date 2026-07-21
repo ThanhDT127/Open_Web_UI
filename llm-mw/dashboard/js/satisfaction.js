@@ -1,6 +1,6 @@
 // Satisfaction (CSAT) analytics module
 import { mwFetch, escapeHtml } from './utils.js';
-import { currentTimeRange } from './filters.js';
+import { buildRangeParams } from './filters.js';
 
 export async function refreshSatisfaction() {
     const leaderboardBody = document.getElementById('csatModelLeaderboard');
@@ -13,15 +13,7 @@ export async function refreshSatisfaction() {
         if (feedbackContainer) feedbackContainer.innerHTML = '<div class="loading">Loading feedback...</div>';
 
         // Build query params from global time range
-        const params = new URLSearchParams();
-        if (currentTimeRange && currentTimeRange.minutes) {
-            params.append('minutes', currentTimeRange.minutes);
-        } else if (currentTimeRange && currentTimeRange.start && currentTimeRange.end) {
-            params.append('start', currentTimeRange.start);
-            params.append('end', currentTimeRange.end);
-        } else {
-            params.append('minutes', 43200); // 30d default
-        }
+        const params = buildRangeParams();
 
         const res = await mwFetch(`/v1/_mw/admin/analytics/satisfaction?${params}`);
         if (!res || !res.ok) {

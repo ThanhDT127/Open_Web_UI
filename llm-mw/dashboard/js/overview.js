@@ -3,8 +3,10 @@
 // global-range summary already fetched by usage.js (getLastSummary); CSAT uses the
 // satisfaction analytics endpoint; Cost MTD fetches summary for the current month.
 import { mwFetch } from './utils.js';
-import { currentTimeRange } from './filters.js';
+import { buildRangeParams } from './filters.js';
 import { getLastSummary } from './usage.js';
+import { renderDelta } from './metrics_registry.js';
+import { loadCompare, side } from './compare_data.js';
 
 // Apply an ok/warn/danger accent state to a metric-card element.
 function setCardState(cardId, state) {
@@ -36,20 +38,65 @@ function renderFromSummary(summary) {
     // hard threshold — render neutral (no accent) until leader confirms one.
     const share = totals.top10_pct_cost_share;
     setText('ovConcentrationValue', share != null ? `${share}%` : '—');
+
+    // Fire-and-forget: a slow comparison must not hold up the current figures.
+    renderSummaryCompare(totals);
+}
+
+// ── Period-comparison badges ─────────────────────────────────
+// Only three Overview cards can carry one. "Chi phí tháng này" deliberately ignores the
+// global range (it anchors to the 1st of the month) so the shared anchor would compare
+// two different spans; it is declared compare:false in the registry. "Tỷ lệ sử dụng" and
+// "Chi phí / người dùng thật" are Phase 4 placeholders with no id and no data yet.
+
+// A window with no requests in it has no rates to speak of — csat/error/concentration all
+// come back as zeros that mean "nothing happened", not "the value is zero".
+const _pickSummaryTotals = (json) => {
+    const t = json && json.totals;
+    return t && t.requests_total > 0 ? t : null;
+};
+const _pickCsatTotals = (json) => {
+    const t = json && json.totals;
+    return t && t.total > 0 ? t : null;
+};
+
+async function renderSummaryCompare(totals) {
+    try {
+        // Same endpoint and same window as usage.js, so this resolves off the shared
+        // cache rather than issuing a second pair of requests.
+        const cmp = await loadCompare('/v1/_mw/summary', _pickSummaryTotals);
+        renderDelta('ovHealthValue', 'error_rate_percent', {
+            current: totals.error_rate_percent,
+            kt: side(cmp.kt, 'error_rate_percent'),
+            ck: side(cmp.ck, 'error_rate_percent'),
+        });
+        renderDelta('ovConcentrationValue', 'top10_pct_cost_share', {
+            current: totals.top10_pct_cost_share,
+            kt: side(cmp.kt, 'top10_pct_cost_share'),
+            ck: side(cmp.ck, 'top10_pct_cost_share'),
+        });
+    } catch (err) {
+        console.error('Overview summary compare failed:', err);
+    }
+}
+
+async function renderCsatCompare(current) {
+    try {
+        const cmp = await loadCompare('/v1/_mw/admin/analytics/satisfaction', _pickCsatTotals);
+        renderDelta('ovCsatValue', 'csat_percent', {
+            current,
+            kt: side(cmp.kt, 'csat_percent'),
+            ck: side(cmp.ck, 'csat_percent'),
+        });
+    } catch (err) {
+        console.error('Overview CSAT compare failed:', err);
+    }
 }
 
 // ── CSAT: satisfaction analytics for the global range ──
 async function loadCsat() {
     try {
-        const params = new URLSearchParams();
-        if (currentTimeRange && currentTimeRange.minutes) {
-            params.append('minutes', currentTimeRange.minutes);
-        } else if (currentTimeRange && currentTimeRange.start && currentTimeRange.end) {
-            params.append('start', currentTimeRange.start);
-            params.append('end', currentTimeRange.end);
-        } else {
-            params.append('minutes', 43200); // 30d default
-        }
+        const params = buildRangeParams();
         const res = await mwFetch(`/v1/_mw/admin/analytics/satisfaction?${params}`);
         if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : 'null'}`);
         const data = await res.json();
@@ -59,6 +106,7 @@ async function loadCsat() {
         setText('ovCsatDetail', `${(total || 0).toLocaleString()} lượt đánh giá`);
         // Thresholds mirror satisfaction.js: >=80 ok, >=50 warn, else danger.
         setCardState('ovCardCsat', pct == null ? null : pct >= 80 ? 'ok' : pct >= 50 ? 'warn' : 'danger');
+        renderCsatCompare(pct);
     } catch (err) {
         console.error('Overview CSAT load failed:', err);
         setText('ovCsatValue', '—');
