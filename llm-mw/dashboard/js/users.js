@@ -107,9 +107,6 @@ export async function loadUsers() {
 
         // Load cross-database sync status table
         await loadSyncStatus();
-
-        // Load cross-database sync status table
-        await loadSyncStatus();
     } catch (err) {
         console.error('Failed to load users:', err);
         tbody.innerHTML = '<tr><td colspan="9" class="error-msg">Error: ' + err.message + '</td></tr>';

@@ -29,7 +29,6 @@ export async function loadSettings() {
         document.getElementById('adminEmails').value = (adminAlerts.emails || []).join(', ');
 
         // 2. Populate Quota Thresholds
-        // 2. Populate Quota Thresholds
         const userAlerts = config.user_alerts || {};
         
         // Take the last two thresholds from the existing array (or default to 80, 100)
