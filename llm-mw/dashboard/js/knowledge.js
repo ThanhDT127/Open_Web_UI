@@ -1,7 +1,7 @@
 // Knowledge Analytics tab — inventory, KB value matrix and governance.
 // Data comes from /v1/_mw/knowledge-analytics/{inventory,kb-value,governance}.
 import { mwFetch, escapeHtml } from './utils.js';
-import { currentTimeRange } from './filters.js';
+import { buildRangeParams } from './filters.js';
 
 let growthChart = null;
 let loading = false;
@@ -14,19 +14,8 @@ const CATEGORY_LABEL = {
 };
 
 function buildParams(extra = {}) {
-    const params = new URLSearchParams();
-    // Use the dashboard-wide shared time range (same as the other tabs).
-    if (currentTimeRange?.minutes) {
-        params.append('start', new Date(Date.now() - currentTimeRange.minutes * 60000).toISOString().replace('Z', '+00:00'));
-        params.append('end', new Date().toISOString().replace('Z', '+00:00'));
-    } else if (currentTimeRange?.start && currentTimeRange?.end) {
-        params.append('start', currentTimeRange.start);
-        params.append('end', currentTimeRange.end);
-    }
-    for (const [k, v] of Object.entries(extra)) {
-        if (v) params.append(k, v);
-    }
-    return params;
+    // Uses the dashboard-wide shared time range (same as the other tabs).
+    return buildRangeParams(extra);
 }
 
 function fmtBytes(n) {

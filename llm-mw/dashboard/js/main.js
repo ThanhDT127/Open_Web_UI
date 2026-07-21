@@ -1,7 +1,7 @@
 // Dashboard orchestrator: wires UI actions to modules and starts/stops loops.
 
 import { authenticate, stopDashboardLoops, setSummaryInterval } from './auth.js';
-import { setTimeRange, applyCustomRange, initAuditFilters } from './filters.js';
+import { setTimeRange, applyCustomRange, initAuditFilters, resolveTimeWindow } from './filters.js';
 import { switchTab } from './tabs.js';
 import { initCharts } from './charts.js';
 import { loadSummary, connectEventStream, refreshTables } from './usage.js';
@@ -135,8 +135,11 @@ export function startDashboard() {
 	connectActiveUsersStream();
 	startNotifications();
 
-	// Refresh summary periodically (keeps charts/metrics fresh)
+	// Refresh summary periodically (keeps charts/metrics fresh).
+	// Re-pin the window first so presets keep rolling forward, and so every tab
+	// fetching during this cycle uses the same start/end.
 	const interval = setInterval(() => {
+		resolveTimeWindow();
 		loadSummary();
 	}, 15000);
 	setSummaryInterval(interval);

@@ -1,5 +1,5 @@
 import { mwFetch, updateStatus } from './utils.js';
-import { currentTimeRange } from './filters.js';
+import { buildRangeParams } from './filters.js';
 
 let groupCostChart = null;
 
@@ -42,16 +42,7 @@ export function initGroupAnalyticsChart() {
 }
 
 function getUrlParams() {
-    const params = new URLSearchParams();
-    if (currentTimeRange && currentTimeRange.minutes) {
-        params.append('minutes', currentTimeRange.minutes);
-    } else if (currentTimeRange && currentTimeRange.start && currentTimeRange.end) {
-        params.append('start', currentTimeRange.start);
-        params.append('end', currentTimeRange.end);
-    } else {
-        params.append('minutes', 43200); // 30d default
-    }
-    return params;
+    return buildRangeParams();
 }
 
 export async function fetchData() {

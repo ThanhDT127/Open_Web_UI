@@ -1,8 +1,10 @@
 // Usage tab logic - metrics, expanded tables, chart data, audit stream
 import { mwFetch, updateStatus } from './utils.js';
-import { currentTimeRange } from './filters.js';
+import { buildRangeParams } from './filters.js';
 import { addAuditEvent, clearAuditEvents } from './filters.js';
 import { eventSource, setEventSource, setRetryCount, retryCount, MAX_RETRY_DELAY } from './auth.js';
+import { renderDelta } from './metrics_registry.js';
+import { loadCompare, side } from './compare_data.js';
 
 // Cache latest data for re-rendering on sort/top-N change
 let _lastSummaryData = null;
@@ -18,13 +20,7 @@ export async function loadSummary() {
     try {
         updateStatus('ok', 'Loading data...');
 
-        const params = new URLSearchParams();
-        if (currentTimeRange.minutes) {
-            params.append('minutes', currentTimeRange.minutes);
-        } else {
-            params.append('start', currentTimeRange.start);
-            params.append('end', currentTimeRange.end);
-        }
+        const params = buildRangeParams();
 
         const res = await mwFetch(`/v1/_mw/summary?${params}`);
         if (!res) return;
@@ -44,6 +40,7 @@ export async function loadSummary() {
         }
 
         _renderMetrics(data.totals);
+        _renderCompare(data.totals);   // fire-and-forget: badges must never gate the cards
         _renderTables(data);
         _updateInsights(data);
 
@@ -115,6 +112,40 @@ function _renderMetrics(t) {
     }
 
     document.getElementById('metricPending').textContent = t.pending_open_count || 0;
+}
+
+// A window with no requests at all is "no data", not "zero change" — returning null
+// here is what makes the badge render an em dash instead of a fabricated 0%.
+function _pickTotals(json) {
+    const t = json && json.totals;
+    return t && t.requests_total > 0 ? t : null;
+}
+
+// Card id -> metric key in the registry. `metricPending` is listed on purpose: the
+// registry blocks it, so this proves the block rather than leaving it to chance.
+const _COMPARE_CARDS = [
+    ['metricLLMCalls', 'requests_total'],
+    ['metricCost', 'cost_total_usd'],
+    ['metricTokens', 'tokens_total'],
+    ['metricLatency', 'p95_latency_ms'],
+    ['metricErrorRate', 'error_rate_percent'],
+    ['metricBillableCalls', 'billable_calls'],
+    ['metricPending', 'pending_open_count'],
+];
+
+async function _renderCompare(t) {
+    try {
+        const cmp = await loadCompare('/v1/_mw/summary', _pickTotals);
+        for (const [elementId, key] of _COMPARE_CARDS) {
+            renderDelta(elementId, key, {
+                current: t[key],
+                kt: side(cmp.kt, key),
+                ck: side(cmp.ck, key),
+            });
+        }
+    } catch (err) {
+        console.error('Compare badges failed:', err);
+    }
 }
 
 // ─── Tables rendering ────────────────────────────────────────
