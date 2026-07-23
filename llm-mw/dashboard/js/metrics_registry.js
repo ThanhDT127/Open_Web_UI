@@ -15,12 +15,30 @@ const MS_PER_MINUTE = 60000;
 
 // ─── Value formatters ────────────────────────────────────────
 
+// Humanised queue age: seconds → "45s" / "12p" / "3g 20p" / "2n 3g".
+function formatAge(sec) {
+    if (sec == null) return '—';
+    sec = Number(sec);
+    if (sec < 60) return `${Math.round(sec)}s`;
+    const m = Math.floor(sec / 60);
+    if (m < 60) return `${m}p`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}g ${m % 60}p`;
+    const d = Math.floor(h / 24);
+    return `${d}n ${h % 24}g`;
+}
+
 const FORMATTERS = {
     int: (v) => Number(v || 0).toLocaleString(),
+    num1: (v) => (v == null ? '-' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 })),
     usd4: (v) => '$' + Number(v || 0).toFixed(4),
     usd2: (v) => '$' + Number(v || 0).toFixed(2),
+    usd6: (v) => '$' + Number(v || 0).toFixed(6),
     ms: (v) => (v == null ? '-' : Number(v).toFixed(0) + 'ms'),
     pct1: (v) => Number(v || 0).toFixed(1) + '%',
+    ratio: (v) => (v == null ? '—' : Number(v).toFixed(2) + ':1'),
+    rpm: (v) => (v == null ? '-' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 3 }) + '/ph'),
+    age: (v) => formatAge(v),
 };
 
 export function formatValue(metricKey, value) {
@@ -64,6 +82,35 @@ export const METRICS = {
         // coloured to imply a verdict nobody agreed on.
     },
 
+    // ── Request lens (Phase 3) — all windowed, all derived server-side in totals ──
+    p50_latency_ms: {
+        label: 'P50 Latency', fmt: 'ms', delta: 'rel', polarity: 'down-good',
+    },
+    p99_latency_ms: {
+        label: 'P99 Latency', fmt: 'ms', delta: 'rel', polarity: 'down-good',
+    },
+    max_latency_ms: {
+        label: 'Max Latency', fmt: 'ms', delta: 'rel', polarity: 'down-good',
+    },
+    cost_per_request: {
+        label: 'Chi phí / request', fmt: 'usd6', delta: 'rel', polarity: 'down-good',
+    },
+    cost_per_1k_tokens: {
+        label: 'Chi phí / 1k tokens', fmt: 'usd6', delta: 'rel', polarity: 'down-good',
+    },
+    avg_tokens_per_request: {
+        label: 'TB tokens / request', fmt: 'num1', delta: 'rel', polarity: 'neutral',
+    },
+    tokens_in_out_ratio: {
+        label: 'Tỷ lệ token vào:ra', fmt: 'ratio', delta: 'rel', polarity: 'neutral',
+    },
+    rpm_avg: {
+        label: 'Throughput (TB)', fmt: 'rpm', delta: 'rel', polarity: 'neutral',
+    },
+    rpm_peak: {
+        label: 'Throughput (đỉnh)', fmt: 'rpm', delta: 'rel', polarity: 'neutral',
+    },
+
     // ── Overview tab ──
     csat_percent: {
         label: 'Mức hài lòng', fmt: 'pct1', delta: 'pp', polarity: 'up-good',
@@ -102,6 +149,11 @@ export const METRICS = {
         label: 'Pending', fmt: 'int', compare: false,
         blockedReason: 'Không thuộc phạm vi khoảng thời gian — đếm toàn bảng mw_pending, '
             + 'nên trả cùng một giá trị ở cả ba cửa sổ. Gắn badge sẽ hiện 0% vĩnh viễn.',
+    },
+    pending_oldest_age_sec: {
+        label: 'Tuổi kẹt lâu nhất', fmt: 'age', compare: false,
+        blockedReason: 'Snapshot toàn bảng mw_pending (min(ts)) — cùng lý do với pending_open_count, '
+            + 'không thuộc cửa sổ thời gian nên không so kỳ được.',
     },
     usage_missing_calls: {
         label: 'Usage Missing', fmt: 'int', compare: false,

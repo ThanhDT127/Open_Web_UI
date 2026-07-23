@@ -51,6 +51,31 @@ def _get_global_pending_count() -> int:
         return 0
 
 
+def _get_oldest_pending_age_sec() -> Optional[int]:
+    """Age in seconds of the oldest still-open pending request, or None if none.
+
+    mw_pending.ts is epoch SECONDS (int(time.time()) in cost._append_pending_db), so
+    a plain subtraction against the current epoch is correct. Whole-table snapshot,
+    not scoped to any time window. DB-only; returns None if unavailable.
+    """
+    if _db_available():
+        try:
+            from core.db import db_conn
+            with db_conn() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT min(ts) FROM mw_pending")
+                row = cur.fetchone()
+                cur.close()
+            oldest = row[0] if row else None
+            if oldest is None:
+                return None
+            now_epoch = int(dt.datetime.now(dt.timezone.utc).timestamp())
+            return max(0, now_epoch - int(oldest))
+        except Exception:
+            return None
+    return None
+
+
 def _load_entries_from_db(cutoff, end_time) -> List[Dict[str, Any]]:
     """Load audit entries from mw_audit_log table as dicts."""
     from core.db import db_conn
@@ -221,7 +246,12 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
     
     # Breakdown by LLM type
     llm_type_counts = {"chat": 0, "embedding": 0, "image": 0, "audio": 0, "video": 0}
-    
+
+    # Prompt/completion token split (for the in:out ratio) — the loop below only sums
+    # tokens_total, so these are accumulated separately over successful requests.
+    total_tokens_in = 0
+    total_tokens_out = 0
+
     # Load entries from DB or file
     try:
         if _db_available():
@@ -275,6 +305,8 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
                 tokens = entry.get("tokens_total", 0)
                 cost = entry.get("cost_usd", 0.0)
                 latency = entry.get("latency_ms")
+                total_tokens_in += entry.get("tokens_in", 0) or 0
+                total_tokens_out += entry.get("tokens_out", 0) or 0
 
                 timeseries_data[bucket_key]["tokens_total"] += tokens
                 timeseries_data[bucket_key]["cost_total"] += cost
@@ -368,11 +400,20 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
         for user_stats in user_data.values():
             all_latencies.extend(user_stats["latencies"])
         
-        p95_latency = None
+        p50_latency = p95_latency = p99_latency = max_latency = None
         if all_latencies:
             all_latencies.sort()
-            p95_idx = int(len(all_latencies) * 0.95)
-            p95_latency = all_latencies[p95_idx] if p95_idx < len(all_latencies) else all_latencies[-1]
+            n_lat = len(all_latencies)
+
+            def _pct(p):
+                # Same index+guard the P95 line has always used, reused for every percentile.
+                idx = int(n_lat * p)
+                return all_latencies[idx] if idx < n_lat else all_latencies[-1]
+
+            p50_latency = _pct(0.50)
+            p95_latency = _pct(0.95)
+            p99_latency = _pct(0.99)
+            max_latency = all_latencies[-1]
         
         # Calculate error rate
         error_rate = (error_count / requests_total * 100) if requests_total > 0 else 0.0
@@ -461,6 +502,27 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
         # Format hour-of-day activity: always all 24 slots so the chart keeps its shape.
         hourly_activity = [{"hour": h, "count": len(hourly_rids.get(h, ()))} for h in range(24)]
 
+        # ── Request-lens derived metrics (Phase 3) ──
+        # Denominator is requests_ok, not requests_total: total_cost/total_tokens are summed
+        # over successful requests only, so dividing by all requests would dilute the unit
+        # figure with failures that cost nothing (design D7).
+        cost_per_request = (total_cost / requests_ok) if requests_ok > 0 else 0.0
+        avg_tokens_per_request = (total_tokens / requests_ok) if requests_ok > 0 else 0.0
+        cost_per_1k_tokens = (total_cost / total_tokens * 1000) if total_tokens > 0 else 0.0
+        tokens_in_out_ratio = (total_tokens_in / total_tokens_out) if total_tokens_out > 0 else None
+
+        # Throughput: avg and peak BOTH in requests/minute so they compare on one scorecard.
+        # Peak = busiest bucket normalised by its own length; rpm_peak_bucket exposes the
+        # resolution behind it (per-minute exact only when buckets are minutes).
+        window_minutes = (end_time - cutoff).total_seconds() / 60.0
+        rpm_avg = (requests_total / window_minutes) if window_minutes > 0 else 0.0
+        _bucket_minutes = {"minute": 1, "hour": 60, "day": 1440}.get(bucket_size, 1)
+        _peak_bucket_requests = max((len(d["requests"]) for d in timeseries_data.values()), default=0)
+        rpm_peak = _peak_bucket_requests / _bucket_minutes
+
+        # Queue health snapshot (whole-table, not window-scoped).
+        pending_oldest_age_sec = _get_oldest_pending_age_sec()
+
         return {
             "time_range": {
                 "start": cutoff.isoformat(),
@@ -486,7 +548,20 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
                 "nonbillable_calls": nonbillable_calls,
                 "usage_missing_calls": usage_missing_calls,
                 # NEW: cost concentration (top 10% of users' share of total cost)
-                "top10_pct_cost_share": round(top10_pct_cost_share, 1)
+                "top10_pct_cost_share": round(top10_pct_cost_share, 1),
+                # NEW (Phase 3 — request lens): latency percentiles, unit economics,
+                # throughput, queue health. All derived server-side so period-compare reuses them.
+                "p50_latency_ms": round(p50_latency, 2) if p50_latency is not None else None,
+                "p99_latency_ms": round(p99_latency, 2) if p99_latency is not None else None,
+                "max_latency_ms": round(max_latency, 2) if max_latency is not None else None,
+                "cost_per_request": round(cost_per_request, 6),
+                "cost_per_1k_tokens": round(cost_per_1k_tokens, 6),
+                "avg_tokens_per_request": round(avg_tokens_per_request, 1),
+                "tokens_in_out_ratio": round(tokens_in_out_ratio, 2) if tokens_in_out_ratio is not None else None,
+                "rpm_avg": round(rpm_avg, 3),
+                "rpm_peak": round(rpm_peak, 3),
+                "rpm_peak_bucket": bucket_size,
+                "pending_oldest_age_sec": pending_oldest_age_sec
             },
             # Returned in full; callers cap these themselves (get_summary_v2 takes top 20).
             "breakdown_by_user": breakdown_by_user,
