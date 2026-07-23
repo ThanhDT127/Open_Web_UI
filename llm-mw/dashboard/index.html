@@ -233,6 +233,65 @@
                 </div>
             </div>
 
+            <!-- Section: Request lens (Phase 3) — percentiles, unit economics, throughput, queue -->
+            <div class="insight-banner">
+                <span class="insight-icon">🔬</span>
+                <span class="insight-text">Lăng kính Request/Call — độ trễ theo phân vị, đơn giá thực,
+                    cường độ tải và sức khỏe hàng đợi.</span>
+            </div>
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-label">⚡ P50 Latency</div>
+                    <div class="metric-value" id="metricP50">-</div>
+                    <div class="metric-detail">Một nửa requests nhanh hơn</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">⚡ P99 Latency</div>
+                    <div class="metric-value" id="metricP99">-</div>
+                    <div class="metric-detail">99% requests nhanh hơn</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">⚡ Max Latency</div>
+                    <div class="metric-value" id="metricMaxLatency">-</div>
+                    <div class="metric-detail">Request chậm nhất</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">💵 Chi phí / request</div>
+                    <div class="metric-value" id="metricCostPerReq">-</div>
+                    <div class="metric-detail">Trên mỗi request thành công</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">💵 Chi phí / 1k tokens</div>
+                    <div class="metric-value" id="metricCostPer1k">-</div>
+                    <div class="metric-detail">Đơn giá theo token</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">🔤 TB tokens / request</div>
+                    <div class="metric-value" id="metricAvgTokens">-</div>
+                    <div class="metric-detail">Trên mỗi request thành công</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">↔️ Tỷ lệ token vào:ra</div>
+                    <div class="metric-value" id="metricInOutRatio">-</div>
+                    <div class="metric-detail">Input : Output</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">📈 Throughput (TB)</div>
+                    <div class="metric-value" id="metricRpmAvg">-</div>
+                    <div class="metric-detail">Requests / phút, trung bình</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">📈 Throughput (đỉnh)</div>
+                    <div class="metric-value" id="metricRpmPeak">-</div>
+                    <div class="metric-detail" id="metricRpmPeakDetail">Requests / phút, đỉnh</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">⏳ Tuổi kẹt lâu nhất</div>
+                    <div class="metric-value" id="metricPendingAge">-</div>
+                    <div class="metric-detail">Request pending cũ nhất</div>
+                </div>
+            </div>
+
             <!-- Section: Request Type Distribution -->
             <div class="insight-banner">
                 <span class="insight-icon">🎯</span>

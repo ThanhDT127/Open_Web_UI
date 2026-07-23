@@ -3,7 +3,7 @@ import { mwFetch, updateStatus } from './utils.js';
 import { buildRangeParams } from './filters.js';
 import { addAuditEvent, clearAuditEvents } from './filters.js';
 import { eventSource, setEventSource, setRetryCount, retryCount, MAX_RETRY_DELAY } from './auth.js';
-import { renderDelta } from './metrics_registry.js';
+import { renderDelta, formatValue } from './metrics_registry.js';
 import { loadCompare, side } from './compare_data.js';
 
 // Cache latest data for re-rendering on sort/top-N change
@@ -112,6 +112,30 @@ function _renderMetrics(t) {
     }
 
     document.getElementById('metricPending').textContent = t.pending_open_count || 0;
+
+    // ── Request lens (Phase 3) — values formatted from the registry ──
+    const _set = (id, key) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = formatValue(key, t[key]);
+    };
+    _set('metricP50', 'p50_latency_ms');
+    _set('metricP99', 'p99_latency_ms');
+    _set('metricMaxLatency', 'max_latency_ms');
+    _set('metricCostPerReq', 'cost_per_request');
+    _set('metricCostPer1k', 'cost_per_1k_tokens');
+    _set('metricAvgTokens', 'avg_tokens_per_request');
+    _set('metricInOutRatio', 'tokens_in_out_ratio');
+    _set('metricRpmAvg', 'rpm_avg');
+    _set('metricRpmPeak', 'rpm_peak');
+    _set('metricPendingAge', 'pending_oldest_age_sec');
+
+    // Peak resolution: say which bucket the peak was measured over (per-minute exact
+    // only when buckets are minutes; hourly/daily on longer ranges smooth it).
+    const peakDetail = document.getElementById('metricRpmPeakDetail');
+    if (peakDetail && t.rpm_peak_bucket) {
+        const unit = { minute: 'phút', hour: 'giờ', day: 'ngày' }[t.rpm_peak_bucket] || t.rpm_peak_bucket;
+        peakDetail.textContent = `Requests / phút · đỉnh đo theo ${unit}`;
+    }
 }
 
 // A window with no requests at all is "no data", not "zero change" — returning null
@@ -131,6 +155,19 @@ const _COMPARE_CARDS = [
     ['metricErrorRate', 'error_rate_percent'],
     ['metricBillableCalls', 'billable_calls'],
     ['metricPending', 'pending_open_count'],
+    // Request lens (Phase 3) — windowed metrics get a KT/CK badge automatically.
+    ['metricP50', 'p50_latency_ms'],
+    ['metricP99', 'p99_latency_ms'],
+    ['metricMaxLatency', 'max_latency_ms'],
+    ['metricCostPerReq', 'cost_per_request'],
+    ['metricCostPer1k', 'cost_per_1k_tokens'],
+    ['metricAvgTokens', 'avg_tokens_per_request'],
+    ['metricInOutRatio', 'tokens_in_out_ratio'],
+    ['metricRpmAvg', 'rpm_avg'],
+    ['metricRpmPeak', 'rpm_peak'],
+    // Listed on purpose though compare:false — proves the registry block is enforced,
+    // not merely declared (no badge should appear).
+    ['metricPendingAge', 'pending_oldest_age_sec'],
 ];
 
 async function _renderCompare(t) {
