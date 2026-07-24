@@ -241,7 +241,8 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
         "errors": 0,
         "tokens_total": 0,
         "cost_total": 0.0,
-        "latencies": []
+        "latencies": [],
+        "users": set()  # distinct user_id per model (Phase 5 — unique_users column)
     })
     
     # Breakdown by LLM type
@@ -323,6 +324,7 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
                 # Model breakdown
                 model_data[model]["requests"].add(rid)
                 model_data[model]["requests_ok"].add(rid)
+                model_data[model]["users"].add(user_id)
                 model_data[model]["tokens_total"] += tokens
                 model_data[model]["cost_total"] += cost
                 if latency:
@@ -337,6 +339,7 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
                 # breakdown still lists the model they were calling.
                 user_data[user_id]["models"][model] += 1
                 model_data[model]["requests"].add(rid)
+                model_data[model]["users"].add(user_id)
                 model_data[model]["errors"] += 1
 
 
@@ -481,7 +484,12 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
                 "error_rate_percent": round(model_error_rate, 2),
                 "tokens_total": stats["tokens_total"],
                 "cost_usd": round(stats["cost_total"], 6),
-                "p95_latency_ms": round(model_p95, 2) if model_p95 else None
+                "p95_latency_ms": round(model_p95, 2) if model_p95 else None,
+                # Phase 5 (dashboard-model-lens): distinct users per model, and this model's
+                # share of population-wide cost. Share uses the global total_cost so the value
+                # is correct even after get_summary_v2 caps the list at [:20].
+                "unique_users": len(stats["users"]),
+                "cost_share_percent": round(stats["cost_total"] / total_cost * 100, 1) if total_cost > 0 else 0.0
             })
         
         # Sort by cost descending

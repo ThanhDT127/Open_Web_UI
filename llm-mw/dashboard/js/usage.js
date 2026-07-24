@@ -199,6 +199,7 @@ function _getSortedSlice(items, sortKey, countElId) {
     const sortFns = {
         cost: (a, b) => (b.cost_usd || 0) - (a.cost_usd || 0),
         requests: (a, b) => (b.requests_total || 0) - (a.requests_total || 0),
+        users: (a, b) => (b.unique_users || 0) - (a.unique_users || 0),
         tokens: (a, b) => (b.tokens_total || 0) - (a.tokens_total || 0),
         latency: (a, b) => (b.p95_latency_ms || 0) - (a.p95_latency_ms || 0),
         errors: (a, b) => (b.error_rate_percent || 0) - (a.error_rate_percent || 0)
@@ -243,7 +244,7 @@ function _renderUsersTable(users) {
 function _renderModelsTable(models) {
     const table = document.getElementById('topModelsTable');
     if (!models.length) {
-        table.innerHTML = '<tr><td colspan="8" class="no-data">No model data</td></tr>';
+        table.innerHTML = '<tr><td colspan="10" class="no-data">No model data</td></tr>';
         return;
     }
 
@@ -262,6 +263,8 @@ function _renderModelsTable(models) {
             <td>${(m.requests_total || 0).toLocaleString()}</td>
             <td>${(m.tokens_total || 0).toLocaleString()}</td>
             <td class="cost">$${(m.cost_usd || 0).toFixed(4)}</td>
+            <td>${(m.cost_share_percent || 0).toFixed(1)}%</td>
+            <td>${(m.unique_users || 0).toLocaleString()}</td>
             <td>$${avgCost.toFixed(4)}</td>
             <td>${m.p95_latency_ms ? m.p95_latency_ms.toFixed(0) + 'ms' : '-'}</td>
             <td class="${errClass}">${(m.error_rate_percent || 0).toFixed(1)}%</td>
