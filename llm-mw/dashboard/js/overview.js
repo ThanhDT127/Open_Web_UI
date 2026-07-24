@@ -5,8 +5,9 @@
 import { mwFetch } from './utils.js';
 import { buildRangeParams } from './filters.js';
 import { getLastSummary } from './usage.js';
-import { renderDelta } from './metrics_registry.js';
+import { renderDelta, formatValue } from './metrics_registry.js';
 import { loadCompare, side } from './compare_data.js';
+import { pickAdoptionMetrics } from './adoption.js';
 
 // Apply an ok/warn/danger accent state to a metric-card element.
 function setCardState(cardId, state) {
@@ -132,13 +133,51 @@ async function loadCostMtd() {
     }
 }
 
+// ── Adoption + Cost-per-user cards (Phase 4 — resolves the Phase 1 placeholders) ──
+async function loadAdoptionCards() {
+    try {
+        const params = buildRangeParams();
+        const res = await mwFetch(`/v1/_mw/adoption?${params}`);
+        if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : 'null'}`);
+        const data = await res.json();
+        const a = data && data.adoption ? data.adoption : {};
+        setText('ovAdoptionValue', formatValue('adoption_rate_percent', a.adoption_rate_percent));
+        setText('ovAdoptionDetail',
+            `${(a.active_provisioned || 0).toLocaleString()} đang dùng / ${(a.provisioned || 0).toLocaleString()} đã cấp`);
+        setText('ovCpuValue', formatValue('cost_per_active_user', a.cost_per_active_user));
+        renderAdoptionCompare(a);
+    } catch (err) {
+        console.error('Overview adoption load failed:', err);
+        setText('ovAdoptionValue', '—');
+        setText('ovCpuValue', '—');
+    }
+}
+
+async function renderAdoptionCompare(a) {
+    try {
+        const cmp = await loadCompare('/v1/_mw/adoption', pickAdoptionMetrics);
+        renderDelta('ovAdoptionValue', 'adoption_rate_percent', {
+            current: a.adoption_rate_percent,
+            kt: side(cmp.kt, 'adoption_rate_percent'),
+            ck: side(cmp.ck, 'adoption_rate_percent'),
+        });
+        renderDelta('ovCpuValue', 'cost_per_active_user', {
+            current: a.cost_per_active_user,
+            kt: side(cmp.kt, 'cost_per_active_user'),
+            ck: side(cmp.ck, 'cost_per_active_user'),
+        });
+    } catch (err) {
+        console.error('Overview adoption compare failed:', err);
+    }
+}
+
 // Full refresh triggered on tab open / manual refresh.
 export async function loadOverview() {
     const summary = getLastSummary();
     if (summary) {
         renderFromSummary(summary);
     }
-    await Promise.all([loadCsat(), loadCostMtd()]);
+    await Promise.all([loadCsat(), loadCostMtd(), loadAdoptionCards()]);
 }
 
 // Keep the reused-summary cards live when the global summary refreshes

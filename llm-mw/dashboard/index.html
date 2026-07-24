@@ -151,19 +151,20 @@
                     <div class="metric-value" id="ovConcentrationValue">-</div>
                     <div class="metric-hint">Top 10% người dùng chiếm ?% tổng chi · theo khoảng đang xem</div>
                 </div>
-                <!-- Adoption rate (placeholder — Phase 4) -->
+                <!-- Adoption rate (Phase 4 — /v1/_mw/adoption) -->
                 <div class="metric-card" id="ovCardAdoption">
                     <div class="metric-label">📈 Tỷ lệ sử dụng</div>
                     <div class="metric-q">Bao nhiêu nhân viên thật sự dùng?</div>
-                    <div class="metric-value">—</div>
-                    <div class="metric-hint">Đã dùng / đã cấp · chờ Phase 4</div>
+                    <div class="metric-value" id="ovAdoptionValue">—</div>
+                    <div class="metric-detail" id="ovAdoptionDetail">Đã dùng / đã cấp</div>
+                    <div class="metric-hint">Người dùng trong kỳ / tổng đã cấp · theo khoảng đang xem</div>
                 </div>
-                <!-- Cost per active user (placeholder — Phase 4) -->
+                <!-- Cost per active user (Phase 4 — /v1/_mw/adoption) -->
                 <div class="metric-card" id="ovCardCpu">
                     <div class="metric-label">👤 Chi phí / người dùng thật</div>
                     <div class="metric-q">Thêm 1 người dùng tốn thêm bao nhiêu?</div>
-                    <div class="metric-value">—</div>
-                    <div class="metric-hint">Cần "active theo range" · chờ Phase 4</div>
+                    <div class="metric-value" id="ovCpuValue">—</div>
+                    <div class="metric-hint">Tổng chi phí / số người dùng thật · theo khoảng đang xem</div>
                 </div>
             </div>
         </div>
@@ -604,6 +605,78 @@
                     <div class="metric-detail">Tổng tài khoản đã cấp (chưa xóa)</div>
                 </div>
             </div>
+
+            <!-- ═══ Adoption (Phase 4) — /v1/_mw/adoption ═══ -->
+            <div class="insight-banner">
+                <span class="insight-icon">📈</span>
+                <span class="insight-text">Mức độ áp dụng — bao nhiêu nhân sự thật sự dùng, ai được cấp rồi
+                    bỏ đó, và xu hướng người dùng hoạt động theo ngày/tuần.</span>
+            </div>
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-label">📈 Tỷ lệ áp dụng</div>
+                    <div class="metric-value" id="metricAdoptionRate">-</div>
+                    <div class="metric-detail" id="metricAdoptionDetail">Đã dùng / đã cấp</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">🆕 Cấp mới trong kỳ</div>
+                    <div class="metric-value" id="metricNewAccounts">-</div>
+                    <div class="metric-detail">Tài khoản cấp trong khoảng đang xem</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">👤 Chi phí / người dùng thật</div>
+                    <div class="metric-value" id="metricCostPerUser">-</div>
+                    <div class="metric-detail">Tổng chi phí / số người dùng thật</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">🗂️ Tổng đã cấp</div>
+                    <div class="metric-value" id="metricProvisioned">-</div>
+                    <div class="metric-detail">Tài khoản chưa xóa (snapshot)</div>
+                </div>
+            </div>
+            <div class="chart-grid">
+                <div class="chart-container" style="flex:2">
+                    <div class="chart-title">📊 Người dùng hoạt động — WAU (7 ngày) & DAU</div>
+                    <canvas id="adoptionActivityChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <div class="chart-title">📉 Pareto — top người dùng chiếm chi phí</div>
+                    <canvas id="adoptionParetoChart"></canvas>
+                </div>
+            </div>
+            <div class="section" style="margin-top: 20px;">
+                <div class="section-title">📶 Phân phối mức dùng quota</div>
+                <div id="quotaHistogram"></div>
+            </div>
+            <div class="section" style="margin-top: 20px;">
+                <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>💤 Tài khoản ngủ
+                        <span class="badge" style="margin-left:10px; background:#334155; font-size:12px; padding:3px 10px; border-radius:12px;">
+                            🔴 Chưa dùng: <span id="dormantNeverCount">-</span> ·
+                            🟠 Ngừng &gt; 30 ngày: <span id="dormantStoppedCount">-</span>
+                        </span>
+                    </span>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Ngày cấp</th>
+                                <th>Dùng lần cuối</th>
+                                <th>Im lặng</th>
+                                <th>Trạng thái</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dormantTable">
+                            <tr>
+                                <td colspan="5" class="loading">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="section">
                 <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
                     <span>👥 User Management & Quota
