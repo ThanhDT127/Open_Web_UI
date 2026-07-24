@@ -27,6 +27,7 @@ from api.admin import get_usage, reset_quota, reconcile_usage, stream_active_use
 from api.analytics import get_chat_analytics, get_satisfaction_analytics
 from api.summary import get_summary
 from api.summary_v2 import get_summary_v2
+from api.adoption import get_adoption
 from api.stream import stream_audit
 from api.access_logs import get_access_summary, stream_access
 from api.audit_query import parse_audit_filters
@@ -208,6 +209,7 @@ app.add_api_route("/v1/_mw/admin/analytics/satisfaction", get_satisfaction_analy
 
 # Summary & Stream endpoints
 app.add_api_route("/v1/_mw/summary", get_summary_v2, methods=["GET"])  # Enhanced version with time range
+app.add_api_route("/v1/_mw/adoption", get_adoption, methods=["GET"])  # Phase 4: adoption metrics
 app.add_api_route("/v1/_mw/stream", stream_audit, methods=["GET"])
 
 # Access log endpoints (separate from usage)

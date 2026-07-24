@@ -39,6 +39,7 @@ const FORMATTERS = {
     ratio: (v) => (v == null ? '—' : Number(v).toFixed(2) + ':1'),
     rpm: (v) => (v == null ? '-' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 3 }) + '/ph'),
     age: (v) => formatAge(v),
+    days: (v) => (v == null ? '—' : Number(v).toLocaleString() + ' ngày'),
 };
 
 export function formatValue(metricKey, value) {
@@ -122,7 +123,35 @@ export const METRICS = {
         // an internal adoption metric, not a sales one.
     },
 
+    // ── Adoption (Phase 4) — windowed, badge runs; source: /v1/_mw/adoption ──
+    adoption_rate_percent: {
+        label: 'Tỷ lệ áp dụng', fmt: 'pct1', delta: 'pp', polarity: 'up-good',
+        // Internal tool: more of the provisioned staff actually using it is the good
+        // direction. Numerator is roster-intersected server-side, so it never exceeds 100.
+    },
+    new_accounts_in_period: {
+        label: 'Cấp mới trong kỳ', fmt: 'int', delta: 'abs', polarity: 'neutral',
+        // Provisioning count — more/fewer is not itself good or bad. Absolute delta:
+        // small headcounts make a relative % noisy.
+    },
+    cost_per_active_user: {
+        label: 'Chi phí / người dùng thật', fmt: 'usd4', delta: 'rel', polarity: 'neutral',
+        // Denominator is the RAW active count (people who actually used it), not the
+        // roster-intersected adoption numerator — incurred cost is real either way.
+    },
+
     // ── Blocked from comparison ──
+    provisioned_total: {
+        label: 'Tổng đã cấp', fmt: 'int', compare: false,
+        blockedReason: 'Snapshot roster (mw_users chưa xóa) — tính đến hiện tại, không '
+            + 'thuộc cửa sổ thời gian. Đây là mẫu số của tỷ lệ áp dụng, không phải chỉ tiêu '
+            + 'so kỳ riêng.',
+    },
+    dormant_count: {
+        label: 'Tài khoản ngủ', fmt: 'int', compare: false,
+        blockedReason: 'Snapshot roster — đếm tài khoản chưa từng dùng / ngừng > 30 ngày '
+            + 'tính đến hôm nay, không scoped theo range. Cùng lý do với pending_open_count.',
+    },
     cost_mtd_usd: {
         label: 'Chi phí tháng này', fmt: 'usd2', compare: false,
         blockedReason: 'Thẻ này cố ý bỏ qua range toàn cục — nó tự tính từ mùng 1 '

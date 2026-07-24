@@ -11,6 +11,7 @@ import { fetchData as refreshGroups } from './group_analytics.js';
 import { loadGroupToolAccess } from './tool_access.js';
 import { refreshSatisfaction } from './satisfaction.js';
 import { loadOverview } from './overview.js';
+import { loadAdoption } from './adoption.js';
 import { accessEventSource } from './auth.js';
 
 // FIX: Pass event explicitly
@@ -30,6 +31,7 @@ export function switchTab(e, tabName) {
     } else if (tabName === 'users') {
         loadUsers();
         updateDefaultQuotaHint();
+        loadAdoption();
     } else if (tabName === 'logs') {
         // Auto-load to populate dropdowns
         loadLogs();
