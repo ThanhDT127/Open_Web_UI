@@ -112,19 +112,25 @@ Câu hỏi cốt lõi của hệ nội bộ ([[internal-rag-chatbot-adoption-not
 - [x] Pareto: top 10% user = ?% chi phí — đọc thẳng `top10_pct_cost_share` + `breakdown_by_user` full từ `compute_usage_summary`, **0 backend mới**.
 - [x] Phân phối mức dùng quota (histogram 0-25/25-50/50-75/75-90/>90 + **bucket "không giới hạn"** riêng cho `limit ≤ 0`) — bulk-read `quota`, công thức như `get_user_quota_status`.
 
-## Phase 5 — Model: tỷ trọng & đơn giá
+## Phase 5 — Model: tỷ trọng & đơn giá (change `dashboard-model-lens`)
 
-- [ ] Request share % / Cost share % / unique users theo model — **Reuse:** dict `model_data` (`summary_v2.py:201`) đã gom `requests`(set)/`cost_total`/`tokens_total`/`latencies` theo model → share % và cost/req chỉ là phép chia trên số sẵn có. **Field mới duy nhất:** unique users — thêm `model_data[model]["users"].add(user_id)` trong vòng lặp
-- [ ] Cost/request, blended cost/1k tokens theo model — reuse `cost_total`/`tokens_total` trong `model_data` (nt.); ⚠️ lưu ý `breakdown_by_model` bị cắt `[:20]` (`summary_v2.py:451-452`) nên mọi phép đếm/share phải tính server-side **trước** khi cắt, không suy ra từ list đã cắt ở frontend
-- [ ] ❓ **Chờ leader quyết** — ghép CSAT với cost/request theo model (rủi ro: khớp sai tên model giữa 2 DB)
+- [x] **Cost share % + unique users theo model** — ✅ HOÀN THÀNH 2026-07-24 (change `dashboard-model-lens`). Thêm 2 field vào `breakdown_by_model` (`summary_v2.py`): `cost_share_percent` = `stats["cost_total"]/total_cost` (tính trên tổng global **trước** cắt `[:20]` → an toàn) + `unique_users` (thêm `set` vào `model_data`, `.add(user_id)` ở cả 2 nhánh ok+error). Render 2 cột vào bảng Top Models tab Usage. Nghiệm thu live: Σ share=100.1, embedding 80%CP/2 người vs deepseek-flash 17%/13 người.
+  - **`$/request` per model đã có sẵn** từ trước (`usage.js`, `avgCost = cost_usd/requests_total`) — không làm lại.
+  - **Non-goal:** `blended cost/1k tokens` (jargon trùng `$/req`); `request_share_percent` (fast-follow tùy chọn — đã có `$/req` cho tín hiệu đắt/rẻ); giữ bảng gọn.
+- [ ] ❓ **Chờ leader quyết** — ghép CSAT với cost/request theo model (rủi ro: khớp sai tên model giữa 2 DB). **Non-goal của `dashboard-model-lens`** — tách quyết định riêng vì cần bảng ánh xạ tên model 2 DB (cùng loại lỗi định danh [[chat-analytics-id-mismatch]]).
 
-## Phase 6 — Provider: ngân sách chủ động
+## Phase 6 — Provider: ngân sách chủ động (change `dashboard-provider-budget`) — ✅ CODE XONG 2026-07-25, chờ deploy
 
-- [ ] Expose API: budget utilization % + burn rate theo provider — backend đã tính chi tiêu tháng/provider trong `core/alerting.py` (`_check_provider_budget_alerts`, "calculate spend per provider from audit log") để phát cảnh báo; chỉ cần expose ra API + hiển thị
-- [ ] Projected month-end spend theo provider
-- [ ] Tab Providers — scorecard 4 thẻ (Nhà cung cấp, Ngân sách tháng, Đã tiêu kỳ này, Dự kiến cuối tháng)
-- [ ] **Thẻ `Total Models` ở tab Providers** *(chuyển từ Phase 1)* — đếm server-side từ LiteLLM `/models`, loại 5 model `*-auto`. **Reuse:** hằng `AUTO_MODEL_NAMES` (`models.py:14-20`) dùng lại để biết loại 5 model nào. **KHÔNG reuse** `list_models` (`models.py:24`) — nó `require_user` + lọc theo `allowed_models` của người gọi, nên ra số theo user chứ không phải tổng admin; gọi thẳng LiteLLM `/models` phía server, bỏ bước lọc user. Lý do chuyển: **tab Providers chưa tồn tại** trong dashboard thật, phải dựng tab (mục trên) trước rồi mới đặt thẻ này vào
-- [ ] Sửa mock/logic tổng projected khớp tổng từng provider (đã phát hiện lệch $800 vs $644 trong prototype — dùng số đúng khi implement thật)
+**Đổi mô hình khi implement:** không phải "ngân sách tháng reset" mà là **credit trả trước** (admin nạp tiền vào billing account, chia cho user, cạn thì nạp thêm — không reset lịch). Gán chi phí theo **billing account** (nơi trả tiền thật) suy từ LiteLLM `/model/info`, không theo prefix brand.
+
+- [x] **Attribution dùng chung** `core/provider_attribution.py` — map `alias→billing account` từ `/model/info` (litellm_config.yaml không mount cho MW); nhánh catch-all `other` → Σ luôn khớp total (test live: 0.4479=0.4479). Dùng chung dashboard + alert CHECK 2.
+- [x] **Endpoint** `GET /v1/_mw/providers` — mỗi account: đã nạp / đã tiêu (từ nạp) / còn lại / **runway (dự kiến cạn)** thay cho "projected cuối tháng"; guard min-days + burn=0. Burn-rate chỉ tính ngầm, không hiện cột.
+- [x] **Tab Providers** — scorecard 4 thẻ (Nhà cung cấp · Tổng còn lại · Tổng đã tiêu · **Total Models**) + bảng credit. Tab theo credit hiện tại, không theo bộ lọc thời gian.
+- [x] **Total Models** — reuse chính call `/model/info` (24 model); LiteLLM không chứa `*-auto` (MW inject) nên **không trừ 5**, chỉ lọc phòng thủ.
+- [x] **Settings** — 6 ô billing account, nút **Nạp thêm** (carry-forward `deposited=remaining+amount`, đóng dấu `funded_at`) vs **Sửa** (giữ `funded_at`, reuse `update_alert_config` deep-merge).
+- [x] **Alert CHECK 2** đổi nghĩa "sắp cạn credit → nạp thêm", bỏ `date_trunc('month')`, dedup theo funding epoch. **CHECK 1 (quota-user) không đụng.**
+- [x] Mock $800/$644 chỉ ở prototype, code thật (Overview thẻ #1) đã dùng số thật — no-op.
+- [ ] **Chờ deploy:** rebuild container middleware để phục vụ route mới + nghiệm thu end-to-end trên trình duyệt.
 
 ## Phase 7 — Group/Phòng ban: chuẩn hóa theo quy mô
 

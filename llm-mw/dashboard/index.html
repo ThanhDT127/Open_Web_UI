@@ -98,6 +98,7 @@
         <div class="tabs">
             <button class="tab active" onclick="window.dashboardAPI.switchTab(event, 'usage')">📈 Usage</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'overview')">🎯 Overview</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'providers')">🏭 Providers</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'access')">🌐 Access</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'users')">👥 Users</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'logs')">📋 Logs</button>
@@ -166,6 +167,58 @@
                     <div class="metric-value" id="ovCpuValue">—</div>
                     <div class="metric-hint">Tổng chi phí / số người dùng thật · theo khoảng đang xem</div>
                 </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- PROVIDERS TAB (Phase 6 — prepaid credit per billing account) -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="providersTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">🏭</span>
+                <span class="insight-text">Credit trả trước theo <strong>nhà cung cấp thanh toán</strong> (nơi nạp tiền
+                    thật). Mỗi provider: đã nạp bao nhiêu, đã tiêu từ lần nạp gần nhất, còn lại và dự kiến bao lâu nữa
+                    cạn. <em>Trang này luôn theo credit hiện tại — KHÔNG theo khoảng thời gian đang lọc.</em>
+                    Ngân sách/nạp tiền cấu hình ở tab Settings.</span>
+            </div>
+            <div class="metrics metrics-lg">
+                <div class="metric-card">
+                    <div class="metric-label">🏭 Nhà cung cấp</div>
+                    <div class="metric-value" id="provProviderCount">—</div>
+                    <div class="metric-hint">Số billing account có cấu hình</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">💰 Tổng còn lại</div>
+                    <div class="metric-value" id="provTotalRemaining">—</div>
+                    <div class="metric-hint">Tổng credit chưa tiêu · mọi provider</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">💸 Tổng đã tiêu</div>
+                    <div class="metric-value" id="provTotalSpent">—</div>
+                    <div class="metric-hint">Từ lần nạp gần nhất của mỗi provider</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">🧠 Tổng số model</div>
+                    <div class="metric-value" id="provTotalModels">—</div>
+                    <div class="metric-hint">Model đang deploy trên LiteLLM</div>
+                </div>
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Provider</th>
+                            <th>Số dư nạp</th>
+                            <th>Đã tiêu (từ nạp)</th>
+                            <th>Còn lại (%)</th>
+                            <th>Dự kiến cạn</th>
+                            <th>Trạng thái</th>
+                        </tr>
+                    </thead>
+                    <tbody id="providersTable">
+                        <tr><td colspan="6" class="loading">Loading...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -1838,35 +1891,16 @@
                     </form>
                 </div>
 
-                <!-- Section: API Budgets -->
+                <!-- Section: Provider prepaid credit (Phase 6) -->
                 <div class="section">
-                    <div class="section-title">💳 API Budgets (Monthly USD)</div>
-                    <form id="apiBudgetForm" class="settings-form">
-                        <div class="form-group">
-                            <label>OpenAI Budget ($)</label>
-                            <input type="number" step="0.01" id="budgetOpenAI">
-                        </div>
-                        <div class="form-group">
-                            <label>Gemini Budget ($)</label>
-                            <input type="number" step="0.01" id="budgetGemini">
-                        </div>
-                        <div class="form-group">
-                            <label>xAI (Grok) Budget ($)</label>
-                            <input type="number" step="0.01" id="budgetXai">
-                        </div>
-                        <div class="form-group">
-                            <label>Anthropic Budget ($)</label>
-                            <input type="number" step="0.01" id="budgetAnthropic">
-                        </div>
-                        <div class="form-group">
-                            <label>DeepSeek Budget ($)</label>
-                            <input type="number" step="0.01" id="budgetDeepseek">
-                        </div>
-                        <div class="form-actions">
-                            <button type="button" onclick="window.settingsAPI.saveBudgets()" class="btn-apply">Save
-                                Budgets</button>
-                        </div>
-                    </form>
+                    <div class="section-title">💳 Credit trả trước theo nhà cung cấp (billing account)</div>
+                    <div class="insight-text" style="margin-bottom:10px;font-size:13px;opacity:.8">
+                        Nạp tiền vào tài khoản thanh toán thật. <strong>Nạp thêm</strong> = cộng credit + đặt lại mốc
+                        tính tiêu (đóng dấu thời điểm nạp). <strong>Sửa</strong> = chỉnh số nhập nhầm, giữ nguyên mốc nạp.
+                    </div>
+                    <div id="providerCreditRows">
+                        <div class="loading">Loading...</div>
+                    </div>
                 </div>
 
                 <!-- Section: Notification Toggles -->

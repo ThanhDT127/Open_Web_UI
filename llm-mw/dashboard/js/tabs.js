@@ -12,6 +12,7 @@ import { loadGroupToolAccess } from './tool_access.js';
 import { refreshSatisfaction } from './satisfaction.js';
 import { loadOverview } from './overview.js';
 import { loadAdoption } from './adoption.js';
+import { loadProviders } from './providers.js';
 import { accessEventSource } from './auth.js';
 
 // FIX: Pass event explicitly
@@ -52,5 +53,7 @@ export function switchTab(e, tabName) {
         refreshSatisfaction();
     } else if (tabName === 'overview') {
         loadOverview();
+    } else if (tabName === 'providers') {
+        loadProviders();
     }
 }
