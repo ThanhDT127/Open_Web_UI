@@ -252,11 +252,15 @@ async def send_daily_digest():
             provider_spend = _get_provider_spend()
             api_budgets = config.get("admin_alerts", {}).get("api_budgets", {})
             if provider_spend:
-                lines.append("💳 CHI PHÍ THEO PROVIDER (tháng này):")
+                lines.append("💳 CREDIT THEO PROVIDER (từ lần nạp gần nhất):")
                 for pname, spend in provider_spend.items():
-                    budget = float(api_budgets.get(pname, {}).get("budget_usd", 0) or 0)
-                    pct = (spend / budget * 100) if budget > 0 else 0
-                    lines.append(f"  • {pname.upper()}: ${spend:.2f}/${budget:.2f} ({pct:.0f}%)")
+                    deposited = float(api_budgets.get(pname, {}).get("deposited", 0) or 0)
+                    remaining = deposited - spend
+                    pct = (spend / deposited * 100) if deposited > 0 else 0
+                    lines.append(
+                        f"  • {pname.upper()}: đã dùng ${spend:.2f}/${deposited:.2f} "
+                        f"({pct:.0f}%) · còn ${remaining:.2f}"
+                    )
                 lines.append("")
         except Exception:
             pass

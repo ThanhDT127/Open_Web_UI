@@ -472,27 +472,45 @@ def _check_provider_budget_alerts(
     config: dict, api_budgets: dict, admin_emails: list,
     pending_notifications: list, pending_emails: list
 ):
-    """Check per-provider API budget thresholds from audit log.
-    Queues notifications and emails instead of sending directly."""
+    """Check per-provider PREPAID CREDIT exhaustion (CHECK 2 — provider budgets).
+
+    Prepaid model (change dashboard-provider-budget): each billing account holds credit
+    the admin topped up; alert when the used-credit percentage crosses a threshold so the
+    admin can top up before service is interrupted. No calendar-monthly reset — dedup is
+    keyed on the account's funding epoch (``funded_at``), so a fresh top-up re-arms the
+    thresholds for the new funding period.
+
+    This does NOT touch the per-user quota alert (CHECK 1). Queues notifications instead
+    of sending directly."""
+    from core.provider_attribution import spend_since_funding, _parse_funded_at
     system_alerts = load_system_alerts()
 
-    # Calculate spend per provider from audit log
-    provider_spend = _get_provider_spend()
+    # Funding time per configured account, then prepaid spend since each funding.
+    funded: dict = {}
+    for name, pcfg in api_budgets.items():
+        fa = _parse_funded_at((pcfg or {}).get("funded_at"))
+        if fa is not None:
+            funded[name] = fa
+    provider_spend = spend_since_funding(funded)
 
-    for provider_name, pcfg in api_budgets.items():
+    for account, pcfg in api_budgets.items():
         if not pcfg.get("enabled", True):
             continue
 
-        budget = float(pcfg.get("budget_usd", 0) or 0)
-        if budget <= 0:
+        deposited = float(pcfg.get("deposited", 0) or 0)
+        if deposited <= 0:
             continue
 
-        spend = provider_spend.get(provider_name, 0.0)
-        percent = (spend / budget) * 100
-        thresholds = pcfg.get("thresholds", [70, 90, 100])
+        spend = provider_spend.get(account, 0.0)
+        remaining = deposited - spend
+        percent = (spend / deposited) * 100
+        thresholds = pcfg.get("thresholds", [80, 100])
+        fa = funded.get(account)
+        fund_epoch = fa.isoformat() if fa else "0"
 
         for threshold in thresholds:
-            key = f"provider_{provider_name}_{threshold}"
+            # Funding epoch in the key: a new top-up (new funded_at) re-arms alerts.
+            key = f"provider_{account}_{fund_epoch}_{threshold}"
             if percent >= threshold and key not in system_alerts:
                 if threshold >= 100:
                     level = "critical"
@@ -504,22 +522,23 @@ def _check_provider_budget_alerts(
                     level = "info"
                     send_email = False
 
-                title = f"API {provider_name.upper()} đạt {threshold}% budget (${spend:.2f}/${budget:.2f})"
+                title = f"Credit {account.upper()} đã dùng {threshold}% (${spend:.2f}/${deposited:.2f})"
                 message = (
-                    f"Chi phí {provider_name.upper()} tháng này: ${spend:.2f}/{budget:.2f} ({percent:.0f}%). "
-                    f"Còn lại: ${budget - spend:.2f}"
+                    f"Credit {account.upper()} còn ${remaining:.2f}/{deposited:.2f} "
+                    f"(đã dùng {percent:.0f}%). → Nạp thêm để tránh gián đoạn dịch vụ."
                 )
                 metadata = {
-                    "provider": provider_name,
+                    "provider": account,
                     "spend_usd": round(spend, 2),
-                    "budget_usd": round(budget, 2),
+                    "deposited_usd": round(deposited, 2),
+                    "remaining_usd": round(remaining, 2),
                     "percent": round(percent, 1),
                     "threshold": threshold,
                 }
 
                 logger.info(
-                    "alert_provider_budget provider=%s threshold=%d%% spend=$%.2f budget=$%.2f email=%s",
-                    provider_name, threshold, spend, budget, send_email
+                    "alert_provider_credit account=%s threshold=%d%% spent=$%.2f deposited=$%.2f email=%s",
+                    account, threshold, spend, deposited, send_email
                 )
 
                 # Queue notification (will be sent outside lock)
@@ -539,42 +558,22 @@ def _check_provider_budget_alerts(
 
 
 def _get_provider_spend() -> dict:
-    """Calculate current month spending per provider from audit log."""
-    try:
-        from core.db import db_conn, _pool
-        if _pool is None:
-            return {}
+    """Prepaid spend per billing account, each measured since its own ``funded_at``.
 
+    Delegates to core.provider_attribution (the SAME function the Providers dashboard
+    uses) so alert and dashboard never diverge. Attribution comes from LiteLLM
+    ``/model/info`` (billing account = first segment of ``litellm_params.model``), NOT the
+    old ``model_prefixes`` LIKE match; there is no ``date_trunc('month')`` window."""
+    try:
+        from core.provider_attribution import spend_since_funding, _parse_funded_at
         config = load_alert_config()
         api_budgets = config.get("admin_alerts", {}).get("api_budgets", {})
-
-        result = {}
-        with db_conn() as conn:
-            cur = conn.cursor()
-            for provider_name, pcfg in api_budgets.items():
-                prefixes = pcfg.get("model_prefixes", [])
-                if not prefixes:
-                    continue
-
-                # Build LIKE conditions for model prefixes
-                like_conditions = " OR ".join(
-                    "model LIKE %s" for _ in prefixes
-                )
-                like_params = [f"{p}%" for p in prefixes]
-
-                cur.execute(f"""
-                    SELECT COALESCE(SUM(cost_usd), 0)
-                    FROM mw_audit_log
-                    WHERE ts >= date_trunc('month', now())
-                      AND ({like_conditions})
-                """, like_params)
-
-                spend = cur.fetchone()[0]
-                result[provider_name] = float(spend)
-
-            cur.close()
-        return result
-
+        funded: dict = {}
+        for name, pcfg in api_budgets.items():
+            fa = _parse_funded_at((pcfg or {}).get("funded_at"))
+            if fa is not None:
+                funded[name] = fa
+        return spend_since_funding(funded)
     except Exception as e:
         logger.error("get_provider_spend_failed: %s", str(e))
         return {}

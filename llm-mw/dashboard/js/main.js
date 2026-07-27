@@ -19,7 +19,7 @@ import {
 	loadGroupToolAccess, showGroupToolModal, closeGroupToolModal, saveGroupTools
 } from './tool_access.js';
 import {
-	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, saveDefaultQuota, testSMTP
+	saveSMTP, saveQuotaThresholds, topUpProvider, correctProviderCredit, saveNotifToggles, saveDefaultQuota, testSMTP
 } from './settings.js';
 import { applyRagFilters, resetRagFilters } from './raghealth.js';
 import { loadOverview } from './overview.js';
@@ -92,7 +92,8 @@ export async function initAPI() {
 	window.settingsAPI = {
 		saveSMTP,
 		saveQuotaThresholds,
-		saveBudgets,
+		topUpProvider,
+		correctProviderCredit,
 		saveNotifToggles,
 		saveDefaultQuota,
 		testSMTP
