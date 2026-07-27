@@ -31,6 +31,14 @@ litellm/*.log
 
 # Middleware runtime artifacts
 llm-mw/pending.csv
+llm-mw/data/pending.csv
+llm-mw/data/system_alerts.json
+llm-mw/data/alert_config.json
+llm-mw/data/*.file-backup.*.json
+
+# Claude Code / Artifact local state
+.od-skills/
+index.html.artifact.json
 
 # OS
 .DS_Store
