@@ -145,19 +145,22 @@ def _minutes_between(cutoff, end_time) -> int:
     return max(1, int((end_time - cutoff).total_seconds() // 60))
 
 
-def _collect_groups(request: Request, cutoff, end_time) -> list:
-    """Reuse group_analytics's aggregation. Empty list means 'unavailable' to the caller."""
-    from api.group_analytics import get_group_analytics
-    try:
-        data = get_group_analytics(
-            request, minutes=_minutes_between(cutoff, end_time),
-            start=cutoff.isoformat(), end=end_time.isoformat()
-        )
-        if isinstance(data, dict):
-            return data.get("groups", [])
-    except Exception:
-        pass
-    return []
+def _collect_groups(cutoff, end_time) -> list:
+    """Reuse group_analytics's aggregation.
+
+    Calls the pure function, not the endpoint handler: handlers re-check auth and raise
+    HTTP errors, and the previous version swallowed every exception, so a failure here
+    used to produce a report whose department sheet quietly said "unavailable" while the
+    file downloaded as if it were complete. Let it raise.
+    """
+    from api.group_analytics import compute_group_analytics, _GROUP_BUCKET
+    return compute_group_analytics(cutoff, end_time, _GROUP_BUCKET).get("groups", [])
+
+
+def _unresolved_group_label() -> str:
+    """Imported lazily, like the aggregation above, to keep this module's import graph flat."""
+    from api.group_analytics import UNRESOLVED_GROUP_LABEL
+    return UNRESOLVED_GROUP_LABEL
 
 
 def _collect_chat_analytics(request: Request, cutoff, end_time) -> dict:
@@ -303,20 +306,27 @@ def _generate_xlsx(request: Request, cutoff, end_time) -> bytes:
 
     # Sheet 4: Phòng ban
     ws4 = wb.create_sheet("Phòng ban")
-    groups = _collect_groups(request, cutoff, end_time)
+    groups = _collect_groups(cutoff, end_time)
     if groups:
         rows4 = []
         for g in groups:
             model_prefs = g.get("model_preferences") or []
             top_model = model_prefs[0]["model"] if model_prefs else "-"
+            # The label travels from the API so the sheet and the dashboard cannot end up
+            # calling the same row different things. Cost is rounded here, at the point of
+            # presentation — the payload carries it unrounded so the rows still add up to
+            # the system total. Latency is None for a department with no traffic; an empty
+            # cell says that better than 0 ms would.
             rows4.append((
-                g.get("group_name", "Uncategorized"), g.get("total_requests", 0),
-                g.get("total_cost", 0), g.get("total_tokens", 0),
-                g.get("avg_latency_ms", 0), top_model
+                g.get("group_name") or _unresolved_group_label(),
+                g.get("total_requests", 0),
+                round(g.get("total_cost") or 0, 6),
+                g.get("total_tokens", 0),
+                g.get("avg_latency_ms"), top_model
             ))
         _write_table(ws4, ["Group Name", "Requests", "Cost (USD)", "Tokens", "Avg Latency (ms)", "Top Model"], rows4)
     else:
-        ws4.cell(row=1, column=1, value="Dữ liệu nhóm không khả dụng")
+        ws4.cell(row=1, column=1, value="Không có phòng ban nào trong Open WebUI")
 
     # Sheet 5: Chat Analytics
     ws5 = wb.create_sheet("Chat Analytics")

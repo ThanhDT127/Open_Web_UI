@@ -47,6 +47,12 @@ export function formatValue(metricKey, value) {
     return (FORMATTERS[m && m.fmt] || FORMATTERS.int)(value);
 }
 
+// Money in breakdown TABLES goes through the same map the scorecards use, so the money
+// format lives in one place. Exported as a formatter rather than reached through
+// formatValue() because table columns are deliberately not registered as metrics — only
+// scorecards are (see the dashboard-model-metrics spec) — so they have no metric key.
+export const usd4 = FORMATTERS.usd4;
+
 // ─── The registry ────────────────────────────────────────────
 //
 // fmt      — which formatter renders the value (and the compared value)
@@ -140,7 +146,24 @@ export const METRICS = {
         // roster-intersected adoption numerator — incurred cost is real either way.
     },
 
+    // ── Groups scale (Phase 7b) — source: /v1/_mw/admin/analytics/groups ──
+    dept_avg_cost: {
+        label: 'Chi phí bình quân mỗi phòng ban', fmt: 'usd4', delta: 'rel', polarity: 'down-good',
+        // Numerator is only the cost that could be attributed to a department, so the card
+        // is deliberately smaller than the table's total divided by the same count. The
+        // note under the scorecard is what explains that gap.
+    },
+
     // ── Blocked from comparison ──
+    department_count: {
+        label: 'Số phòng ban', fmt: 'int', compare: false,
+        blockedReason: 'Cơ cấu tổ chức — con số này không phụ thuộc khoảng thời gian đang '
+            + 'xem, nên so kỳ sẽ luôn ra 0% và chỉ làm người đọc tưởng có ý nghĩa',
+    },
+    assigned_member_count: {
+        label: 'Nhân sự đã có phòng ban', fmt: 'int', compare: false,
+        blockedReason: 'Cơ cấu tổ chức — không phụ thuộc khoảng thời gian đang xem',
+    },
     provisioned_total: {
         label: 'Tổng đã cấp', fmt: 'int', compare: false,
         blockedReason: 'Snapshot roster (mw_users chưa xóa) — tính đến hiện tại, không '

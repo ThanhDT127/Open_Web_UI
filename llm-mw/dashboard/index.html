@@ -538,6 +538,32 @@
                     động dựa trên group cũ nhất của user bên Open WebUI.</span>
             </div>
 
+            <div class="metrics metrics-lg">
+                <div class="metric-card">
+                    <div class="metric-label">🏢 Số phòng ban</div>
+                    <div class="metric-value" id="grpDeptCount">—</div>
+                    <div class="metric-hint">Theo cơ cấu tổ chức · không đổi theo khoảng thời gian</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">👥 Nhân sự đã có phòng ban</div>
+                    <div class="metric-value" id="grpAssignedMembers">—</div>
+                    <div class="metric-hint" id="grpAssignedHint">Trên tổng số tài khoản đang hoạt động</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">💵 Chi phí bình quân mỗi phòng ban</div>
+                    <div class="metric-value" id="grpAvgCostPerDept">—</div>
+                    <!-- The only card of the three that moves with the time range. Said here
+                         so the reader does not assume the whole row is a standing fact. -->
+                    <div class="metric-hint">Chi phí trong khoảng đang xem · chỉ chia phần đã quy được về phòng ban</div>
+                    <div class="delta-badge" id="grpAvgCostDelta"></div>
+                </div>
+            </div>
+
+            <!-- Filled by group_analytics.js: department count, the "current org structure"
+                 caveat, the note explaining what the scorecard denominators leave out, and a
+                 warning when someone sits in more than one group. -->
+            <div id="groupAnalyticsNotes" style="margin-top: 10px; font-size: 12px; color: #94a3b8;"></div>
+
             <div class="section-controls" style="margin-top: 15px;">
                 <div class="section-title">🏆 Top Spenders by Department</div>
                 <button class="btn-apply" style="margin-top:0;"
@@ -552,18 +578,21 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>ID Phòng Ban</th>
                                 <th>Tên Phòng Ban</th>
                                 <th>Requests</th>
                                 <th>Tokens</th>
                                 <th>Chi phí (USD)</th>
+                                <th>Tỷ trọng chi phí</th>
+                                <th>Nhân sự phòng</th>
+                                <th>Chi phí / nhân sự</th>
+                                <th>Chi phí / người có dùng</th>
                                 <th>Avg Latency (ms)</th>
                                 <th>Model ưa thích (%)</th>
                             </tr>
                         </thead>
                         <tbody id="groupAnalyticsTable">
                             <tr>
-                                <td colspan="7" class="loading">Loading...</td>
+                                <td colspan="10" class="loading">Loading...</td>
                             </tr>
                         </tbody>
                     </table>
