@@ -231,8 +231,13 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
         "errors": 0,
         "tokens_total": 0,
         "cost_total": 0.0,
-        "latencies": [],
-        "models": defaultdict(int)
+        # Keyed by rid, not a flat list: one request must contribute one timing, or the
+        # sample count stops being comparable to the request count it is shown against.
+        "latencies": {},
+        # Sets of rids, not counters: a request logged twice for the same model
+        # (error then reconciled) must count once, so the model percentages the
+        # Groups tab renders share the unit its request column already uses.
+        "models": defaultdict(set)
     })
     
     model_data: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
@@ -241,7 +246,7 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
         "errors": 0,
         "tokens_total": 0,
         "cost_total": 0.0,
-        "latencies": [],
+        "latencies": {},  # rid -> latency, same one-timing-per-request rule as above
         "users": set()  # distinct user_id per model (Phase 5 — unique_users column)
     })
     
@@ -317,9 +322,9 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
                 user_data[user_id]["requests_ok"].add(rid)
                 user_data[user_id]["tokens_total"] += tokens
                 user_data[user_id]["cost_total"] += cost
-                user_data[user_id]["models"][model] += 1
+                user_data[user_id]["models"][model].add(rid)
                 if latency:
-                    user_data[user_id]["latencies"].append(latency)
+                    user_data[user_id]["latencies"][rid] = latency
 
                 # Model breakdown
                 model_data[model]["requests"].add(rid)
@@ -328,7 +333,7 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
                 model_data[model]["tokens_total"] += tokens
                 model_data[model]["cost_total"] += cost
                 if latency:
-                    model_data[model]["latencies"].append(latency)
+                    model_data[model]["latencies"][rid] = latency
 
             elif status == "error":
                 timeseries_data[bucket_key]["errors"] += 1
@@ -337,10 +342,20 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
                 # Count the model here too, mirroring model_data below. Otherwise a user
                 # whose requests all failed reports top_model="unknown" while the model
                 # breakdown still lists the model they were calling.
-                user_data[user_id]["models"][model] += 1
+                user_data[user_id]["models"][model].add(rid)
                 model_data[model]["requests"].add(rid)
                 model_data[model]["users"].add(user_id)
                 model_data[model]["errors"] += 1
+
+            else:
+                # Anything not yet resolved (pending, or a status this code does not know).
+                # Catch-all on purpose: requests_total counts every rid in rid_status, so
+                # without this branch a request that is still open belongs to nobody and
+                # the per-user breakdown sums to less than the total it is derived from.
+                # Only the request itself is attributed — there is no cost, token count
+                # or latency to attribute yet.
+                user_data[user_id]["requests"].add(rid)
+                user_data[user_id]["models"][model].add(rid)
 
 
         # Calculate totals from rid_status (control-grade: last status per rid)
@@ -401,7 +416,7 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
         # Calculate P95 latency from all final events
         all_latencies = []
         for user_stats in user_data.values():
-            all_latencies.extend(user_stats["latencies"])
+            all_latencies.extend(user_stats["latencies"].values())
         
         p50_latency = p95_latency = p99_latency = max_latency = None
         if all_latencies:
@@ -430,12 +445,13 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
             
             user_p95 = None
             if stats["latencies"]:
-                sorted_lat = sorted(stats["latencies"])
+                sorted_lat = sorted(stats["latencies"].values())
                 p95_idx = int(len(sorted_lat) * 0.95)
                 user_p95 = sorted_lat[p95_idx] if p95_idx < len(sorted_lat) else sorted_lat[-1]
             
-            user_models = stats["models"]
-            user_top_model = max(user_models.items(), key=lambda kv: kv[1])[0] if user_models else "unknown"
+            # models maps model -> set of rids, so the count per model is distinct requests.
+            user_model_counts = {m: len(rids) for m, rids in stats["models"].items()}
+            user_top_model = max(user_model_counts.items(), key=lambda kv: kv[1])[0] if user_model_counts else "unknown"
 
             breakdown_by_user.append({
                 "user_id": user_id,
@@ -445,8 +461,25 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
                 "error_rate_percent": round(user_error_rate, 2),
                 "tokens_total": stats["tokens_total"],
                 "cost_usd": round(stats["cost_total"], 6),
+                # The same figure without the rounding, for callers that regroup these
+                # rows. Rounding per user and then adding the results cannot land on
+                # totals.cost_total_usd, which rounds once at the end: that error grows
+                # with the number of users, so it stays invisible on a 13-user dev set
+                # and reaches the fourth decimal — the last digit the dashboard shows —
+                # at the 200+ users this system is sized for.
+                "cost_usd_raw": stats["cost_total"],
                 "p95_latency_ms": round(user_p95, 2) if user_p95 else None,
-                "top_model": user_top_model
+                "top_model": user_top_model,
+                # Phase 7a: the sum and the sample count, not an average. Callers that
+                # aggregate several users divide one total by the other; handing them a
+                # rounded average to multiply back out would round twice.
+                # sample_count also states the coverage — latency_ms is absent on every
+                # reconciled row, so it never spans all successful requests.
+                "latency_sum_ms": round(sum(stats["latencies"].values()), 2),
+                "latency_sample_count": len(stats["latencies"]),
+                # Per-model distinct-request counts, so a caller can build its own model
+                # distribution without re-reading the audit log.
+                "model_counts": user_model_counts
             })
         
         # Sort by cost descending
@@ -472,7 +505,7 @@ def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
             
             model_p95 = None
             if stats["latencies"]:
-                sorted_lat = sorted(stats["latencies"])
+                sorted_lat = sorted(stats["latencies"].values())
                 p95_idx = int(len(sorted_lat) * 0.95)
                 model_p95 = sorted_lat[p95_idx] if p95_idx < len(sorted_lat) else sorted_lat[-1]
             
