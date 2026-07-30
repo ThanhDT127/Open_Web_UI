@@ -121,6 +121,16 @@ export const METRICS = {
     // ── Overview tab ──
     csat_percent: {
         label: 'Mức hài lòng', fmt: 'pct1', delta: 'pp', polarity: 'up-good',
+        // Bands and the minimum sample live here, not at each call site. They used to be
+        // restated in overview.js and satisfaction.js — two tabs that are never seen side
+        // by side, so a divergence between them would have gone unnoticed.
+        //
+        // minSample is 20 because that is where the 95% Wilson interval around an observed
+        // 80% stops straddling the 50 band edge (58.4–91.9%). At 5 votes the same 80% could
+        // truly be anything from 38% to 96%, so colouring it green states more than the
+        // data supports.
+        bands: { good: 80, warn: 50 },
+        minSample: 20,
     },
     top10_pct_cost_share: {
         label: 'Mức tập trung chi phí', fmt: 'pct1', delta: 'pp', polarity: 'down-good',
@@ -217,6 +227,33 @@ export const METRICS = {
 export function isComparable(metricKey) {
     const m = METRICS[metricKey];
     return !!m && m.compare !== false;
+}
+
+// ─── Classification: bands and the minimum sample behind them ────────────────
+
+// How many observations a metric needs before its value may be ranked or coloured.
+// 0 means the metric has no such requirement.
+export function minSample(metricKey) {
+    const m = METRICS[metricKey];
+    return (m && m.minSample) || 0;
+}
+
+// 'ok' | 'warn' | 'danger', or null when the sample is too small to classify.
+// Callers must treat null as "show the number, withhold the judgement" — not as
+// "hide the number". A figure computed from few observations is still the only
+// signal there is; what it cannot carry is a colour that reads as a verdict.
+export function classify(metricKey, value, sampleSize = Infinity) {
+    const m = METRICS[metricKey];
+    if (!m || !m.bands || value == null) return null;
+    if (sampleSize < ((m.minSample) || 0)) return null;
+    const goodIsHigh = m.polarity !== 'down-good';
+    const { good, warn } = m.bands;
+    if (goodIsHigh) {
+        if (value >= good) return 'ok';
+        return value >= warn ? 'warn' : 'danger';
+    }
+    if (value <= good) return 'ok';
+    return value <= warn ? 'warn' : 'danger';
 }
 
 // ─── Vietnam-time display (D9) ───────────────────────────────

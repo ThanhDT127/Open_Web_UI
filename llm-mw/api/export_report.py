@@ -175,16 +175,18 @@ def _collect_chat_analytics(request: Request, cutoff, end_time) -> dict:
         return {}
 
 
-def _collect_satisfaction(request: Request, cutoff, end_time) -> dict:
-    """Reuse analytics.get_satisfaction_analytics's aggregation (OW feedback)."""
-    from api.analytics import get_satisfaction_analytics
-    try:
-        return get_satisfaction_analytics(
-            request, minutes=_minutes_between(cutoff, end_time),
-            start=cutoff.isoformat(), end=end_time.isoformat()
-        )
-    except Exception:
-        return {}
+def _collect_satisfaction(cutoff, end_time) -> dict:
+    """
+    Reuse analytics.compute_satisfaction's aggregation (OW feedback).
+
+    Calls the pure function, not the endpoint handler, for the same reason as
+    _collect_groups above: the handler raises HTTP errors, and catching them turned a
+    failed feedback query into a sheet of zeros — a reading indistinguishable from
+    "nobody has rated anything", in a file that downloaded as though it were complete.
+    Let it raise.
+    """
+    from api.analytics import compute_satisfaction
+    return compute_satisfaction(cutoff, end_time)
 
 
 _AUDIT_COLUMNS_SQL = """
@@ -347,20 +349,25 @@ def _generate_xlsx(request: Request, cutoff, end_time) -> bytes:
 
     # Sheet 6: Satisfaction
     ws6 = wb.create_sheet("Satisfaction")
-    sat = _collect_satisfaction(request, cutoff, end_time)
+    sat = _collect_satisfaction(cutoff, end_time)
     totals6 = sat.get("totals", {})
-    ws6.cell(row=1, column=1, value="Tổng feedback")
+    # "Tổng lượt khen/chê", not "Tổng feedback": the value is positive + negative, which
+    # is the CSAT denominator. Feedback carrying neither rating is excluded from it.
+    ws6.cell(row=1, column=1, value="Tổng lượt khen/chê")
     ws6.cell(row=1, column=2, value=totals6.get("total", 0))
     ws6.cell(row=2, column=1, value="Positive")
     ws6.cell(row=2, column=2, value=totals6.get("positive", 0))
     ws6.cell(row=3, column=1, value="Negative")
     ws6.cell(row=3, column=2, value=totals6.get("negative", 0))
     ws6.cell(row=4, column=1, value="CSAT %")
-    ws6.cell(row=4, column=2, value=totals6.get("csat_percent", 0))
+    # The aggregation returns the unrounded ratio; round at the cell, as the Groups
+    # sheet does for money. Writing it raw would put 66.66666666666667 in the file.
+    ws6.cell(row=4, column=2, value=round(float(totals6.get("csat_percent") or 0), 1))
     model_leaderboard = sat.get("model_leaderboard", [])
     _write_table(
         ws6, ["Model", "Positive", "Negative", "Total", "CSAT %"],
-        [(m["model_id"], m["positive"], m["negative"], m["total"], m["csat_percent"]) for m in model_leaderboard],
+        [(m["model_id"], m["positive"], m["negative"], m["total"], round(float(m["csat_percent"] or 0), 1))
+         for m in model_leaderboard],
         start_row=6
     )
 

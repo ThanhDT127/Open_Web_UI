@@ -5,7 +5,7 @@
 import { mwFetch } from './utils.js';
 import { buildRangeParams } from './filters.js';
 import { getLastSummary } from './usage.js';
-import { renderDelta, formatValue } from './metrics_registry.js';
+import { renderDelta, formatValue, classify, minSample } from './metrics_registry.js';
 import { loadCompare, side } from './compare_data.js';
 import { pickAdoptionMetrics } from './adoption.js';
 
@@ -103,14 +103,24 @@ async function loadCsat() {
         const data = await res.json();
         const pct = data && data.totals ? data.totals.csat_percent : null;
         const total = data && data.totals ? data.totals.total : 0;
-        setText('ovCsatValue', pct != null ? `${pct}%` : '—');
-        setText('ovCsatDetail', `${(total || 0).toLocaleString()} lượt đánh giá`);
-        // Thresholds mirror satisfaction.js: >=80 ok, >=50 warn, else danger.
-        setCardState('ovCardCsat', pct == null ? null : pct >= 80 ? 'ok' : pct >= 50 ? 'warn' : 'danger');
+        setText('ovCsatValue', pct != null ? formatValue('csat_percent', pct) : '—');
+        // "lượt khen/chê", not "lượt đánh giá": this counts thumbs up plus thumbs down,
+        // which is the CSAT denominator — feedback carrying neither is excluded.
+        const floor = minSample('csat_percent');
+        const detail = `${(total || 0).toLocaleString()} lượt khen/chê`;
+        setText('ovCsatDetail', total > 0 && total < floor ? `${detail} · chưa đủ ${floor} để đánh giá` : detail);
+        // Bands and the minimum sample come from the registry — see classify(). Below the
+        // minimum the card keeps its number but drops to a neutral state, because a colour
+        // is a verdict and five votes cannot support one.
+        setCardState('ovCardCsat', classify('csat_percent', pct, total));
         renderCsatCompare(pct);
     } catch (err) {
         console.error('Overview CSAT load failed:', err);
         setText('ovCsatValue', '—');
+        // Clear the detail line too. It carries a vote count, and leaving the previous
+        // range's count under a dashed value reads as though it belonged to the range
+        // now selected — a stale number wearing a fresh one's clothes.
+        setText('ovCsatDetail', '—');
     }
 }
 
@@ -150,6 +160,9 @@ async function loadAdoptionCards() {
         console.error('Overview adoption load failed:', err);
         setText('ovAdoptionValue', '—');
         setText('ovCpuValue', '—');
+        // Same reason as the CSAT card: this line carries counts, so it must not
+        // survive a failed reload and pass for the current range.
+        setText('ovAdoptionDetail', '—');
     }
 }
 

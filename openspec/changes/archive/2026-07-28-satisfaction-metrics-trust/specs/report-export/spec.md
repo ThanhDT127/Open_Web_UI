@@ -1,22 +1,4 @@
-# report-export Specification
-
-## Purpose
-TBD - created by archiving change export-report. Update Purpose after archive.
-## Requirements
-### Requirement: Export report endpoint
-The system SHALL provide a `GET /v1/_mw/export/report` endpoint that generates a downloadable report file containing aggregated data from all dashboard data sources.
-
-#### Scenario: Admin exports Excel report
-- **WHEN** an authenticated admin sends `GET /v1/_mw/export/report?format=xlsx&start=2026-07-01T00:00:00&end=2026-07-31T23:59:59`
-- **THEN** the system returns a `.xlsx` file with Content-Type `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` and Content-Disposition header with filename `LLM_Report_20260701_to_20260731.xlsx` (parsed `start`/`end` dates formatted as `YYYYMMDD`, colon-free and filesystem-safe on Windows)
-
-#### Scenario: Admin exports CSV report
-- **WHEN** an authenticated admin sends `GET /v1/_mw/export/report?format=csv&start=2026-07-01T00:00:00&end=2026-07-31T23:59:59`
-- **THEN** the system returns a streaming CSV file with Content-Type `text/csv` and Content-Disposition filename `LLM_AuditLog_20260701_to_20260731.csv`, containing the full audit log for the time range
-
-#### Scenario: Unauthenticated request
-- **WHEN** a request without valid admin auth sends `GET /v1/_mw/export/report`
-- **THEN** the system returns HTTP 401/403
+## MODIFIED Requirements
 
 ### Requirement: Excel report contains 7 sheets
 The system SHALL generate an Excel file with the following sheets, each containing data aggregated for the requested time range.
@@ -57,50 +39,7 @@ The system SHALL generate an Excel file with the following sheets, each containi
 - **WHEN** the Excel report is generated
 - **THEN** Sheet 7 "Audit Log" SHALL contain raw audit log records (max 50,000 rows) sorted by timestamp descending, with all available columns: Timestamp, Request ID, User ID, Endpoint, Model, Status, Latency (ms), Tokens In, Tokens Out, Cost (USD), Error Type
 
-### Requirement: Excel formatting
-The system SHALL apply basic professional formatting to the Excel file for readability.
-
-#### Scenario: Header row styling
-- **WHEN** the Excel file is generated
-- **THEN** each sheet SHALL have a bold header row with a colored background
-
-#### Scenario: Column auto-width
-- **WHEN** the Excel file is generated
-- **THEN** column widths SHALL be auto-adjusted based on content length
-
-#### Scenario: Freeze panes
-- **WHEN** the Excel file is generated
-- **THEN** each sheet SHALL freeze the header row so it remains visible when scrolling
-
-#### Scenario: AutoFilter on tabular sheets
-- **WHEN** the Excel file is generated
-- **THEN** each tabular sheet (Top Users, Top Models, Groups, Chat Analytics, Satisfaction, Audit Log) SHALL have AutoFilter enabled on the header row, so the admin can filter/sort by any column (e.g. user, group, model) directly in Excel without additional setup
-
-### Requirement: CSV streaming export
-The system SHALL support CSV export of the full audit log using streaming response to handle large datasets efficiently.
-
-#### Scenario: CSV contains all audit columns
-- **WHEN** the CSV export is generated
-- **THEN** the CSV SHALL include columns: Timestamp, Request ID, User ID, Endpoint, Model, Purpose, Status, Status Code, Latency (ms), Tokens In, Tokens Out, Tokens Total, Cost (USD), Image Count, TTS Chars, STT Seconds, Video Count, Error Type, Error Message
-
-#### Scenario: CSV uses BOM for Excel compatibility
-- **WHEN** the CSV file is downloaded and opened in Excel
-- **THEN** the CSV SHALL include UTF-8 BOM prefix for correct character display
-
-### Requirement: Dashboard export UI
-The system SHALL provide an export button on the dashboard header that opens a modal for the admin to configure and download reports.
-
-#### Scenario: Export button visible
-- **WHEN** an admin is authenticated and viewing the dashboard
-- **THEN** a "📥 Export Report" button SHALL be visible in the dashboard header area
-
-#### Scenario: Export modal options
-- **WHEN** the admin clicks the export button
-- **THEN** a modal SHALL appear with: format selection (Excel/CSV), and the time range SHALL be pre-filled from the current dashboard time filter
-
-#### Scenario: Download triggers
-- **WHEN** the admin clicks "Download" in the modal
-- **THEN** the browser SHALL initiate a file download from the export endpoint with the selected format and time range parameters
+## ADDED Requirements
 
 ### Requirement: A sheet that cannot be filled stops the export
 
@@ -119,4 +58,3 @@ Sheets SHALL obtain their data by calling the corresponding pure aggregation fun
 
 - **WHEN** the requested time range contains no data but every query succeeds
 - **THEN** the file is produced normally with empty sheets, because nothing failed
-
