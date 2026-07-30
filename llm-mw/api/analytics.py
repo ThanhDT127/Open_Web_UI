@@ -6,21 +6,27 @@ from zoneinfo import ZoneInfo
 from config import logger
 from core.db import db_conn, db_ow_conn
 from utils.auth_guard import require_admin_or_session
-from api.summary_v2 import compute_usage_summary
+from api.summary_v2 import compute_usage_summary, _resolve_range
 
-def _time_boundaries(minutes: int = 43200, start: str = None, end: str = None):
-    if start and end:
-        try:
-            start_dt = dt.datetime.fromisoformat(start.replace('Z', '+00:00'))
-            end_dt = dt.datetime.fromisoformat(end.replace('Z', '+00:00'))
-            return start_dt, end_dt
-        except Exception:
-            pass
-    end_dt = dt.datetime.now(dt.timezone.utc)
-    start_dt = end_dt - dt.timedelta(minutes=minutes)
-    return start_dt, end_dt
 
-def _resolve_ow_ids_to_emails(ow_ids):
+def _window(minutes, start, end):
+    """
+    Resolve the request's time parameters through the one shared resolver.
+
+    The helper this replaced swallowed a bad datetime and silently substituted the last
+    30 days, so the same malformed parameter produced an error on the usage tabs and a
+    plausible-looking chart here — with no way for the reader to tell which window they
+    were looking at. _resolve_range raises 400 instead.
+
+    Only the window is taken. Bucket width stays keyed off `minutes` at each call site:
+    get_chat_analytics buckets hourly for short ranges, and letting the resolver derive
+    the bucket would quietly switch that chart to daily.
+    """
+    cutoff, end_time, _ = _resolve_range(minutes, start, end)
+    return cutoff, end_time
+
+
+def _resolve_ow_ids_to_emails(ow_ids, strict: bool = False):
     """
     Map Open WebUI user UUIDs to middleware user ids (emails).
 
@@ -31,6 +37,14 @@ def _resolve_ow_ids_to_emails(ow_ids):
     history: mw_users first, then the audit log as a fallback.
 
     Returns {ow_uuid: email} for whatever could be resolved.
+
+    `strict` decides what a read failure means to the caller. An empty map is the
+    honest answer to "nothing resolved" and is also what a failed read leaves behind,
+    so the two are indistinguishable from the outside. Callers that turn this map into
+    a claim about an account — alive, deleted — must pass strict=True and handle the
+    exception, because stating either claim from a map that was never filled is a
+    guess presented as a fact. Callers that only use it to improve a display name can
+    leave it False and degrade quietly.
     """
     ow_ids = [i for i in ow_ids if i]
     resolved = {}
@@ -59,12 +73,31 @@ def _resolve_ow_ids_to_emails(ow_ids):
                         resolved.setdefault(ow_id, mw_id)
     except Exception as e:
         logger.error("Error resolving Open WebUI ids to emails: %s", e, exc_info=True)
+        if strict:
+            raise
     return resolved
+
+
+def _load_mw_user_status() -> dict:
+    """
+    {email: "active" | "disabled" | "deleted"} for every middleware account.
+
+    Raises on failure rather than returning an empty map: the empty map is what a
+    healthy install with no accounts also looks like, and callers read a missing key
+    as "this account is fine".
+    """
+    status = {}
+    with db_conn() as conn:
+        c = conn.cursor()
+        c.execute('SELECT user_id, active, deleted_at FROM mw_users')
+        for uid, active, deleted_at in c.fetchall():
+            status[uid] = "deleted" if deleted_at else ("active" if active else "disabled")
+    return status
 
 
 def get_chat_analytics(request: Request, minutes: int = Query(43200), start: str = Query(None), end: str = Query(None)):
     require_admin_or_session(request)
-    start_dt, end_dt = _time_boundaries(minutes, start, end)
+    start_dt, end_dt = _window(minutes, start, end)
     
     # 1. Open WebUI metrics
     total_chats = 0
@@ -186,116 +219,136 @@ def get_chat_analytics(request: Request, minutes: int = Query(43200), start: str
         "leaderboard": leaderboard
     }
 
-def get_satisfaction_analytics(request: Request, minutes: int = Query(43200), start: str = Query(None), end: str = Query(None)):
-    require_admin_or_session(request)
-    start_dt, end_dt = _time_boundaries(minutes, start, end)
-    
+def compute_satisfaction(start_dt, end_dt) -> dict:
+    """
+    Satisfaction aggregation over a resolved window. Pure: no Request, no auth.
+
+    Split out so the report export can call it directly. Calling the handler forced the
+    exporter to catch HTTPException, and catching it turned a failed feedback query into
+    an empty sheet — indistinguishable from "nobody rated anything", in a file that
+    downloaded as though it were complete. Let failures raise; see _collect_groups.
+    """
     start_ts = int(start_dt.timestamp())
     end_ts = int(end_dt.timestamp())
-    
-    totals = {"positive": 0, "negative": 0, "total": 0, "csat_percent": 0}
+
+    totals = {"positive": 0, "negative": 0, "total": 0, "csat_percent": 0, "feedback_rows": 0}
     model_stats = defaultdict(lambda: {"positive": 0, "negative": 0, "total": 0})
     recent_feedback = []
-    
-    try:
-        with db_ow_conn() as conn:
-            cursor = conn.cursor()
-            
-            # 1. SQL Aggregation for Totals
-            cursor.execute('''
-                SELECT 
-                    COALESCE(SUM(CASE WHEN data::json->>'rating' = '1' THEN 1 ELSE 0 END), 0) as positive,
-                    COALESCE(SUM(CASE WHEN data::json->>'rating' = '-1' THEN 1 ELSE 0 END), 0) as negative
-                FROM feedback 
-                WHERE created_at >= %s AND created_at <= %s
-            ''', (start_ts, end_ts))
-            row = cursor.fetchone()
-            if row:
-                totals["positive"] = int(row[0])
-                totals["negative"] = int(row[1])
-                totals["total"] = totals["positive"] + totals["negative"]
-                if totals["total"] > 0:
-                    totals["csat_percent"] = int((totals["positive"] / totals["total"]) * 100)
-            
-            # 2. SQL Aggregation for Model Leaderboard
-            cursor.execute('''
-                SELECT 
-                    COALESCE(meta::json->>'model_id', 'unknown') as model_id,
-                    COALESCE(SUM(CASE WHEN data::json->>'rating' = '1' THEN 1 ELSE 0 END), 0) as positive,
-                    COALESCE(SUM(CASE WHEN data::json->>'rating' = '-1' THEN 1 ELSE 0 END), 0) as negative
-                FROM feedback 
-                WHERE created_at >= %s AND created_at <= %s
-                  AND (data::json->>'rating' = '1' OR data::json->>'rating' = '-1')
-                GROUP BY meta::json->>'model_id'
-            ''', (start_ts, end_ts))
-            
-            for row in cursor.fetchall():
-                m_id, pos, neg = row[0], int(row[1]), int(row[2])
-                tot = pos + neg
-                if tot > 0:
-                    model_stats[m_id] = {
-                        "positive": pos,
-                        "negative": neg,
-                        "total": tot,
-                        "csat_percent": int((pos / tot) * 100)
-                    }
-                    
-            # 3. Fetch Recent Feedback (Limit 50)
-            cursor.execute('''
-                SELECT f.data, f.meta, f.created_at, u.name, f.user_id, u.email
-                FROM feedback f
-                LEFT JOIN "user" u ON f.user_id = u.id
-                WHERE f.created_at >= %s AND f.created_at <= %s
-                  AND (f.data::json->>'rating' = '1' OR f.data::json->>'rating' = '-1')
-                ORDER BY f.created_at DESC
-                LIMIT 50
-            ''', (start_ts, end_ts))
-            
-            for row in cursor.fetchall():
-                data_str, meta_str, created_at, user_name, fb_user_id, ow_email = row
-                try:
-                    data = data_str if isinstance(data_str, dict) else (json.loads(data_str) if data_str else {})
-                    meta = meta_str if isinstance(meta_str, dict) else (json.loads(meta_str) if meta_str else {})
-                except:
-                    continue
-                
-                recent_feedback.append({
-                    "rating": int(data.get("rating", 0)),
-                    "created_at": created_at,
-                    "reason": data.get("reason", ""),
-                    "comment": data.get("comment", ""),
-                    "user_name": user_name,
-                    "user_id": fb_user_id,
-                    # Current OW email when the account still exists; resolved below otherwise
-                    "email": ow_email,
-                    "model_id": meta.get("model_id", "unknown")
-                })
-                
-    except Exception as e:
-        logger.error("Error querying OW DB for satisfaction analytics: %s", e, exc_info=True)
 
+    # No try/except around this block. It used to log the error and fall through with
+    # every counter at zero, which renders as "nobody has rated anything" — a reading
+    # indistinguishable from the truth, so the failure was invisible both on the tab
+    # and in the exported file.
+    with db_ow_conn() as conn:
+        cursor = conn.cursor()
+
+        # 1. SQL Aggregation for Totals
+        # feedback_rows counts every row, while total counts only thumbs up plus
+        # thumbs down. They are equal today because Open WebUI writes nothing else,
+        # but a neutral or null rating would make "total" quietly undercount while
+        # still being labelled as the number of feedback entries. The display only
+        # mentions the difference when there is one.
+        cursor.execute('''
+            SELECT
+                COALESCE(SUM(CASE WHEN data::json->>'rating' = '1' THEN 1 ELSE 0 END), 0) as positive,
+                COALESCE(SUM(CASE WHEN data::json->>'rating' = '-1' THEN 1 ELSE 0 END), 0) as negative,
+                COUNT(*) as feedback_rows
+            FROM feedback
+            WHERE created_at >= %s AND created_at <= %s
+        ''', (start_ts, end_ts))
+        row = cursor.fetchone()
+        if row:
+            totals["positive"] = int(row[0])
+            totals["negative"] = int(row[1])
+            totals["feedback_rows"] = int(row[2])
+            totals["total"] = totals["positive"] + totals["negative"]
+            if totals["total"] > 0:
+                # Unrounded on purpose. int() truncates, so 2/3 rendered as 66% —
+                # biased low every time, and unrecoverable once the backend has cut
+                # it. Rounding happens once, in the display layer.
+                totals["csat_percent"] = (totals["positive"] / totals["total"]) * 100
+        
+        # 2. SQL Aggregation for Model Leaderboard
+        cursor.execute('''
+            SELECT 
+                COALESCE(meta::json->>'model_id', 'unknown') as model_id,
+                COALESCE(SUM(CASE WHEN data::json->>'rating' = '1' THEN 1 ELSE 0 END), 0) as positive,
+                COALESCE(SUM(CASE WHEN data::json->>'rating' = '-1' THEN 1 ELSE 0 END), 0) as negative
+            FROM feedback 
+            WHERE created_at >= %s AND created_at <= %s
+              AND (data::json->>'rating' = '1' OR data::json->>'rating' = '-1')
+            GROUP BY meta::json->>'model_id'
+        ''', (start_ts, end_ts))
+        
+        for row in cursor.fetchall():
+            m_id, pos, neg = row[0], int(row[1]), int(row[2])
+            tot = pos + neg
+            if tot > 0:
+                model_stats[m_id] = {
+                    "positive": pos,
+                    "negative": neg,
+                    "total": tot,
+                    # Unrounded, like the overall figure above.
+                    "csat_percent": (pos / tot) * 100
+                }
+                
+        # 3. Fetch Recent Feedback (Limit 50)
+        cursor.execute('''
+            SELECT f.data, f.meta, f.created_at, u.name, f.user_id, u.email
+            FROM feedback f
+            LEFT JOIN "user" u ON f.user_id = u.id
+            WHERE f.created_at >= %s AND f.created_at <= %s
+              AND (f.data::json->>'rating' = '1' OR f.data::json->>'rating' = '-1')
+            ORDER BY f.created_at DESC
+            LIMIT 50
+        ''', (start_ts, end_ts))
+        
+        for row in cursor.fetchall():
+            data_str, meta_str, created_at, user_name, fb_user_id, ow_email = row
+            try:
+                data = data_str if isinstance(data_str, dict) else (json.loads(data_str) if data_str else {})
+                meta = meta_str if isinstance(meta_str, dict) else (json.loads(meta_str) if meta_str else {})
+            except:
+                continue
+            
+            recent_feedback.append({
+                "rating": int(data.get("rating", 0)),
+                "created_at": created_at,
+                "reason": data.get("reason", ""),
+                "comment": data.get("comment", ""),
+                "user_name": user_name,
+                "user_id": fb_user_id,
+                # Current OW email when the account still exists; resolved below otherwise
+                "email": ow_email,
+                "model_id": meta.get("model_id", "unknown")
+            })
+            
     # Feedback from users deleted in Open WebUI has no name/email to join against.
     # Fall back to middleware identity records, which are not tied to OW's user lifecycle:
     # mw_users mapping -> audit log mapping -> stable email.
     missing_ids = list({fb["user_id"] for fb in recent_feedback if not fb["email"] and fb["user_id"]})
-    resolved = _resolve_ow_ids_to_emails(missing_ids)
 
-    # The badge must reflect each account's CURRENT middleware status, keyed by
-    # email — so a deleted-then-recreated account (same email, new uuid) is no
-    # longer tagged as deleted even on feedback it left under the old uuid.
-    mw_status = {}
+    # Both reads below decide the same thing — whether an account is still with us — and
+    # both used to swallow their own failure, in opposite directions: a failed lookup left
+    # a live user reading as "Đã xóa", while a failed status read left a deleted user
+    # reading as active. Neither could be defaulted away, since a default that fixes one
+    # breaks the other. So the failure is recorded instead, and the verdict is withheld.
+    identity_ok = True
+    resolved, mw_status = {}, {}
     try:
-        with db_conn() as conn:
-            c = conn.cursor()
-            c.execute('SELECT user_id, active, deleted_at FROM mw_users')
-            for uid, active, deleted_at in c.fetchall():
-                mw_status[uid] = "deleted" if deleted_at else ("active" if active else "disabled")
+        resolved = _resolve_ow_ids_to_emails(missing_ids, strict=True)
+        # Status keyed by email, not uuid, so a deleted-then-recreated account (same
+        # email, new uuid) is no longer tagged as deleted on feedback it left before.
+        mw_status = _load_mw_user_status()
     except Exception as e:
-        logger.error("Error loading user status for satisfaction: %s", e, exc_info=True)
+        logger.error("Error resolving feedback author identity: %s", e, exc_info=True)
+        identity_ok = False
 
     for fb in recent_feedback:
         email = fb.get("email") or resolved.get(fb.get("user_id") or "")
-        if email and email in mw_status:
+        if not identity_ok:
+            fb["user_status"] = "unknown"
+        elif email and email in mw_status:
             fb["user_status"] = mw_status[email]
         elif email:
             # Present in Open WebUI but not provisioned in middleware -> not deleted
@@ -304,7 +357,14 @@ def get_satisfaction_analytics(request: Request, minutes: int = Query(43200), st
             fb["user_status"] = "deleted" if fb.get("user_id") else "unknown"
         if not fb["user_name"]:
             uid = fb.get("user_id") or ""
-            fb["user_name"] = email or (f"Đã xóa ({uid[:8]})" if uid else "Unknown")
+            if email:
+                fb["user_name"] = email
+            elif not uid:
+                fb["user_name"] = "Unknown"
+            else:
+                # "Đã xóa" is a claim about the account, so it is only made when the
+                # records backing it were actually read.
+                fb["user_name"] = f"Đã xóa ({uid[:8]})" if identity_ok else f"Không rõ ({uid[:8]})"
         fb.pop("email", None)
 
     model_leaderboard = []
@@ -318,9 +378,16 @@ def get_satisfaction_analytics(request: Request, minutes: int = Query(43200), st
         })
         
     model_leaderboard = sorted(model_leaderboard, key=lambda x: (x["csat_percent"], x["total"]), reverse=True)
-    
+
     return {
         "totals": totals,
         "model_leaderboard": model_leaderboard,
         "recent_feedback": recent_feedback
     }
+
+
+def get_satisfaction_analytics(request: Request, minutes: int = Query(43200), start: str = Query(None), end: str = Query(None)):
+    """HTTP wrapper: auth and parameter resolution only. The aggregation is pure."""
+    require_admin_or_session(request)
+    start_dt, end_dt = _window(minutes, start, end)
+    return compute_satisfaction(start_dt, end_dt)

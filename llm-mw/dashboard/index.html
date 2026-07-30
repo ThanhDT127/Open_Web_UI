@@ -134,7 +134,7 @@
                     <div class="metric-label">⭐ Mức hài lòng</div>
                     <div class="metric-q">Người dùng có hài lòng không?</div>
                     <div class="metric-value" id="ovCsatValue">-</div>
-                    <div class="metric-detail" id="ovCsatDetail">- lượt đánh giá</div>
+                    <div class="metric-detail" id="ovCsatDetail">- lượt khen/chê</div>
                     <div class="metric-hint">Theo khoảng đang xem</div>
                 </div>
                 <!-- System Health (global range) -->
@@ -1702,9 +1702,15 @@
                 <div class="metric-card">
                     <div class="metric-label">📊 Total Votes</div>
                     <div class="metric-value" id="csatTotalCount">-</div>
-                    <div class="metric-detail">Tổng số lượt đánh giá</div>
+                    <!-- Says khen/chê, not "đánh giá": this is the CSAT denominator, so
+                         feedback carrying neither rating is not in it. -->
+                    <div class="metric-detail">Tổng lượt khen/chê — mẫu số của CSAT</div>
                 </div>
             </div>
+
+            <!-- Filled by satisfaction.js only when feedback rows exist that carry
+                 neither a positive nor a negative rating. Empty otherwise. -->
+            <div id="csatExcludedNote" style="margin-top: 10px; font-size: 12px; color: #94a3b8;"></div>
 
             <!-- Model Leaderboard -->
             <div class="section">
