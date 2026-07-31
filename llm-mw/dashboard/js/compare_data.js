@@ -57,8 +57,19 @@ function windowParams(win) {
 // with different pick functions — Overview and Usage both read /summary — and the cache
 // key cannot include `pick`. Caching the picked value would silently hand the second
 // caller the first caller's extraction.
+// `extra` belongs in the key. It reached the request but not the key until RAG Health
+// became the first caller to pass it, at which point switching the tab's model filter
+// would have been served the previous filter's response — a badge comparing this model's
+// present against another model's past, with nothing on screen to reveal it.
+function extraKey(extra) {
+    const pairs = Object.entries(extra || {}).filter(([, v]) => v);
+    if (!pairs.length) return '';
+    pairs.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return '|' + pairs.map(([k, v]) => `${k}=${v}`).join('&');
+}
+
 async function fetchWindow(path, win, extra) {
-    const key = `${path}|${win.start}|${win.end}`;
+    const key = `${path}|${win.start}|${win.end}${extraKey(extra)}`;
     if (cache.has(key)) return cache.get(key);
 
     const promise = (async () => {
