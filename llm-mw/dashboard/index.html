@@ -1168,56 +1168,60 @@
         <div id="raghealthTab" class="tab-content">
             <div class="insight-banner">
                 <span class="insight-icon">🧬</span>
-                <span class="insight-text">RAG pipeline health — embedding ingestion failures, retrieval
-                    citation hit-rate, and vector-storage anomalies. All data is read-only.</span>
+                <span class="insight-text">Sức khỏe của tính năng "hỏi theo tài liệu công ty", chia theo ba
+                    công đoạn: nạp tài liệu vào kho → tìm lại đúng đoạn để trả lời → giữ kho gọn gàng. Chia
+                    như vậy để khi câu trả lời kém thì biết ngay hỏng ở khâu nào. Chỉ đọc, không sửa gì.</span>
             </div>
 
             <!-- Model/User filters — time range comes from the shared dashboard control above -->
             <div class="log-filters"
                 style="display: grid; grid-template-columns: repeat(2, 1fr) auto; gap: 15px; margin-bottom: 20px; padding: 15px; background: #1e293b; border-radius: 8px; align-items: flex-end;">
                 <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Model</label>
+                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Lọc theo model</label>
                     <select id="ragModel" class="filter-select">
-                        <option value="">All Models</option>
+                        <option value="">Tất cả model</option>
                     </select>
                 </div>
                 <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">User</label>
+                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Lọc theo người dùng</label>
                     <select id="ragUser" class="filter-select">
-                        <option value="">All Users</option>
+                        <option value="">Tất cả người dùng</option>
                     </select>
                 </div>
                 <div style="display: flex; gap: 10px;">
-                    <button onclick="window.ragHealthAPI.apply()" class="btn-apply">Apply</button>
-                    <button onclick="window.ragHealthAPI.reset()" class="btn-secondary">Reset</button>
+                    <button onclick="window.ragHealthAPI.apply()" class="btn-apply">Áp dụng</button>
+                    <button onclick="window.ragHealthAPI.reset()" class="btn-secondary">Bỏ lọc</button>
                 </div>
             </div>
 
             <!-- ── Ingestion ── -->
             <div class="section">
-                <div class="section-title">📥 Ingestion — Embedding Failures</div>
+                <div class="section-title">📥 Tình trạng nạp tài liệu vào kho</div>
+                <!-- Without this a rejected range (400) left the previous window's numbers
+                     on screen with nothing to say they were stale. -->
+                <div id="ragIngestError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
                 <div class="metrics">
                     <div class="metric-card">
-                        <div class="metric-label">🔢 Embedding Calls</div>
+                        <div class="metric-label">🔢 Số lượt nạp tài liệu</div>
                         <div class="metric-value" id="ragIngestCalls">-</div>
-                        <div class="metric-detail">/v1/embeddings in range</div>
+                        <div class="metric-detail">Số lần gọi /v1/embeddings trong khoảng đang xem</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-label">❌ Failure Rate</div>
+                        <div class="metric-label">❌ Tỷ lệ nạp tài liệu thất bại</div>
                         <div class="metric-value" id="ragIngestFailRate">-</div>
-                        <div class="metric-detail" id="ragIngestFailCount">0 failures</div>
+                        <div class="metric-detail" id="ragIngestFailCount">0 lượt lỗi</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-label">⚡ Avg Latency</div>
+                        <div class="metric-label">⚡ Thời gian trung bình mỗi lượt nạp</div>
                         <div class="metric-value" id="ragIngestLatency">-</div>
-                        <div class="metric-detail">Embedding call latency</div>
+                        <div class="metric-detail">Tính trên các lượt nạp trong khoảng đang xem</div>
                     </div>
                 </div>
                 <div class="chart-container">
-                    <div class="chart-title">📉 Failure Rate Over Time</div>
+                    <div class="chart-title">📉 Tỷ lệ nạp thất bại theo ngày</div>
                     <canvas id="ragIngestChart"></canvas>
                 </div>
-                <div class="section-title" style="margin-top: 20px;">Recent Failures</div>
+                <div class="section-title" style="margin-top: 20px;">Các lượt nạp thất bại gần đây</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -1230,7 +1234,7 @@
                         </thead>
                         <tbody id="ragIngestFailures">
                             <tr>
-                                <td colspan="4" class="loading">No data</td>
+                                <td colspan="4" class="loading">Đang tải…</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1239,51 +1243,74 @@
 
             <!-- ── Retrieval ── -->
             <div class="section">
-                <div class="section-title">🔎 Retrieval — Citation Hit-Rate</div>
+                <div class="section-title">🔎 Mức độ trích dẫn nguồn khi có tài liệu kèm theo</div>
+                <div id="ragRetrError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
                 <div class="metrics">
                     <div class="metric-card">
-                        <div class="metric-label">📎 KB-Attached Messages</div>
+                        <div class="metric-label">📎 Số câu hỏi được kèm tài liệu</div>
                         <div class="metric-value" id="ragRetrAttached">-</div>
-                        <div class="metric-detail">Requests with a &lt;source&gt; tag</div>
+                        <div class="metric-detail">Có thẻ &lt;source&gt; được nạp vào prompt</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-label">✅ Cited</div>
+                        <div class="metric-label">✅ Số câu trả lời có ghi số nguồn</div>
                         <div class="metric-value" id="ragRetrCited">-</div>
-                        <div class="metric-detail">Produced a [N] citation</div>
+                        <div class="metric-detail" id="ragRetrCitedDetail">Có dấu [N] trong câu trả lời</div>
                     </div>
-                    <div class="metric-card accent-green">
-                        <div class="metric-label">🎯 Hit-Rate</div>
+                    <div class="metric-card" id="ragCardHitRate">
+                        <div class="metric-label">🎯 Tỷ lệ trích được nguồn</div>
                         <div class="metric-value" id="ragRetrHitRate">-</div>
-                        <div class="metric-detail"
-                            title="Logged response text is truncated at 2000 chars; late citation markers may be missed.">
-                            Citation hit-rate ⓘ</div>
+                        <div class="metric-detail" id="ragRetrHitRateDetail"
+                            title="Câu trả lời lưu trong log bị cắt ở 2000 ký tự, nên dấu trích dẫn nằm cuối câu trả lời dài có thể bị bỏ sót.">
+                            Chia trên số câu trả lời đọc được ⓘ</div>
+                    </div>
+                    <!-- Coverage. Its numerator is NOT the KB-Attached card beside it: that
+                         one counts every <source> tag, this one only the shared knowledge
+                         bases. The detail line prints both so the gap is never a mystery. -->
+                    <!-- No id: this card is deliberately never given an ok/warn/danger
+                         accent. Nobody has stated what share of questions should reach the
+                         knowledge base, and a colour would publish that verdict anyway. -->
+                    <div class="metric-card">
+                        <div class="metric-label">📚 Tỷ lệ câu hỏi dùng kho chung</div>
+                        <div class="metric-value" id="ragCoverage">-</div>
+                        <div class="metric-detail" id="ragCoverageDetail"
+                            title="Đếm lượt hỏi có kho tài liệu chung được nạp vào prompt (resource-type=collection). Không tính lượt người dùng tự kéo file lẻ vào chat — đó không phải kho chung. Đơn vị là LƯỢT HỎI, không phải cuộc trò chuyện: log của middleware không mang chat_id.">
+                            trên tổng lượt hỏi ⓘ</div>
                     </div>
                 </div>
+                <!-- Only rendered when answers are missing. An unpaired request is not a
+                     failure to cite, so it must be named rather than folded into the rate. -->
+                <div id="ragRetrUnpairedNote" style="margin-top: 10px; font-size: 12px; color: #94a3b8;"></div>
                 <div class="chart-container">
-                    <div class="chart-title">📊 Hit-Rate by Model</div>
+                    <div class="chart-title">📊 Tỷ lệ trích dẫn theo model</div>
+                    <!-- Models with no readable answer are not plotted, so the chart can go
+                         empty. An empty chart with no caption reads as "no data at all". -->
+                    <div id="ragRetrModelNote" style="font-size: 12px; color: #94a3b8; margin-bottom: 6px;"></div>
                     <canvas id="ragRetrModelChart"></canvas>
                 </div>
                 <div class="section-title" style="margin-top: 20px;"
-                    title="Grouped by source document; the <source id> index is per-request, not a knowledge-base id.">
-                    By Source ⓘ</div>
+                    title="Gom theo tên tài liệu. Số id trong thẻ <source id> chỉ là số thứ tự trong từng request, không phải mã kho tài liệu.">
+                    Mức sử dụng và tỷ lệ trích dẫn theo từng tài liệu ⓘ</div>
                 <div class="table-container">
                     <table>
                         <thead>
                             <tr>
                                 <th>Source</th>
                                 <th>Attached</th>
+                                <th title="Số lượt đọc được câu trả lời — mẫu số của Hit-Rate">Evaluated</th>
                                 <th>Cited</th>
                                 <th>Hit-Rate</th>
                             </tr>
                         </thead>
                         <tbody id="ragRetrBySource">
                             <tr>
-                                <td colspan="4" class="loading">No data</td>
+                                <td colspan="5" class="loading">Đang tải…</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                <div class="section-title" style="margin-top: 20px;">Zero-Citation Messages</div>
+                <div class="section-title" style="margin-top: 20px;"
+                    title="Chỉ liệt kê những lượt đã đọc được câu trả lời mà trong đó không có dấu [N] nào. Lượt không ghi được câu trả lời KHÔNG nằm ở đây.">
+                    Các câu hỏi có tài liệu nhưng không được trích nguồn ⓘ</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -1296,7 +1323,7 @@
                         </thead>
                         <tbody id="ragRetrZeroCite">
                             <tr>
-                                <td colspan="4" class="loading">No data</td>
+                                <td colspan="4" class="loading">Đang tải…</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1305,27 +1332,27 @@
 
             <!-- ── Storage ── -->
             <div class="section">
-                <div class="section-title">💾 Storage — Vector Anomalies</div>
+                <div class="section-title">💾 Các bất thường trong kho lưu trữ</div>
                 <div class="metrics">
                     <div class="metric-card usage-missing">
-                        <div class="metric-label">🈳 Zero-Chunk KBs</div>
+                        <div class="metric-label">🈳 Số kho có file nhưng chưa xử lý</div>
                         <div class="metric-value" id="ragStorZeroKB">-</div>
-                        <div class="metric-detail">KBs with files but no chunks</div>
+                        <div class="metric-detail">Tài liệu đã tải lên nhưng chatbot chưa tra được</div>
                     </div>
                     <div class="metric-card usage-missing">
-                        <div class="metric-label">👻 Orphaned Collections</div>
+                        <div class="metric-label">👻 Số mảng dữ liệu không còn thuộc kho nào</div>
                         <div class="metric-value" id="ragStorOrphan">-</div>
-                        <div class="metric-detail">Chunks with no file/KB</div>
+                        <div class="metric-detail">Không thuộc file hay kho nào còn tồn tại</div>
                     </div>
                     <div class="metric-card usage-missing">
-                        <div class="metric-label">📐 Chunk Outliers</div>
+                        <div class="metric-label">📐 Số file xử lý ra ít dữ liệu bất thường</div>
                         <div class="metric-value" id="ragStorOutlier">-</div>
-                        <div class="metric-detail" title="Heuristic: chunk count vs. estimate from file size.">
-                            Anomalously low chunks ⓘ</div>
+                        <div class="metric-detail" title="Ước lượng thô: so số đoạn dữ liệu thực tế với số đoạn suy ra từ dung lượng file. Dấu hiệu file hỏng hoặc đọc không ra chữ.">
+                            Dấu hiệu file hỏng hoặc đọc không ra chữ ⓘ</div>
                     </div>
                 </div>
                 <div id="ragStorError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
-                <div class="section-title" style="margin-top: 20px;">Zero-Chunk Knowledge Bases</div>
+                <div class="section-title" style="margin-top: 20px;">Danh sách kho có file nhưng chưa xử lý</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -1338,12 +1365,12 @@
                         </thead>
                         <tbody id="ragStorZeroKBTable">
                             <tr>
-                                <td colspan="4" class="loading">No data</td>
+                                <td colspan="4" class="loading">Đang tải…</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                <div class="section-title" style="margin-top: 20px;">Orphaned Chunks</div>
+                <div class="section-title" style="margin-top: 20px;">Danh sách dữ liệu không còn thuộc kho nào</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -1354,13 +1381,13 @@
                         </thead>
                         <tbody id="ragStorOrphanTable">
                             <tr>
-                                <td colspan="2" class="loading">No data</td>
+                                <td colspan="2" class="loading">Đang tải…</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
                 <div class="section-title" style="margin-top: 20px;"
-                    title="Heuristic — chunk count vs. estimate from file size.">Chunk-Count Outliers ⓘ</div>
+                    title="Ước lượng thô — so số đoạn dữ liệu thực tế với số đoạn suy ra từ dung lượng file.">Danh sách file xử lý ra ít dữ liệu bất thường ⓘ</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -1374,7 +1401,7 @@
                         </thead>
                         <tbody id="ragStorOutlierTable">
                             <tr>
-                                <td colspan="5" class="loading">No data</td>
+                                <td colspan="5" class="loading">Đang tải…</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1398,6 +1425,11 @@
             <!-- ── Inventory ── -->
             <div class="section">
                 <div class="section-title">📦 Inventory &amp; Growth</div>
+                <!-- The three sections read three independent endpoints, so each carries its
+                     own banner: one failing must not hide the two that answered. Without
+                     these the endpoints' `error` field was returned and never displayed, and
+                     a dead database rendered as a corpus of zeros. -->
+                <div id="knInventoryError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
                 <div class="metrics">
                     <div class="metric-card">
                         <div class="metric-label">📚 Knowledge Bases</div>
@@ -1444,6 +1476,7 @@
             <!-- ── KB Value Matrix ── -->
             <div class="section">
                 <div class="section-title">⭐ KB Value Matrix</div>
+                <div id="knKbValueError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
                 <div class="metrics">
                     <div class="metric-card accent-green">
                         <div class="metric-label">⭐ Star</div>
@@ -1506,6 +1539,7 @@
             <!-- ── Governance ── -->
             <div class="section">
                 <div class="section-title">🏛️ Governance</div>
+                <div id="knGovernanceError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
                 <div class="metrics">
                     <div class="metric-card usage-missing">
                         <div class="metric-label">♻️ Reclaimable</div>

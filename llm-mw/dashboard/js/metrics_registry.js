@@ -164,6 +164,41 @@ export const METRICS = {
         // note under the scorecard is what explains that gap.
     },
 
+    // ── RAG Health (Phase 9) — source: /v1/_mw/rag-health/retrieval ──
+    citation_hit_rate: {
+        label: 'Tỷ lệ trích dẫn', fmt: 'pct1', delta: 'pp', polarity: 'up-good',
+        // The denominator is answers the middleware actually recorded, NOT every
+        // request that had a document attached. Requests whose answer was never logged
+        // are reported separately as `unpaired` and are not evidence either way.
+        //
+        // `good` matches GOOD_HIT_RATE in core/knowledge_analytics.py so the RAG Health
+        // card and the Knowledge value matrix cannot drift apart — the same duplication
+        // Phase 8 removed for csat_percent.
+        //
+        // minSample is 20 for the same Wilson reason as csat_percent. On today's corpus
+        // the widest window has a single evaluated answer, so nothing gets coloured.
+        // That is the honest state, not a bug.
+        bands: { good: 60, warn: 30 },
+        minSample: 20,
+    },
+    kb_coverage_percent: {
+        label: 'Tỷ lệ câu hỏi dùng kho chung', fmt: 'pct1', delta: 'pp', polarity: 'up-good',
+        // Numerator counts questions that reached a shared knowledge base
+        // (resource-type="collection"), NOT every <source> tag — a file the user dragged
+        // into one chat is not the corpus the company invested in.
+        //
+        // No `bands` on purpose: nobody has stated what share of questions *should* reach
+        // the knowledge base, and a colour is a verdict. Same reason
+        // top10_pct_cost_share renders without an accent. `minSample` is still declared
+        // because callers use it to caption a thin window, not to colour one.
+        minSample: 20,
+    },
+    embedding_calls: {
+        label: 'Số lượt nạp tài liệu', fmt: 'int', delta: 'rel', polarity: 'neutral',
+        // Ingestion volume. More or fewer is neither good nor bad on its own — it tracks
+        // how much material was being loaded, which is a workload figure, not a target.
+    },
+
     // ── Blocked from comparison ──
     department_count: {
         label: 'Số phòng ban', fmt: 'int', compare: false,
@@ -365,6 +400,19 @@ function line(prefix, metricKey, current, side) {
  * Attach (or refresh) the comparison badge on the card owning `valueElementId`.
  * Metrics declared `compare: false` are skipped — deliberately, see METRICS.
  */
+// Remove a card's comparison badge without drawing a new one.
+//
+// Distinct from renderDelta with empty sides: that renders "KT: — / CK: —", which means
+// "those windows held no data". Withholding a comparison because the current window is
+// below the metric's minimum sample is a different statement, and the card's own detail
+// line already carries it. Two different reasons must not share one rendering.
+export function clearDelta(valueElementId) {
+    const anchor = document.getElementById(valueElementId);
+    const card = anchor && (anchor.closest('.metric-card') || anchor.parentElement);
+    const badge = card && card.querySelector('.delta-badge');
+    if (badge) badge.remove();
+}
+
 export function renderDelta(valueElementId, metricKey, { current, kt, ck } = {}) {
     const anchor = document.getElementById(valueElementId);
     if (!anchor) return;

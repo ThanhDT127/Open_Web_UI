@@ -78,17 +78,36 @@ def test_meta_size_defaults_zero():
 
 def test_classify_dead_vs_unproven():
     # Has chunks but zero demand -> dead; no chunks and zero demand -> unproven.
-    assert _classify(attach=0, hit_rate=0.0, chunk_count=100) == "dead"
-    assert _classify(attach=0, hit_rate=0.0, chunk_count=0) == "unproven"
+    assert _classify(attach=0, evaluated=0, hit_rate=None, chunk_count=100) == "dead"
+    assert _classify(attach=0, evaluated=0, hit_rate=None, chunk_count=0) == "unproven"
 
 
 def test_classify_unproven_below_sample_floor():
-    assert _classify(attach=MIN_SAMPLE_ATTACHMENTS - 1, hit_rate=100.0, chunk_count=10) == "unproven"
+    n = MIN_SAMPLE_ATTACHMENTS - 1
+    assert _classify(attach=n, evaluated=n, hit_rate=100.0, chunk_count=10) == "unproven"
 
 
 def test_classify_star_vs_needs_tuning():
-    assert _classify(attach=MIN_SAMPLE_ATTACHMENTS, hit_rate=GOOD_HIT_RATE, chunk_count=10) == "star"
-    assert _classify(attach=20, hit_rate=GOOD_HIT_RATE - 1, chunk_count=10) == "needs_tuning"
+    n = MIN_SAMPLE_ATTACHMENTS
+    assert _classify(attach=n, evaluated=n, hit_rate=GOOD_HIT_RATE, chunk_count=10) == "star"
+    assert _classify(attach=20, evaluated=20, hit_rate=GOOD_HIT_RATE - 1, chunk_count=10) == "needs_tuning"
+
+
+def test_classify_withholds_verdict_when_answers_were_never_logged():
+    """Demand proven, quality unmeasurable -> unproven, never needs_tuning.
+
+    A KB attached 35 times whose answers were never recorded used to be classified
+    "needs tuning", which names the knowledge base as the thing at fault on the
+    strength of missing logs. Streamed answers only began emitting chat.response on
+    2026-07-01, so the whole June corpus took that path.
+    """
+    assert _classify(attach=35, evaluated=0, hit_rate=None, chunk_count=983) == "unproven"
+    # Enough attachments but too few readable answers to judge quality.
+    assert _classify(attach=35, evaluated=MIN_SAMPLE_ATTACHMENTS - 1, hit_rate=0.0,
+                     chunk_count=983) == "unproven"
+    # Once enough answers are readable the ordinary verdict resumes.
+    assert _classify(attach=35, evaluated=MIN_SAMPLE_ATTACHMENTS, hit_rate=0.0,
+                     chunk_count=983) == "needs_tuning"
 
 
 def test_stems_to_kbs_detects_ambiguity():
