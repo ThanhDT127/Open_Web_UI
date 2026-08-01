@@ -13,6 +13,7 @@ from threading import Lock
 
 from config import USERS_FILE, MW_SECRET, logger
 from config import USERS_FILE, MW_SECRET, logger
+from utils.client_ip import client_address
 
 # Thread lock for user operations (backward compat)
 _lock = Lock()
@@ -374,7 +375,7 @@ def require_user(request: Request) -> Dict[str, Any]:
     from config import logger, OPENWEBUI_SERVICE_KEY
 
     auth = request.headers.get("Authorization", "")
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = client_address(request) or "unknown"
     req_path = request.url.path
 
     if not auth.startswith("Bearer "):

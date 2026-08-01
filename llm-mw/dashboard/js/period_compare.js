@@ -23,7 +23,7 @@ function isLeapYear(year) {
 }
 
 // Read a UTC instant as the calendar fields a person in Vietnam would see.
-function toVnFields(date) {
+export function toVnFields(date) {
     const shifted = new Date(date.getTime() + VN_OFFSET_MINUTES * MS_PER_MINUTE);
     return {
         year: shifted.getUTCFullYear(),
@@ -36,7 +36,7 @@ function toVnFields(date) {
     };
 }
 
-function fromVnFields(f) {
+export function fromVnFields(f) {
     const asUtc = Date.UTC(f.year, f.month, f.day, f.hours, f.minutes, f.seconds, f.ms);
     return new Date(asUtc - VN_OFFSET_MINUTES * MS_PER_MINUTE);
 }
