@@ -143,8 +143,16 @@
                     <div class="metric-q">Hệ thống có đang lỗi/chậm không?</div>
                     <div class="metric-value" id="ovHealthValue">-</div>
                     <div class="metric-detail" id="ovHealthDetail">P95: -</div>
+                    <!-- Phase 10: infrastructure signals from /v1/_mw/health. Deliberately
+                         no account count here — the Users tab already answers that, under
+                         a different definition (see design decision 2). -->
+                    <div class="metric-detail" id="ovHealthInfra">—</div>
+                    <div class="metric-hint" id="ovHealthUptime"></div>
                     <div class="metric-hint">Tỷ lệ lỗi · theo khoảng đang xem</div>
                 </div>
+                <!-- Phase 10: spend anomaly. Computed in the browser from the series the
+                     chart already fetched — no new endpoint, no second query. -->
+                <div class="insight-banner" id="ovCostAnomaly" style="display:none"></div>
                 <!-- Cost Concentration (global range) -->
                 <div class="metric-card" id="ovCardConcentration">
                     <div class="metric-label">📊 Mức tập trung chi phí</div>
@@ -640,15 +648,47 @@
                         <div class="metric-label">Total Requests</div>
                         <div class="metric-value" id="accessTotal">-</div>
                     </div>
+                    <!-- Phase 10: the single "Error Rate" card was split into three.
+                         Each group maps to one repair action: call someone / review an
+                         access decision / raise a limit. The combined figure is gone from
+                         the UI entirely — it supported none of those actions. -->
                     <div class="metric-card">
-                        <div class="metric-label">Error Rate</div>
-                        <div class="metric-value" id="accessErrorRate">-</div>
+                        <div class="metric-label">Tỷ lệ lỗi hệ thống</div>
+                        <div class="metric-value" id="accessFailureRate">-</div>
+                        <div class="metric-detail" id="accessFailureDetail">5xx · không tính healthcheck</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Tỷ lệ bị từ chối</div>
+                        <div class="metric-value" id="accessDeniedRate">-</div>
+                        <div class="metric-detail" id="accessDeniedDetail">401 · 403</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Tỷ lệ chạm giới hạn</div>
+                        <div class="metric-value" id="accessThrottledRate">-</div>
+                        <div class="metric-detail" id="accessThrottledDetail">429</div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-label">Avg Latency</div>
                         <div class="metric-value" id="accessLatency">-</div>
                     </div>
+                    <div class="metric-card">
+                        <div class="metric-label">P95 tầng HTTP</div>
+                        <div class="metric-value" id="accessHttpP95">-</div>
+                        <div class="metric-detail" id="accessHttpP95Detail">—</div>
+                        <div class="metric-hint">Mọi request HTTP, kể cả tải file tĩnh — khác P95 tab Usage (thời gian model trả lời)</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Đăng nhập dashboard thất bại</div>
+                        <div class="metric-value" id="accessFailedLogins">-</div>
+                        <div class="metric-detail">Chỉ cửa dashboard — đăng nhập của nhân viên đi thẳng Open WebUI, không qua đây</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Healthcheck tự báo lỗi</div>
+                        <div class="metric-value" id="accessHealthProbe">-</div>
+                        <div class="metric-detail">5xx trên /health — container tự thăm dò, không phải người dùng gặp lỗi</div>
+                    </div>
                 </div>
+                <div class="insight-banner" id="accessErrorBanner" style="display:none"></div>
                 <table>
                     <thead>
                         <tr>
@@ -2051,7 +2091,10 @@
         const { initAPI } = await import(`/dashboard/js/main.js?v=${v}`);
         const { initNotifications } = await import(`/dashboard/js/notifications.js?v=${v}`);
         await initAPI();
-        initAuth();
+        // Awaited: initAuth now restores the session inline, and initNotifications
+        // immediately requests admin/notifications/unread — 53 of the 89 recorded
+        // refusals came from that request racing session restoration.
+        await initAuth();
         initNotifications();
     </script>
 </body>

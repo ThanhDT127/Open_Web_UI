@@ -14,7 +14,7 @@ from utils.logging import detail_log, audit_log, audit_from_request
 from core.audit_state import set_error_state, should_skip_audit, has_audit_state
 
 # Import route handlers
-from api.health import health_check
+from api.health import health_check, health_report
 from api.models import list_models
 from api.chat import chat_completions
 from api.images import generate_images
@@ -175,7 +175,11 @@ async def log_requests(request: Request, call_next):
 
 # Register routes
 # Health & Models
+# Kept unguarded and unchanged: Docker HEALTHCHECK calls it on localhost inside the
+# container, never through nginx. nginx has no `location /health`, so a browser asking
+# for it lands on Open WebUI instead — which is why the dashboard uses the route below.
 app.add_api_route("/health", health_check, methods=["GET"])
+app.add_api_route("/v1/_mw/health", health_report, methods=["GET"])  # Phase 10: dashboard-reachable, admin-guarded
 app.add_api_route("/v1/models", list_models, methods=["GET"])
 
 # Chat, Images, Audio

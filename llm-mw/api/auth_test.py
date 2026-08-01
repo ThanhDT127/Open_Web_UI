@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from core.auth import find_user, hash_subkey
 from config import logger
+from utils.client_ip import client_address
 
 
 async def auth_test(request: Request):
@@ -26,7 +27,7 @@ async def auth_test(request: Request):
         401: {"detail": "Invalid sub-key", "error_code": "INVALID_SUBKEY"}
         403: {"detail": "User account is deactivated", "error_code": "USER_INACTIVE"}
     """
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = client_address(request) or "unknown"
     
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):

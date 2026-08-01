@@ -40,6 +40,7 @@ const FORMATTERS = {
     rpm: (v) => (v == null ? '-' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 3 }) + '/ph'),
     age: (v) => formatAge(v),
     days: (v) => (v == null ? '—' : Number(v).toLocaleString() + ' ngày'),
+    gb: (v) => (v == null ? '—' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' GB'),
 };
 
 export function formatValue(metricKey, value) {
@@ -197,6 +198,57 @@ export const METRICS = {
         label: 'Số lượt nạp tài liệu', fmt: 'int', delta: 'rel', polarity: 'neutral',
         // Ingestion volume. More or fewer is neither good nor bad on its own — it tracks
         // how much material was being loaded, which is a workload figure, not a target.
+    },
+
+    // ── Access / Ops (Phase 10) — source: /v1/_mw/access/summary and /v1/_mw/health ──
+    http_p95_latency_ms: {
+        label: 'P95 tầng HTTP', fmt: 'ms', delta: 'rel', polarity: 'down-good',
+        // Deliberately NOT p95_latency_ms. Both payloads expose a field of that name, but
+        // they measure different things: p95_latency_ms is how long an upstream model took
+        // to answer (tab Usage), this is the duration of every HTTP request the service
+        // handled, static dashboard assets included. One label over two quantities is the
+        // "Total Requests" defect Phase 0 was created to remove.
+    },
+    failure_rate_percent: {
+        label: 'Tỷ lệ lỗi hệ thống', fmt: 'pct1', delta: 'pp', polarity: 'down-good',
+        // 5xx excluding the liveness probe. Means: call someone.
+        // No `bands`: nobody has stated what share of failures is acceptable here, and a
+        // colour is a verdict. Same treatment as top10_pct_cost_share and kb_coverage_percent.
+    },
+    denied_rate_percent: {
+        label: 'Tỷ lệ bị từ chối', fmt: 'pct1', delta: 'pp', polarity: 'down-good',
+        // 401/403. Means: review an access decision. No `bands`, same reason as above.
+    },
+    throttled_rate_percent: {
+        label: 'Tỷ lệ chạm giới hạn', fmt: 'pct1', delta: 'pp', polarity: 'down-good',
+        // 429. Means: a limit may need raising — a different action from the two above,
+        // which is the whole reason these are three figures and not one. No `bands`.
+    },
+    failed_dashboard_logins: {
+        label: 'Đăng nhập dashboard thất bại', fmt: 'int', delta: 'abs', polarity: 'down-good',
+        // The label must keep the word "dashboard". Staff sign-ins are routed by nginx to
+        // Open WebUI (`location /api/v1/auths/`) and never traverse this service, so this
+        // figure cannot carry that signal — a bare "failed logins" invites the reader to
+        // conclude staff credentials are being probed.
+    },
+    uptime_seconds: {
+        label: 'Chạy liên tục từ lần khởi động gần nhất', fmt: 'age', compare: false,
+        blockedReason: 'Đo từ lần khởi động tiến trình gần nhất, không thuộc khoảng thời '
+            + 'gian đang chọn. So kỳ sẽ là so một con số với chính nó.',
+    },
+    disk_free_gb: {
+        label: 'Dung lượng đĩa trống', fmt: 'gb', compare: false,
+        blockedReason: 'Số đọc tức thời, không phải tổng hợp theo khoảng. So kỳ vô nghĩa.',
+    },
+
+    // Minimum series length before a daily-spend anomaly may be reported. Declared here
+    // rather than beside the alert code, same mechanism as csat_percent/citation_hit_rate:
+    // on a 3-day series "twice the mean" is routine, and an alarm that fires routinely
+    // teaches people to ignore it.
+    cost_anomaly_series: {
+        label: 'Cảnh báo chi phí bất thường', fmt: 'usd4', compare: false,
+        minSample: 7,
+        blockedReason: 'Đây là ngưỡng cho cảnh báo, không phải một thẻ có badge so kỳ.',
     },
 
     // ── Blocked from comparison ──

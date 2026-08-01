@@ -8,6 +8,7 @@ import { getLastSummary } from './usage.js';
 import { renderDelta, formatValue, classify, minSample } from './metrics_registry.js';
 import { loadCompare, side } from './compare_data.js';
 import { pickAdoptionMetrics } from './adoption.js';
+import { toVnFields, fromVnFields } from './period_compare.js';
 
 // Apply an ok/warn/danger accent state to a metric-card element.
 function setCardState(cardId, state) {
@@ -39,6 +40,8 @@ function renderFromSummary(summary) {
     // hard threshold — render neutral (no accent) until leader confirms one.
     const share = totals.top10_pct_cost_share;
     setText('ovConcentrationValue', share != null ? `${share}%` : '—');
+
+    renderCostAnomaly(summary);
 
     // Fire-and-forget: a slow comparison must not hold up the current figures.
     renderSummaryCompare(totals);
@@ -124,11 +127,89 @@ async function loadCsat() {
     }
 }
 
+// ── Spend anomaly (Phase 10) ──
+// Pure arithmetic over the series the chart already retrieved: no endpoint, no re-query,
+// same reasoning that put the period comparison in the browser in Phase 2.
+const COST_ANOMALY_MULTIPLE = 2;
+
+function renderCostAnomaly(summary) {
+    const el = document.getElementById('ovCostAnomaly');
+    if (!el) return;
+    const hide = () => { el.style.display = 'none'; };
+
+    const series = (summary && summary.timeseries) || [];
+    // The last bucket is still accumulating. Comparing a partial total against
+    // full-bucket means compares two different quantities, so it is dropped rather
+    // than reported as unusually low.
+    const closed = series.slice(0, -1);
+
+    const floor = minSample('cost_anomaly_series');
+    if (closed.length < floor) {
+        // The reason is the series length, not the absence of a spike. On a short series
+        // "twice the mean" is routine, and an alarm that fires routinely gets ignored.
+        return hide();
+    }
+
+    const costs = closed.map(b => Number(b.cost_usd) || 0);
+    const mean = costs.reduce((a, b) => a + b, 0) / costs.length;
+    const last = costs[costs.length - 1];
+    if (!(mean > 0) || !(last > mean * COST_ANOMALY_MULTIPLE)) return hide();
+
+    el.style.display = '';
+    el.textContent = `⚠️ Chi phí kỳ gần nhất cao bất thường: `
+        + `${formatValue('cost_anomaly_series', last)} so với trung bình chuỗi `
+        + `${formatValue('cost_anomaly_series', mean)} `
+        + `(gấp ${(last / mean).toFixed(1)} lần, trên ${closed.length} kỳ đã đóng).`;
+}
+
+// ── System health infrastructure signals (Phase 10) ──
+// Reads /v1/_mw/health, which always answers 200: a degraded dependency is this report's
+// content, not a failure to produce it. `/health` keeps the 200/503 contract the
+// container probe needs. Not scoped to the global range — these are instantaneous.
+async function loadHealthInfra() {
+    try {
+        const res = await mwFetch('/v1/_mw/health');
+        if (!res || !res.ok) throw new Error(`HTTP ${res ? res.status : 'null'}`);
+        const h = await res.json();
+
+        const litellm = h.litellm === 'ok'
+            ? '🟢 LiteLLM ổn'
+            : `🔴 LiteLLM ${h.litellm || 'không rõ'}`;
+        const disk = h.disk_free_gb != null
+            ? `💾 ${formatValue('disk_free_gb', h.disk_free_gb)} trống`
+            : '💾 —';
+        setText('ovHealthInfra', `${litellm} · ${disk}`);
+
+        // "Uptime" would read as an outage report on a healthy system that was simply
+        // redeployed minutes ago — the figure resets to zero on every deploy.
+        setText('ovHealthUptime', h.uptime_seconds != null
+            ? `${METRIC_LABEL_UPTIME}: ${formatValue('uptime_seconds', h.uptime_seconds)}`
+              + ' · số của worker vừa trả lời, có thể nhích giữa hai lần tải'
+            : '');
+    } catch (err) {
+        console.error('Overview health infra load failed:', err);
+        // Clear both the figure and its caption. A caption left under a removed number
+        // reads as though it still describes something (the Phase 8 CSAT lesson).
+        setText('ovHealthInfra', '—');
+        setText('ovHealthUptime', '');
+    }
+}
+
+const METRIC_LABEL_UPTIME = 'Chạy liên tục từ lần khởi động gần nhất';
+
 // ── Cost MTD: summary for the current calendar month (ignores global range) ──
 async function loadCostMtd() {
     try {
         const now = new Date();
-        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0));
+        // Anchor the 1st in Vietnam time, not UTC. UTC midnight of the 1st is 07:00 in
+        // Vietnam, so a UTC anchor read the whole previous month as "this month" during
+        // the first 7 hours of every month, and dropped those 7 hours for the rest of it.
+        // Matches how user quota periods anchor server-side (core/quota.py::period_anchor_ms).
+        const vnNow = toVnFields(now);
+        const monthStart = fromVnFields({
+            year: vnNow.year, month: vnNow.month, day: 1,
+            hours: 0, minutes: 0, seconds: 0, ms: 0,
+        });
         const params = new URLSearchParams();
         params.append('start', monthStart.toISOString());
         params.append('end', now.toISOString());
@@ -190,7 +271,7 @@ export async function loadOverview() {
     if (summary) {
         renderFromSummary(summary);
     }
-    await Promise.all([loadCsat(), loadCostMtd(), loadAdoptionCards()]);
+    await Promise.all([loadCsat(), loadCostMtd(), loadAdoptionCards(), loadHealthInfra()]);
 }
 
 // Keep the reused-summary cards live when the global summary refreshes

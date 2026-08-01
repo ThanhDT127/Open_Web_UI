@@ -44,8 +44,10 @@ export async function loadProviders() {
 
         const t = data.totals || {};
         _setText('provProviderCount', t.provider_count ?? '—');
-        _setText('provTotalRemaining', t.total_remaining != null ? `$${t.total_remaining.toFixed(2)}` : '—');
-        _setText('provTotalSpent', t.total_spent != null ? `$${t.total_spent.toFixed(2)}` : '—');
+        // 4 decimals, matching the "Đã tiêu" column below: at 2 decimals a real spend
+        // under half a cent renders as "$0.00" while the table shows it as non-zero.
+        _setText('provTotalRemaining', t.total_remaining != null ? `$${t.total_remaining.toFixed(4)}` : '—');
+        _setText('provTotalSpent', t.total_spent != null ? `$${t.total_spent.toFixed(4)}` : '—');
         _setText('provTotalModels', data.total_models ?? '—');
 
         const rows = data.providers || [];
