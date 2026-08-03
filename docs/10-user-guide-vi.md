@@ -15,7 +15,9 @@ Tài liệu hướng dẫn sử dụng hệ thống Open WebUI với Middleware,
 5. [Quản Lý Quota & Chi Phí](#5-quản-lý-quota--chi-phí)
 6. [Quản Lý User & Subkey](#6-quản-lý-user--subkey)
 7. [Xuất File (Export Tool)](#7-xuất-file-export-tool)
-8. [Troubleshooting](#8-troubleshooting)
+8. [Kết Nối Tài Khoản Cá Nhân](#8-kết-nối-tài-khoản-cá-nhân)
+9. [Trợ Lý Phòng Ban](#9-trợ-lý-phòng-ban)
+10. [Troubleshooting](#10-troubleshooting)
 
 ---
 
@@ -320,9 +322,79 @@ curl -X POST http://localhost:5000/v1/_mw/admin/users/alice/rotate_key \
 
 ---
 
-## 8. Troubleshooting
+## 8. Kết Nối Tài Khoản Cá Nhân
 
-### 8.1 Lỗi Thường Gặp
+Các công cụ gửi mail Gmail, tra GitHub, đọc Google Drive đều chạy **dưới danh tính thật của bạn** — email bạn gửi đi hiện tên bạn và nằm trong hộp Sent của bạn, không phải một tài khoản dùng chung.
+
+> Office 365 **không** nằm trong nhóm này: nó đang là bản chạy thử, không kết nối tài khoản Microsoft của bạn. Xem cảnh báo ở mục 9.
+
+### 8.1 Cách kết nối
+
+Bạn không cần vào trang cài đặt nào. Cứ yêu cầu trợ lý làm việc đó:
+
+```
+Gửi mail Gmail cho anh Nam về lịch họp sáng mai
+```
+
+Nếu bạn **chưa liên kết** tài khoản, trợ lý trả về một link kết nối:
+
+> ⚠️ Tài khoản Google (Gmail) của bạn chưa được liên kết.
+> 👉 **Kết nối tài khoản Google của bạn**
+
+1. Bấm vào link → cửa sổ đăng nhập của Google/GitHub hiện ra
+2. Đăng nhập và bấm **Đồng ý** (Allow) với các quyền được xin
+3. Thấy màn hình "✓ Kết Nối Thành Công" → đóng cửa sổ, quay lại khung chat
+4. Yêu cầu lại việc lúc nãy — lần này trợ lý làm được
+
+Chỉ cần kết nối **một lần**; hệ thống tự gia hạn phiên. Link kết nối có hạn 10 phút và chỉ dùng được cho chính bạn.
+
+### 8.2 Dịch vụ kết nối được
+
+| Dịch vụ            | Trợ lý làm được gì                                             |
+| ------------------ | -------------------------------------------------------------- |
+| Microsoft 365      | Gửi/đọc mail Outlook, tạo/xem lịch, gửi tin Teams, đọc SharePoint |
+| Gmail              | Gửi email                                                      |
+| Google Drive       | Tìm và đọc nội dung file                                       |
+| GitHub             | Xem repo, đọc issue/PR, tìm code                               |
+
+### 8.3 Duyệt trước khi gửi
+
+Với các hành động **gửi ra ngoài** (gửi mail, tạo lịch mời người khác, nhắn Teams), trợ lý **không tự làm ngay**. Một hộp thoại hiện ra cho bạn xem trước nội dung:
+
+- Bấm **Duyệt** → hành động được thực hiện bằng tài khoản của bạn
+- Bấm **Từ chối** → hủy bỏ, không có gì được gửi đi
+
+Các hành động chỉ đọc (đọc mail, xem lịch, tìm file) chạy thẳng, không cần duyệt.
+
+---
+
+## 9. Công Cụ Theo Phòng Ban
+
+Bạn chọn **model AI bất kỳ** (ChatGPT, Gemini, Claude…) rồi **tự bật công cụ** cần dùng trong khung chat. Danh sách công cụ hiện ra đã được lọc sẵn theo phòng ban của bạn — bạn chỉ thấy những công cụ mình được phép dùng.
+
+**Dùng thế nào**: trong khung chat, mở menu công cụ (biểu tượng ➕ / Tools) → bật công cụ cần dùng → chat bình thường.
+
+Công cụ được cấp theo phòng ban:
+
+| Công cụ                     | Phòng ban được dùng          | Làm được gì                                     |
+| --------------------------- | ---------------------------- | ----------------------------------------------- |
+| **Office 365** ⚠️           | Mọi phòng ban                | **Đang là bản chạy thử — xem cảnh báo bên dưới** |
+| **Gmail**                   | Mọi phòng ban                | Soạn/gửi mail Gmail                             |
+| **Google Drive**            | Mọi phòng ban                | Tìm và đọc tài liệu trên Drive                  |
+| **GitHub**                  | IT, Kỹ thuật/R&D             | Tra repo, issue, code                           |
+| **Code Interpreter**        | IT, Kỹ thuật/R&D             | Viết & chạy code Python trong sandbox           |
+| **Postgres / Playwright**   | IT, Kỹ thuật/R&D             | Truy vấn dữ liệu (chỉ đọc), tự động hóa trình duyệt |
+| **Tìm kiếm web, Xuất file** | Mọi nhân viên                | Tìm thông tin, xuất PDF/Excel/Word              |
+
+> ⚠️ **Office 365 đang là bản chạy thử — ĐỪNG tin kết quả của nó.** Nếu bạn nhờ trợ lý gửi mail Outlook, tạo lịch hay nhắn Teams, nó sẽ **báo là đã gửi thành công nhưng thực tế không gửi gì cả**. Đọc mail / tìm file SharePoint cũng chỉ trả về **dữ liệu mẫu bịa sẵn**, không phải hộp thư thật của bạn. Bản thật đang được xây, sẽ thông báo khi dùng được. Cần gửi mail thật thì dùng **Gmail**.
+
+> 💡 Không thấy công cụ bạn cần? Liên hệ admin để được thêm vào group phòng ban tương ứng, hoặc xin cấp quyền riêng cho tài khoản của bạn.
+
+---
+
+## 10. Troubleshooting
+
+### 10.1 Lỗi Thường Gặp
 
 | STT | Lỗi                     | Nguyên Nhân                     | Giải Pháp                   |
 | --- | ----------------------- | ------------------------------- | --------------------------- |
@@ -332,7 +404,7 @@ curl -X POST http://localhost:5000/v1/_mw/admin/users/alice/rotate_key \
 | 04  | 403 Quota exceeded      | Hết quota                       | Reset hoặc tăng limit       |
 | 05  | 502 LiteLLM unavailable | LiteLLM chưa chạy               | Kiểm tra container          |
 
-### 8.2 Kiểm Tra Service
+### 10.2 Kiểm Tra Service
 
 ```bash
 # Health check
@@ -347,7 +419,7 @@ curl http://localhost:5000/v1/models \
   -H "Authorization: Bearer <subkey>"
 ```
 
-### 8.3 RAG Không Hoạt Động
+### 10.3 RAG Không Hoạt Động
 
 1. **Verify file đã index**: Workspace → Knowledge → Click KB
 2. **Check embedding model**: `docker compose logs open-webui | grep embedding`

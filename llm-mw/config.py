@@ -71,6 +71,9 @@ ADMIN_KEY = os.getenv("ADMIN_KEY", "").strip()
 JWT_SECRET = os.getenv("JWT_SECRET", "default-jwt-secret-CHANGE-IN-PRODUCTION").strip()
 MW_SECRET = os.getenv("MW_SECRET", "default-secret-CHANGE-IN-PRODUCTION").strip()
 OPENWEBUI_SERVICE_KEY = os.getenv("OPENWEBUI_SERVICE_KEY", "").strip()
+# Secret Open WebUI dùng ký cookie phiên `token` (JWT HS256). Middleware xác minh cookie
+# này để biết user thật của trình duyệt trong luồng OAuth connect (chống CSRF token-binding).
+WEBUI_SECRET_KEY = os.getenv("WEBUI_SECRET_KEY", "").strip()
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 DEFAULT_ALLOWED_MODELS_ENV = os.getenv("DEFAULT_ALLOWED_MODELS", "openai-auto,gemini-auto,grok-auto,claude-auto,deepseek-auto").strip()

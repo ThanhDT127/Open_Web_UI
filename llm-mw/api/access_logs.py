@@ -27,57 +27,112 @@ def get_access_summary(
     request: Request,
     minutes: Optional[int] = None,
     start: Optional[str] = None,
-    end: Optional[str] = None
+    end: Optional[str] = None,
+    source: Optional[str] = None,
 ):
     """
     Access log summary: Aggregate from mw_request_log DB or middleware.requests.log file.
     """
     from utils.auth_guard import require_admin_or_session
+    from api.summary_v2 import _resolve_range
     require_admin_or_session(request)
 
-    # Determine time range
-    now_utc = dt.datetime.now(tz=dt.timezone.utc)
+    # Shared resolver — this file used to carry the fifth copy of it. The private copy
+    # and the shared one disagreed on malformed input, silently. `minutes=60` is passed
+    # explicitly so the historical default window is preserved.
+    cutoff, end_time, _bucket = _resolve_range(
+        minutes=60 if minutes is None else minutes, start=start, end=end
+    )
 
-    if start and end:
-        try:
-            start_n = start.replace('Z', '+00:00') if start.endswith('Z') else start
-            end_n = end.replace('Z', '+00:00') if end.endswith('Z') else end
-            cutoff = dt.datetime.fromisoformat(start_n)
-            end_time = dt.datetime.fromisoformat(end_n)
-            if cutoff.tzinfo is None:
-                cutoff = cutoff.replace(tzinfo=dt.timezone.utc)
-            if end_time.tzinfo is None:
-                end_time = end_time.replace(tzinfo=dt.timezone.utc)
-            if cutoff >= end_time:
-                raise HTTPException(400, "Start time must be before end time")
-        except ValueError as e:
-            raise HTTPException(400, f"Invalid datetime format: {e}")
+    if source is not None and source not in ("db", "file"):
+        raise HTTPException(400, "source must be 'db' or 'file'")
+
+    # The file store is still reachable, but only when it is *asked for*. It covers
+    # different rows and different retention than the DB, so falling back to it on a DB
+    # error made this tab quietly disagree with every other tab on the same window.
+    if source == "file":
+        return _access_summary_file(cutoff, end_time)
+
+    if not _db_available():
+        # No DB configured at all. That is a deployment fact, not a failure being hidden.
+        return _access_summary_file(cutoff, end_time)
+
+    # DB configured: a read failure is an outage. Let it raise so the tab can say so.
+    return _access_summary_db(cutoff, end_time)
+
+
+# The service's own liveness probe. Its failures are the container examining itself,
+# not a user meeting an error, and they outnumber real faults roughly 7:1.
+HEALTH_PROBE_PATH = "/health"
+
+
+def _new_acc() -> Dict[str, Any]:
+    return {
+        "by_path": defaultdict(int),
+        "by_path_errors": defaultdict(int),
+        "by_status": defaultdict(int),
+        "by_method": defaultdict(int),
+        "latencies": [],
+        "requests_total": 0,
+        "error_count": 0,
+        # Four disjoint groups covering every status >= 400. Each maps to one repair
+        # action: call someone / review an access decision / raise a limit / ignore.
+        "failures": 0,        # 5xx, excluding the liveness probe
+        "denied": 0,          # 401, 403
+        "throttled": 0,       # 429
+        "other_client": 0,    # remaining 4xx
+        "health_probe_failures": 0,  # 5xx on the liveness probe
+        # Rejected sign-ins at the dashboard door specifically. Staff sign-ins are routed
+        # by nginx to Open WebUI and never reach this service, so this figure cannot
+        # carry that signal — which is why its label must keep the word "dashboard".
+        "failed_dashboard_logins": 0,
+    }
+
+
+DASHBOARD_LOGIN_PATH = "/v1/_mw/dashboard/login"
+
+
+def _add_record(acc: Dict[str, Any], path, status, method, ms) -> None:
+    """Fold one outbound record into the accumulator. Single place where a status is
+    classified, so the DB path and the file path cannot drift apart."""
+    acc["requests_total"] += 1
+    path = path or "unknown"
+    acc["by_path"][path] += 1
+    acc["by_status"][status] += 1
+    acc["by_method"][method or "unknown"] += 1
+
+    # `if ms:` dropped both the records missing a duration AND the genuinely fastest
+    # ones (ms == 0), quietly shrinking the percentile's sample.
+    if ms is not None:
+        acc["latencies"].append(ms)
+
+    if not isinstance(status, int) or status < 400:
+        return
+
+    acc["error_count"] += 1
+    acc["by_path_errors"][path] += 1
+
+    if path == DASHBOARD_LOGIN_PATH:
+        acc["failed_dashboard_logins"] += 1
+
+    if status >= 500:
+        if path == HEALTH_PROBE_PATH:
+            acc["health_probe_failures"] += 1
+        else:
+            acc["failures"] += 1
+    elif status in (401, 403):
+        acc["denied"] += 1
+    elif status == 429:
+        acc["throttled"] += 1
     else:
-        if minutes is None:
-            minutes = 60
-        cutoff = now_utc - dt.timedelta(minutes=minutes)
-        end_time = now_utc
-
-    # Try DB first
-    if _db_available():
-        try:
-            return _access_summary_db(cutoff, end_time)
-        except Exception:
-            pass
-
-    return _access_summary_file(cutoff, end_time)
+        acc["other_client"] += 1
 
 
 def _access_summary_db(cutoff, end_time):
     """Aggregate access stats from mw_request_log table."""
     from core.db import db_conn
 
-    by_path: Dict[str, int] = defaultdict(int)
-    by_status: Dict[int, int] = defaultdict(int)
-    by_method: Dict[str, int] = defaultdict(int)
-    latencies: List[float] = []
-    requests_total = 0
-    error_count = 0
+    acc = _new_acc()
 
     with db_conn() as conn:
         cur = conn.cursor()
@@ -91,26 +146,12 @@ def _access_summary_db(cutoff, end_time):
     for (payload,) in rows:
         if not isinstance(payload, dict):
             continue
-        event_type = payload.get("event")
-        if event_type != "outbound":
+        if payload.get("event") != "outbound":
             continue
+        _add_record(acc, payload.get("path"), payload.get("status", 500),
+                    payload.get("method"), payload.get("ms"))
 
-        requests_total += 1
-        path = payload.get("path", "unknown")
-        status = payload.get("status", 500)
-        method = payload.get("method", "unknown")
-        ms = payload.get("ms")
-
-        by_path[path] += 1
-        by_status[status] += 1
-        by_method[method] += 1
-
-        if ms:
-            latencies.append(ms)
-        if isinstance(status, int) and status >= 400:
-            error_count += 1
-
-    return _format_access_result(cutoff, end_time, requests_total, error_count, latencies, by_path, by_status, by_method, "database")
+    return _format_access_result(cutoff, end_time, acc, "database")
 
 
 def _access_summary_file(cutoff, end_time):
@@ -118,12 +159,7 @@ def _access_summary_file(cutoff, end_time):
     if not os.path.exists(MW_DETAIL_LOG_FILE):
         return {"error": "middleware.requests.log not found", "data": []}
 
-    by_path: Dict[str, int] = defaultdict(int)
-    by_status: Dict[int, int] = defaultdict(int)
-    by_method: Dict[str, int] = defaultdict(int)
-    latencies: List[float] = []
-    requests_total = 0
-    error_count = 0
+    acc = _new_acc()
 
     try:
         for log_file in _get_access_log_files():
@@ -145,29 +181,34 @@ def _access_summary_file(cutoff, end_time):
                         if entry_time < cutoff or entry_time > end_time:
                             continue
                         if event_type == "outbound":
-                            requests_total += 1
-                            path = entry.get("path", "unknown")
-                            status = entry.get("status", 500)
-                            method = entry.get("method", "unknown")
-                            ms = entry.get("ms")
-                            by_path[path] += 1
-                            by_status[status] += 1
-                            by_method[method] += 1
-                            if ms:
-                                latencies.append(ms)
-                            if isinstance(status, int) and status >= 400:
-                                error_count += 1
+                            _add_record(acc, entry.get("path"), entry.get("status", 500),
+                                        entry.get("method"), entry.get("ms"))
                     except Exception:
                         continue
     except Exception as e:
         return {"error": str(e)}
 
-    return _format_access_result(cutoff, end_time, requests_total, error_count, latencies, by_path, by_status, by_method, "file")
+    return _format_access_result(cutoff, end_time, acc, "file")
 
 
-def _format_access_result(cutoff, end_time, requests_total, error_count, latencies, by_path, by_status, by_method, source):
+def _format_access_result(cutoff, end_time, acc, source):
     """Format access summary results."""
-    error_rate = (error_count / requests_total * 100) if requests_total > 0 else 0.0
+    requests_total = acc["requests_total"]
+    latencies = acc["latencies"]
+    by_path = acc["by_path"]
+    by_path_errors = acc["by_path_errors"]
+
+    def _rate(n: int) -> float:
+        return round(n / requests_total * 100, 2) if requests_total > 0 else 0.0
+
+    # breakdown_by_path is cut to the 20 busiest paths, so the per-path error counts on
+    # their own cannot reconcile with error_count. Carry the remainder rather than let a
+    # reader conclude the difference is unaccounted for. (Same [:20] trap Phase 1 and
+    # Phase 4 hit with top10_pct_cost_share.)
+    _top_paths = sorted(by_path.items(), key=lambda x: x[1], reverse=True)[:20]
+    _top_path_names = {p for p, _ in _top_paths}
+    _errors_outside_top = sum(n for p, n in by_path_errors.items() if p not in _top_path_names)
+
     avg_latency = sum(latencies) / len(latencies) if latencies else 0
     p95_latency = None
     if latencies:
@@ -179,14 +220,39 @@ def _format_access_result(cutoff, end_time, requests_total, error_count, latenci
         "time_range": {"start": cutoff.isoformat(), "end": end_time.isoformat()},
         "totals": {
             "requests_total": requests_total,
-            "error_count": error_count,
-            "error_rate_percent": round(error_rate, 2),
+            "error_count": acc["error_count"],
+            "error_rate_percent": _rate(acc["error_count"]),
+            # Three groups, three repair actions. `other_client_errors` and
+            # `health_probe_failures` are carried so the five add up to `error_count`
+            # exactly — no row counted twice, none dropped.
+            "failures": acc["failures"],
+            "failure_rate_percent": _rate(acc["failures"]),
+            "denied": acc["denied"],
+            "denied_rate_percent": _rate(acc["denied"]),
+            "throttled": acc["throttled"],
+            "throttled_rate_percent": _rate(acc["throttled"]),
+            "other_client_errors": acc["other_client"],
+            "health_probe_failures": acc["health_probe_failures"],
+            "failed_dashboard_logins": acc["failed_dashboard_logins"],
             "avg_latency_ms": round(avg_latency, 2),
-            "p95_latency_ms": round(p95_latency, 2) if p95_latency else None
+            # `if p95_latency` turned a genuine 0 ms percentile into "no data".
+            "p95_latency_ms": round(p95_latency, 2) if p95_latency is not None else None,
+            # Records without a duration never reach the percentile, so its sample base
+            # is smaller than requests_total. Disclose it rather than imply full coverage.
+            "latency_sample_count": len(latencies),
+            "errors_outside_top_paths": _errors_outside_top,
         },
-        "breakdown_by_path": [{"path": p, "count": c} for p, c in sorted(by_path.items(), key=lambda x: x[1], reverse=True)[:20]],
-        "breakdown_by_status": [{"status": s, "count": c} for s, c in sorted(by_status.items(), key=lambda x: x[1], reverse=True)],
-        "breakdown_by_method": [{"method": m, "count": c} for m, c in sorted(by_method.items(), key=lambda x: x[1], reverse=True)],
+        "breakdown_by_path": [
+            {
+                "path": p,
+                "count": c,
+                "errors": by_path_errors.get(p, 0),
+                "error_rate_percent": round(by_path_errors.get(p, 0) / c * 100, 2) if c else 0.0,
+            }
+            for p, c in _top_paths
+        ],
+        "breakdown_by_status": [{"status": s, "count": c} for s, c in sorted(acc["by_status"].items(), key=lambda x: x[1], reverse=True)],
+        "breakdown_by_method": [{"method": m, "count": c} for m, c in sorted(acc["by_method"].items(), key=lambda x: x[1], reverse=True)],
         "source": source,
     }
 

@@ -231,6 +231,23 @@ def query_inventory(start: datetime, end: datetime, force_refresh: bool = False)
     total_bytes = sum(f["size"] for f in files)
     total_chunks = sum(chunks.values())
 
+    # The file count is one row per *upload*, not per document: re-uploading the same
+    # file, and every retry after a failed embedding, each leave a row behind. On the
+    # dev corpus that is 21 rows for 3 documents, 16 of them attached to KBs that have
+    # since been deleted — a total nobody can read as "the corpus holds 21 documents".
+    # These two figures name what the total is made of; the card keeps the raw count.
+    #
+    # Dedup key is (filename, size) rather than `file.hash`. The hash column is null for
+    # the large majority of rows in practice, and grouping on a mostly-null key counts
+    # every copy as its own document while looking exact — query_governance below still
+    # has that flaw. (filename, size) errs the other way, merging two genuinely different
+    # documents that share a name and a byte count; that collision is rarer, and it
+    # under-states rather than silently inflating.
+    unique_documents = len({
+        ((f["filename"] or "").strip().lower(), f["size"]) for f in files
+    })
+    dangling_files = sum(1 for f in files if f["dangling_kb_id"])
+
     # Growth: KB & file creations bucketed by day within range.
     day_buckets: Dict[str, Dict[str, int]] = defaultdict(lambda: {"kbs": 0, "files": 0})
     for kb in knowledge.values():
@@ -273,6 +290,8 @@ def query_inventory(start: datetime, end: datetime, force_refresh: bool = False)
         "totals": {
             "knowledge_bases": len(knowledge),
             "files": len(files),
+            "unique_documents": unique_documents,
+            "dangling_files": dangling_files,
             "chunks": total_chunks,
             "storage_bytes": total_bytes,
         },
@@ -294,6 +313,11 @@ def _query_stem_usage(start: datetime, end: datetime) -> Dict[str, Dict[str, Any
     Only ``chat.request`` payloads carrying a ``Filename:``/``Source:`` document
     marker count as attachments; the paired ``chat.response`` (by ``rid``) decides
     whether it was cited.
+
+    ``attach`` counts demand, ``evaluated`` counts the subset whose answer was
+    actually logged. They diverge because streamed answers only began emitting
+    ``chat.response`` on 2026-07-01 — see :func:`core.rag_health.query_retrieval_health`,
+    which carries the same split for the RAG Health tab.
     """
     from core.db import db_conn
 
@@ -336,12 +360,16 @@ def _query_stem_usage(start: datetime, end: datetime) -> Dict[str, Dict[str, Any
         stems.discard("")
         if not stems:
             continue
-        cited = _has_citation(content)
+        # No response row is not a failure to cite — it is an absence of evidence.
+        readable = content is not None
+        cited = readable and _has_citation(content)
         for stem in stems:
-            u = usage.setdefault(stem, {"attach": 0, "cited": 0, "last_ts": None})
+            u = usage.setdefault(stem, {"attach": 0, "evaluated": 0, "cited": 0, "last_ts": None})
             u["attach"] += 1
-            if cited:
-                u["cited"] += 1
+            if readable:
+                u["evaluated"] += 1
+                if cited:
+                    u["cited"] += 1
             iso = ts.isoformat() if ts else None
             if iso and (u["last_ts"] is None or iso > u["last_ts"]):
                 u["last_ts"] = iso
@@ -357,10 +385,17 @@ def _stems_to_kbs(files: List[Dict[str, Any]]) -> Dict[str, set]:
     return mapping
 
 
-def _classify(attach: int, hit_rate: float, chunk_count: int) -> str:
+def _classify(attach: int, evaluated: int, hit_rate: Optional[float], chunk_count: int) -> str:
+    """Demand is proven by attachments; quality only by answers we actually recorded.
+
+    ``evaluated`` gates the quality verdict separately from ``attach``. A KB attached
+    35 times whose answers were never logged is *unproven*, not "needs tuning" — the
+    latter names the knowledge base as the thing at fault, which the data cannot
+    support. Before this split it was exactly what the dev corpus displayed.
+    """
     if attach == 0:
         return "dead" if chunk_count > 0 else "unproven"
-    if attach < MIN_SAMPLE_ATTACHMENTS:
+    if attach < MIN_SAMPLE_ATTACHMENTS or evaluated < MIN_SAMPLE_ATTACHMENTS or hit_rate is None:
         return "unproven"
     return "star" if hit_rate >= GOOD_HIT_RATE else "needs_tuning"
 
@@ -378,7 +413,7 @@ def query_kb_value(start: datetime, end: datetime, force_refresh: bool = False) 
 
     # Aggregate unambiguous usage per KB; hold ambiguous stems aside (design #7).
     per_kb: Dict[str, Dict[str, Any]] = {
-        kid: {"attach": 0, "cited": 0, "last_ts": None} for kid in knowledge
+        kid: {"attach": 0, "evaluated": 0, "cited": 0, "last_ts": None} for kid in knowledge
     }
     ambiguous: List[Dict[str, Any]] = []
     unattributed: List[Dict[str, Any]] = []
@@ -393,6 +428,7 @@ def query_kb_value(start: datetime, end: datetime, force_refresh: bool = False) 
         kid = next(iter(kids))
         agg = per_kb[kid]
         agg["attach"] += u["attach"]
+        agg["evaluated"] += u["evaluated"]
         agg["cited"] += u["cited"]
         if u["last_ts"] and (agg["last_ts"] is None or u["last_ts"] > agg["last_ts"]):
             agg["last_ts"] = u["last_ts"]
@@ -404,8 +440,10 @@ def query_kb_value(start: datetime, end: datetime, force_refresh: bool = False) 
         chunk_count = _kb_chunk_count(kid, files, chunks)
         size_bytes = sum(f["size"] for f in kb_files)
         u = per_kb[kid]
-        hit_rate = (u["cited"] / u["attach"] * 100.0) if u["attach"] else 0.0
-        category = _classify(u["attach"], hit_rate, chunk_count)
+        # Denominator is answers we read, not attachments we asked for; None when there
+        # are none. Returned unrounded — the display layer rounds once (Phase 8 rule).
+        hit_rate = (u["cited"] / u["evaluated"] * 100.0) if u["evaluated"] else None
+        category = _classify(u["attach"], u["evaluated"], hit_rate, chunk_count)
         counts[category] += 1
         rows.append({
             "id": kid,
@@ -415,8 +453,10 @@ def query_kb_value(start: datetime, end: datetime, force_refresh: bool = False) 
             "chunk_count": chunk_count,
             "size_bytes": size_bytes,
             "attach_count": u["attach"],
+            "evaluated": u["evaluated"],
+            "unpaired": u["attach"] - u["evaluated"],
             "cited": u["cited"],
-            "hit_rate": round(hit_rate, 1),
+            "hit_rate": hit_rate,
             "last_attached": u["last_ts"],
             "created_at": _epoch_to_iso(kb["created_at"]),
             "updated_at": _epoch_to_iso(kb["updated_at"]),
@@ -441,14 +481,28 @@ def query_governance(force_refresh: bool = False) -> Dict[str, Any]:
     files = corpus["files"]
     users = corpus["users"]
 
-    # Duplicates by file.hash (skip null hashes).
-    by_hash: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    # Duplicates grouped by (filename, size) rather than by ``file.hash``.
+    #
+    # The hash column is populated for only a small minority of rows in practice — 4 of 21
+    # on the corpus this was measured against — and the previous version skipped the null
+    # ones outright. Every unhashed copy therefore became its own group and counted as
+    # unique: the card reported ~1.9 MB of reclaimable space where the real figure was
+    # ~15 MB, and the table listed one duplicate where there were two documents copied 12
+    # and 8 times. A key that is absent on most rows fails silently and looks exact.
+    #
+    # Same key as ``unique_documents`` in query_inventory, so the two sections reconcile:
+    # ``files - unique_documents`` is exactly the number of redundant copies charged here.
+    #
+    # The trade-off is inverted, not removed: two genuinely different documents sharing a
+    # name and a byte count now merge into one group. That over-states the reclaimable
+    # figure instead of hiding it, and the reader sees the filename in the table and can
+    # judge — which is what the hash key never allowed.
+    by_key: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(list)
     for f in files:
-        if f["hash"]:
-            by_hash[f["hash"]].append(f)
+        by_key[((f["filename"] or "").strip().lower(), f["size"])].append(f)
     duplicates = []
     reclaimable = 0
-    for h, group in by_hash.items():
+    for group in by_key.values():
         if len(group) < 2:
             continue
         size = max((g["size"] for g in group), default=0)
@@ -456,7 +510,6 @@ def query_governance(force_refresh: bool = False) -> Dict[str, Any]:
         waste = size * (len(group) - 1)
         reclaimable += waste
         duplicates.append({
-            "hash": h,
             "filename": group[0]["filename"],
             "copies": len(group),
             "size_bytes": size,

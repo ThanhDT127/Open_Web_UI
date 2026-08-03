@@ -134,7 +134,28 @@ def enforce_and_bump_quota(
     if not stored_user:
         raise HTTPException(404, f"user_id={user_id} not found")
 
+    # Check if quota period needs reset
+    old_period_start = int(stored_user.get("quota", {}).get("period_start", 0))
+    maybe_reset_quota(stored_user)
     quota = stored_user.setdefault("quota", {})
+
+    # If period was reset, persist the reset (alerts_sent cleared, period_start updated)
+    # This needs lock + save for the reset fields (non-atomic multi-field update)
+    if int(quota.get("period_start", 0)) != old_period_start:
+        from core.auth import save_users
+        lock = get_lock()
+        with lock:
+            users = load_users()
+            for u in users:
+                if u.get("user_id") == user_id:
+                    maybe_reset_quota(u)
+                    break
+            save_users(users)
+        # Re-read after reset
+        stored_user = get_user_by_id(user_id)
+        if not stored_user:
+            raise HTTPException(404, f"user_id={user_id} not found")
+        quota = stored_user.setdefault("quota", {})
 
     def _enforce_limit(limit_key: str, used_key: str, add_value: float, label: str):
         """Check if adding value would exceed limit"""

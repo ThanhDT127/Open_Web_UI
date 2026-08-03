@@ -1566,11 +1566,218 @@ input:checked+.slider:before {
     max-height: 400px;
     overflow-y: auto;
 }
-
 .table-container thead th {
     position: sticky;
     top: 0;
     z-index: 10;
-    background-color: #1e293b;
-    /* match header bg to cover rows underneath */
+    background-color: #1e293b; /* match header bg to cover rows underneath */
+}
+
+/* ─── Tool Access (bật/tắt tool theo group & user) ────────── */
+.badge-warning {
+    background: #f59e0b;
+    color: #0f172a;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+.tool-chip {
+    display: inline-block;
+    background: #334155;
+    color: #cbd5e1;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: ui-monospace, monospace;
+    margin: 2px 2px 2px 0;
+}
+
+.tool-access {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #334155;
+}
+
+.tool-access-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.tool-access-header label {
+    font-weight: 600;
+    color: #e2e8f0;
+}
+
+.tool-access-hint {
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.tool-access-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.tool-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.tool-row:hover {
+    background: #1e293b;
+}
+
+.tool-row input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #4f46e5;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* Quyền đến từ group hoặc public — không thu hồi được ở màn hình user */
+.tool-row-locked {
+    cursor: not-allowed;
+    opacity: 0.75;
+}
+
+.tool-row-locked input[type="checkbox"] {
+    cursor: not-allowed;
+}
+
+.tool-name {
+    color: #e2e8f0;
+    font-size: 13px;
+}
+
+.tool-id {
+    color: #64748b;
+    font-size: 11px;
+    font-family: ui-monospace, monospace;
+    margin-left: auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════ */
+/* Overview tab (Phase 1) — metric-card states, sub-lines, big grid  */
+/* Follows the .accent-green precedent (left border + value color).  */
+/* ═══════════════════════════════════════════════════════════════ */
+.metric-card.warn {
+    border-left-color: #f59e0b;
+    background: rgba(245, 158, 11, .06);
+}
+
+.metric-card.warn .metric-value {
+    color: #fbbf24;
+}
+
+.metric-card.danger {
+    border-left-color: #ef4444;
+    background: rgba(239, 68, 68, .06);
+}
+
+.metric-card.danger .metric-value {
+    color: #f87171;
+}
+
+.metric-card.ok {
+    border-left-color: #10b981;
+}
+
+.metric-card.ok .metric-value {
+    color: #34d399;
+}
+
+/* Card sub-lines: question prompt, unit suffix, hint */
+.metric-q {
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 400;
+    font-style: italic;
+    margin: -2px 0 8px;
+}
+
+.metric-unit {
+    font-size: 13px;
+    font-weight: 500;
+    color: #94a3b8;
+    margin-left: 6px;
+}
+
+.metric-hint {
+    font-size: 11.5px;
+    margin-top: 6px;
+    color: #64748b;
+}
+
+.metric-hint.amber-t {
+    color: #fbbf24;
+}
+
+.metric-hint.red-t {
+    color: #f87171;
+}
+
+/* Larger card grid for the executive Overview tier */
+.metrics-lg {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.metrics-lg .metric-value {
+    font-size: 34px;
+}
+
+/* ─── Comparison badge (CK/KT) ────────────────────────────────
+   Two lines per card: previous period first, same-period-last-year second.
+   Colour comes from the metric's declared polarity in metrics_registry.js,
+   never from the sign of the number. */
+.delta-badge {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 7px;
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+.delta-line {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+.delta-line.d-green {
+    color: #34d399;
+}
+
+.delta-line.d-red {
+    color: #f87171;
+}
+
+.delta-line.d-neutral {
+    color: #94a3b8;
+}
+
+/* No data for that window — dimmed, no arrow, no percentage. */
+.delta-line.d-dim {
+    color: #64748b;
+    font-weight: 400;
+}
+
+/* The baseline value for that window. The window itself is in the line's tooltip. */
+.delta-abs {
+    color: #64748b;
+    font-weight: 400;
 }

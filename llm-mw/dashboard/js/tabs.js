@@ -4,11 +4,15 @@ import { loadUsers } from './users.js';
 import { loadLogs } from './logs.js';
 import { loadSettings, updateDefaultQuotaHint } from './settings.js';
 import { loadRagHealth } from './raghealth.js';
+import { loadKnowledge } from './knowledge.js';
 import { loadPrices } from './prices.js';
 import { refreshAnalytics } from './analytics.js';
 import { fetchData as refreshGroups } from './group_analytics.js';
+import { loadGroupToolAccess } from './tool_access.js';
 import { refreshSatisfaction } from './satisfaction.js';
-import { loadKnowledge } from './knowledge.js';
+import { loadOverview } from './overview.js';
+import { loadAdoption } from './adoption.js';
+import { loadProviders } from './providers.js';
 import { accessEventSource } from './auth.js';
 
 // FIX: Pass event explicitly
@@ -28,6 +32,7 @@ export function switchTab(e, tabName) {
     } else if (tabName === 'users') {
         loadUsers();
         updateDefaultQuotaHint();
+        loadAdoption();
     } else if (tabName === 'logs') {
         // Auto-load to populate dropdowns
         loadLogs();
@@ -35,15 +40,20 @@ export function switchTab(e, tabName) {
         loadSettings();
     } else if (tabName === 'raghealth') {
         loadRagHealth();
+    } else if (tabName === 'knowledge') {
+        loadKnowledge();
     } else if (tabName === 'prices') {
         loadPrices();
     } else if (tabName === 'analytics') {
         refreshAnalytics();
     } else if (tabName === 'groups') {
         refreshGroups();
+        loadGroupToolAccess();
     } else if (tabName === 'satisfaction') {
         refreshSatisfaction();
-    } else if (tabName === 'knowledge') {
-        loadKnowledge();
+    } else if (tabName === 'overview') {
+        loadOverview();
+    } else if (tabName === 'providers') {
+        loadProviders();
     }
 }

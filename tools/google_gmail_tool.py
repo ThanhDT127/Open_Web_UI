@@ -9,6 +9,14 @@ import os
 import requests
 from pydantic import BaseModel, Field
 
+# Link kết nối được emit thẳng vào khung chat, nên model chỉ cần nhắc người dùng bấm.
+NEED_CONNECT_FOR_MODEL = (
+    "Tài khoản Gmail của người dùng chưa được liên kết. Liên kết kết nối ĐÃ được hiển thị "
+    "sẵn ngay trong khung chat phía trên. Hãy trả lời thật ngắn gọn rằng người dùng cần bấm "
+    "vào liên kết phía trên để kết nối rồi thử lại. TUYỆT ĐỐI không tự tạo lại URL."
+)
+
+
 class Tools:
     class Valves(BaseModel):
         MW_BASE_URL: str = Field(
@@ -32,7 +40,20 @@ class Tools:
         if os.getenv("MW_PUBLIC_URL"):
             self.valves.MW_PUBLIC_URL = os.getenv("MW_PUBLIC_URL")
 
-    def send_gmail(self, recipient: str, subject: str, body: str, __user__: dict = None) -> str:
+    async def _emit(self, emitter, content: str) -> None:
+        # Giá trị tool trả về chỉ hiện trong panel "nguồn chi tiết"; muốn link bấm được ngay
+        # trong câu trả lời thì phải emit thẳng vào body của message.
+        if emitter:
+            await emitter({"type": "message", "data": {"content": content}})
+
+    async def send_gmail(
+        self,
+        recipient: str,
+        subject: str,
+        body: str,
+        __user__: dict = None,
+        __event_emitter__=None,
+    ) -> str:
         """
         Gửi email thông qua tài khoản Gmail cá nhân của người dùng bằng cách sử dụng Google OAuth token.
         Nếu tài khoản chưa được liên kết, công cụ sẽ trả về liên kết yêu cầu người dùng kết nối.
@@ -62,14 +83,18 @@ class Tools:
         try:
             response = requests.get(token_url, headers=headers, params=params, timeout=10)
             if response.status_code == 404:
-                # Chưa liên kết tài khoản
-                connect_url = f"{self.valves.MW_PUBLIC_URL.rstrip('/')}/v1/_mw/oauth/connect?provider={provider}&openwebui_user_id={user_id}"
-                return (
-                    f"⚠️ Tài khoản Gmail của bạn chưa được liên kết.\n\n"
-                    f"Vui lòng click vào liên kết dưới đây để kết nối tài khoản Gmail của bạn:\n"
+                # Chưa liên kết tài khoản.
+                # Không truyền openwebui_user_id: middleware lấy danh tính từ phiên đăng nhập
+                # Open WebUI của trình duyệt khi bấm link (chống CSRF token-binding).
+                connect_url = f"{self.valves.MW_PUBLIC_URL.rstrip('/')}/v1/_mw/oauth/connect?provider={provider}"
+                await self._emit(
+                    __event_emitter__,
+                    "⚠️ Tài khoản Gmail của bạn chưa được liên kết.\n\n"
+                    "Vui lòng click vào liên kết dưới đây để kết nối:\n"
                     f"👉 [**Kết nối tài khoản Gmail của bạn**]({connect_url})\n\n"
-                    f"Sau khi hoàn tất kết nối, hãy thử gửi email lại."
+                    "Sau khi hoàn tất kết nối, hãy thử gửi email lại.\n\n",
                 )
+                return NEED_CONNECT_FOR_MODEL
             elif response.status_code != 200:
                 return f"Lỗi từ Middleware API ({response.status_code}): {response.text}"
             
