@@ -23,8 +23,8 @@ export async function refreshSatisfaction() {
 
     try {
         // Show loading state
-        leaderboardBody.innerHTML = '<tr><td colspan="6" class="loading">Loading satisfaction data...</td></tr>';
-        if (feedbackContainer) feedbackContainer.innerHTML = '<div class="loading">Loading feedback...</div>';
+        leaderboardBody.innerHTML = '<tr><td colspan="6" class="loading">Đang tải...</td></tr>';
+        if (feedbackContainer) feedbackContainer.innerHTML = '<div class="loading">Đang tải...</div>';
 
         // Build query params from global time range
         const params = buildRangeParams();
@@ -142,7 +142,7 @@ export async function refreshSatisfaction() {
 
     } catch (err) {
         console.error('Failed to load satisfaction data:', err);
-        leaderboardBody.innerHTML = `<tr><td colspan="6" class="loading" style="color: #ef4444;">Error: ${escapeHtml(err.message)}</td></tr>`;
+        leaderboardBody.innerHTML = `<tr><td colspan="6" class="loading" style="color: #ef4444;">Không đọc được dữ liệu: ${escapeHtml(err.message)}</td></tr>`;
     }
 }
 

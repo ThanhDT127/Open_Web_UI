@@ -50,7 +50,7 @@ const INGEST_SLOTS = [
 ];
 const RETRIEVAL_SLOTS = [
     ['ragRetrAttached', 'ragRetrCited', 'ragRetrHitRate', 'ragCoverage'],
-    [['ragRetrBySource', 5], ['ragRetrZeroCite', 4]],
+    [['ragRetrBySource', 5], ['ragRetrByUser', 5], ['ragRetrZeroCite', 4]],
     ['ragRetrCitedDetail', 'ragRetrHitRateDetail', 'ragCoverageDetail',
      'ragRetrUnpairedNote', 'ragRetrModelNote'],
 ];
@@ -126,24 +126,6 @@ function ensureCharts() {
         }
     }
     return true;
-}
-
-// Keep the model/user dropdowns populated from observed data (preserve selection).
-function mergeOptions(selectId, values, allLabel) {
-    const sel = document.getElementById(selectId);
-    if (!sel) return;
-    const current = sel.value;
-    const existing = new Set(Array.from(sel.options).map(o => o.value).filter(Boolean));
-    for (const v of values) {
-        if (v && !existing.has(v)) {
-            const opt = document.createElement('option');
-            opt.value = v;
-            opt.textContent = v;
-            sel.appendChild(opt);
-            existing.add(v);
-        }
-    }
-    sel.value = current;
 }
 
 // ── Ingestion ──
@@ -267,10 +249,12 @@ async function renderRetrievalCompare(data, evaluated, extra) {
 
 // ── Retrieval ──
 async function loadRetrieval() {
-    const extra = {
-        model: document.getElementById('ragModel')?.value,
-        user_id: document.getElementById('ragUser')?.value,
-    };
+    // No tab-local filters any more: the model and user dimensions are shown in full by the
+    // per-model chart and the per-user table below, so nothing narrows the request. `extra`
+    // survives as an empty object because renderRetrievalCompare still has to pass the same
+    // (now empty) filter set to its comparison windows — a comparison run under different
+    // filters than the current figures would measure a trend that does not exist.
+    const extra = {};
     const res = await mwFetch(`/v1/_mw/rag-health/retrieval?${buildParams(extra)}`);
     if (!res || !res.ok) {
         setSectionError('ragRetrError', `HTTP ${res ? res.status : 'không kết nối được'}`, ...RETRIEVAL_SLOTS);
@@ -326,7 +310,6 @@ async function loadRetrieval() {
     }
 
     const byModel = data.by_model || [];
-    mergeOptions('ragModel', byModel.map(m => m.model), 'All Models');
     // Models with nothing evaluated are dropped rather than plotted as a 0% bar — a bar
     // at zero reads as a measured result. Dropping them silently swaps one wrong reading
     // for another, so the count of what was dropped is stated above the chart.
@@ -355,9 +338,19 @@ async function loadRetrieval() {
             <td>${escapeHtml(fmtHitRate(s.hit_rate))}</td>
         </tr>`).join('') : '<tr><td colspan="5" class="loading">Không có câu hỏi nào được kèm tài liệu trong khoảng này</td></tr>';
 
-    // Populated from everyone who attached a document, not just from those who had a
-    // miss — otherwise the filter can only offer users the tab already blamed.
-    mergeOptions('ragUser', (data.by_user || []).map(u => u.user_id), 'All Users');
+    // Covers everyone who attached a document, not just those who had a miss. Rows with
+    // nothing evaluated keep their dash rather than a 0% — same rule as the by-source table
+    // and the model chart: an unread answer is not a failure to cite.
+    const userBody = document.getElementById('ragRetrByUser');
+    const byUser = data.by_user || [];
+    userBody.innerHTML = byUser.length ? byUser.map(u => `
+        <tr>
+            <td>${escapeHtml(u.user_id || '-')}</td>
+            <td>${u.attached}</td>
+            <td>${u.evaluated}</td>
+            <td>${u.cited}</td>
+            <td>${escapeHtml(fmtHitRate(u.hit_rate))}</td>
+        </tr>`).join('') : '<tr><td colspan="5" class="loading">Không có ai hỏi kèm tài liệu trong khoảng này</td></tr>';
 
     const zeroBody = document.getElementById('ragRetrZeroCite');
     const zero = data.zero_citation_messages || [];
@@ -437,12 +430,9 @@ export async function loadRagHealth() {
     }
 }
 
+// Kept after the filter bar was removed: filters.js calls this through
+// `window.ragHealthAPI.apply()` to reload the tab when the shared time range changes. It is
+// the tab's reload hook, not a filter handler.
 export function applyRagFilters() {
-    loadRagHealth();
-}
-
-export function resetRagFilters() {
-    // Time range is the shared dashboard control; only the tab-local filters reset here.
-    ['ragModel', 'ragUser'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     loadRagHealth();
 }

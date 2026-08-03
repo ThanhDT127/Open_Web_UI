@@ -134,7 +134,10 @@ function _renderMetrics(t) {
     const peakDetail = document.getElementById('metricRpmPeakDetail');
     if (peakDetail && t.rpm_peak_bucket) {
         const unit = { minute: 'phút', hour: 'giờ', day: 'ngày' }[t.rpm_peak_bucket] || t.rpm_peak_bucket;
-        peakDetail.textContent = `Requests / phút · đỉnh đo theo ${unit}`;
+        // Nói ra ô đo, vì "cao nhất" chỉ chính xác khi ô là phút. Trên khung dài, ô là giờ
+        // hoặc ngày và giá trị bị chia đều trong ô đó — người đọc phải biết mình đang xem
+        // đỉnh thật hay đỉnh đã san phẳng.
+        peakDetail.textContent = `Cao nhất trong một ${unit}, quy về phút`;
     }
 }
 

@@ -231,6 +231,23 @@ def query_inventory(start: datetime, end: datetime, force_refresh: bool = False)
     total_bytes = sum(f["size"] for f in files)
     total_chunks = sum(chunks.values())
 
+    # The file count is one row per *upload*, not per document: re-uploading the same
+    # file, and every retry after a failed embedding, each leave a row behind. On the
+    # dev corpus that is 21 rows for 3 documents, 16 of them attached to KBs that have
+    # since been deleted — a total nobody can read as "the corpus holds 21 documents".
+    # These two figures name what the total is made of; the card keeps the raw count.
+    #
+    # Dedup key is (filename, size) rather than `file.hash`. The hash column is null for
+    # the large majority of rows in practice, and grouping on a mostly-null key counts
+    # every copy as its own document while looking exact — query_governance below still
+    # has that flaw. (filename, size) errs the other way, merging two genuinely different
+    # documents that share a name and a byte count; that collision is rarer, and it
+    # under-states rather than silently inflating.
+    unique_documents = len({
+        ((f["filename"] or "").strip().lower(), f["size"]) for f in files
+    })
+    dangling_files = sum(1 for f in files if f["dangling_kb_id"])
+
     # Growth: KB & file creations bucketed by day within range.
     day_buckets: Dict[str, Dict[str, int]] = defaultdict(lambda: {"kbs": 0, "files": 0})
     for kb in knowledge.values():
@@ -273,6 +290,8 @@ def query_inventory(start: datetime, end: datetime, force_refresh: bool = False)
         "totals": {
             "knowledge_bases": len(knowledge),
             "files": len(files),
+            "unique_documents": unique_documents,
+            "dangling_files": dangling_files,
             "chunks": total_chunks,
             "storage_bytes": total_bytes,
         },
@@ -462,14 +481,28 @@ def query_governance(force_refresh: bool = False) -> Dict[str, Any]:
     files = corpus["files"]
     users = corpus["users"]
 
-    # Duplicates by file.hash (skip null hashes).
-    by_hash: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    # Duplicates grouped by (filename, size) rather than by ``file.hash``.
+    #
+    # The hash column is populated for only a small minority of rows in practice — 4 of 21
+    # on the corpus this was measured against — and the previous version skipped the null
+    # ones outright. Every unhashed copy therefore became its own group and counted as
+    # unique: the card reported ~1.9 MB of reclaimable space where the real figure was
+    # ~15 MB, and the table listed one duplicate where there were two documents copied 12
+    # and 8 times. A key that is absent on most rows fails silently and looks exact.
+    #
+    # Same key as ``unique_documents`` in query_inventory, so the two sections reconcile:
+    # ``files - unique_documents`` is exactly the number of redundant copies charged here.
+    #
+    # The trade-off is inverted, not removed: two genuinely different documents sharing a
+    # name and a byte count now merge into one group. That over-states the reclaimable
+    # figure instead of hiding it, and the reader sees the filename in the table and can
+    # judge — which is what the hash key never allowed.
+    by_key: Dict[Tuple[str, int], List[Dict[str, Any]]] = defaultdict(list)
     for f in files:
-        if f["hash"]:
-            by_hash[f["hash"]].append(f)
+        by_key[((f["filename"] or "").strip().lower(), f["size"])].append(f)
     duplicates = []
     reclaimable = 0
-    for h, group in by_hash.items():
+    for group in by_key.values():
         if len(group) < 2:
             continue
         size = max((g["size"] for g in group), default=0)
@@ -477,7 +510,6 @@ def query_governance(force_refresh: bool = False) -> Dict[str, Any]:
         waste = size * (len(group) - 1)
         reclaimable += waste
         duplicates.append({
-            "hash": h,
             "filename": group[0]["filename"],
             "copies": len(group),
             "size_bytes": size,

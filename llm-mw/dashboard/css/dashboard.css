@@ -1776,7 +1776,7 @@ input:checked+.slider:before {
     font-weight: 400;
 }
 
-/* The compared window and its absolute value, always printed. */
+/* The baseline value for that window. The window itself is in the line's tooltip. */
 .delta-abs {
     color: #64748b;
     font-weight: 400;

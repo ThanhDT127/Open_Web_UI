@@ -6,7 +6,8 @@ import { switchTab } from './tabs.js';
 import { initCharts } from './charts.js';
 import { loadSummary, connectEventStream, refreshTables } from './usage.js';
 import { loadAccessData, connectAccessStream } from './access.js';
-import { applyLogFilters, resetLogFilters, loadMoreLogs, exportLogsToExcel } from './logs.js';
+import { applyLogFilters, resetLogFilters, loadMoreLogs, exportLogsToExcel, loadLogs } from './logs.js';
+import { loadAdoption } from './adoption.js';
 import { refreshAnalytics, initAnalyticsChart } from './analytics.js';
 import { initGroupAnalyticsChart, fetchData as refreshGroups } from './group_analytics.js';
 import { refreshSatisfaction } from './satisfaction.js';
@@ -21,7 +22,7 @@ import {
 import {
 	saveSMTP, saveQuotaThresholds, topUpProvider, correctProviderCredit, saveNotifToggles, saveDefaultQuota, testSMTP
 } from './settings.js';
-import { applyRagFilters, resetRagFilters } from './raghealth.js';
+import { applyRagFilters } from './raghealth.js';
 import { loadOverview } from './overview.js';
 import { applyKnowledgeFilters, resetKnowledgeFilters } from './knowledge.js';
 import {
@@ -99,9 +100,11 @@ export async function initAPI() {
 		testSMTP
 	};
 
+	// `apply` is the tab's reload hook (filters.js calls it on a time-range change), not a
+	// filter handler — the tab-local filter bar was removed. No `reset`: there is nothing
+	// left to reset.
 	window.ragHealthAPI = {
-		apply: applyRagFilters,
-		reset: resetRagFilters
+		apply: applyRagFilters
 	};
 
 	window.knowledgeAPI = {
@@ -115,6 +118,16 @@ export async function initAPI() {
 
 	window.overviewAPI = {
 		refresh: loadOverview
+	};
+
+	// Tabs that read the global range but were not being reloaded when it changed.
+	// Exposed here rather than imported into filters.js directly: each of these modules
+	// imports buildRangeParams FROM filters.js, so a direct import would close a cycle.
+	window.rangeScopedTabs = {
+		usersTab:    () => { loadUsers(); loadAdoption(); },
+		accessTab:   loadAccessData,
+		logsTab:     loadLogs,
+		overviewTab: loadOverview,
 	};
 
 	// One-time UI init

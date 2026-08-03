@@ -101,12 +101,12 @@ function renderActivity(series, provisioned) {
                 labels,
                 datasets: [
                     {
-                        label: 'WAU (7 ngày)', data: wau,
+                        label: 'Hoạt động trong tuần (7 ngày)', data: wau,
                         borderColor: '#3b82f6', backgroundColor: '#3b82f61a',
                         tension: 0.3, fill: true, pointRadius: 2, borderWidth: 2,
                     },
                     {
-                        label: 'DAU', data: dau,
+                        label: 'Hoạt động trong ngày', data: dau,
                         borderColor: '#64748b', backgroundColor: 'transparent',
                         borderDash: [4, 3], tension: 0.3, fill: false, pointRadius: 1, borderWidth: 1,
                     },
@@ -160,7 +160,7 @@ function renderPareto(pareto) {
                         backgroundColor: '#10b981', yAxisID: 'y', order: 2,
                     },
                     {
-                        type: 'line', label: 'Luỹ kế %', data: cumulative,
+                        type: 'line', label: 'Luỹ kế % tổng chi phí', data: cumulative,
                         borderColor: '#f59e0b', backgroundColor: 'transparent',
                         tension: 0.2, pointRadius: 2, borderWidth: 2, yAxisID: 'y1', order: 1,
                     },

@@ -1,10 +1,9 @@
 // Metric registry — one declaration per scorecard metric, and the badge renderer
 // that reads it.
 //
-// Every label, number format, delta format and colour comes from this table. Card code
-// must not hard-code any of them: the same metric appears on several tabs and they are
-// required to agree. It also makes the Vietnamese-label pass a one-file change instead
-// of ~30 scattered edits.
+// Every number format, delta format and colour comes from this table. Card code must not
+// hard-code any of them: the same metric appears on several tabs and they are required to
+// agree.
 //
 // renderDelta is also where the EVIDENCE RULE is enforced — a badge only renders when the
 // windows behind it hold at least `minSample` observations. That rule used to live in each
@@ -23,6 +22,10 @@
 // A window too thin to colour on its own is equally too thin to be the baseline of a
 // trend — the delta inherits every weakness of the figure it is measured against while
 // presenting itself as the firmer statement.
+//
+// Labels are the exception, and always were — see the note above METRICS. This header once
+// claimed they came from here too, which is where the "translating labels is a one-file
+// change" belief came from; it was never true.
 //
 // Timestamps shown in badges are rendered in Vietnam time (UTC+7) — the same clock the
 // admin used to pick the range, and the same one period_compare.js evaluates the
@@ -85,6 +88,21 @@ export const usd4 = FORMATTERS.usd4;
 //            a value that is not scoped to the time window at all, and inventory or
 //            configuration figures where a period delta is meaningless.
 
+// ⚠️ `label` does NOT render. Nothing reads it — not renderDelta, not formatValue, not any
+// tab. The text on screen comes from the hardcoded `class="metric-label"` elements in
+// index.html (75 of them). This field is the record of intent, kept in step by hand.
+//
+// And it deliberately stays that way. One metric is shown under two names on purpose:
+//   error_rate_percent → "Error Rate" (Usage, technical) / "Sức khỏe hệ thống" (Overview)
+//   csat_percent       → "CSAT Score" (Satisfaction)     / "Mức hài lòng"      (Overview)
+//   requests_total     → "Total Requests" (Usage)        / "Số lượng request"  (Access)
+// The operational tab names the quantity technically; the executive tab names the question
+// it answers. Making this field the render source would force those to be one string.
+//
+// requests_total is the case that shows why the field cannot be the render source at all:
+// the same declaration serves two tabs counting two different populations — AI calls from
+// mw_audit_log on Usage, every HTTP request the service handled on Access — so no single
+// string is correct on both surfaces.
 export const METRICS = {
     requests_total: {
         label: 'Total Requests', fmt: 'int', delta: 'rel', polarity: 'up-good',
@@ -102,7 +120,7 @@ export const METRICS = {
         label: 'Error Rate', fmt: 'pct1', delta: 'pp', polarity: 'down-good',
     },
     billable_calls: {
-        label: 'Billable', fmt: 'int', delta: 'rel', polarity: 'neutral',
+        label: 'Số request có số liệu tính phí', fmt: 'int', delta: 'rel', polarity: 'neutral',
         // More billable calls means both wider adoption and a bigger bill. Neither
         // direction is plainly good or bad, so it stays neutral rather than being
         // coloured to imply a verdict nobody agreed on.
@@ -131,10 +149,14 @@ export const METRICS = {
         label: 'Tỷ lệ token vào:ra', fmt: 'ratio', delta: 'rel', polarity: 'neutral',
     },
     rpm_avg: {
-        label: 'Throughput (TB)', fmt: 'rpm', delta: 'rel', polarity: 'neutral',
+        label: 'Số lượng request theo phút (trung bình)', fmt: 'rpm', delta: 'rel', polarity: 'neutral',
     },
     rpm_peak: {
-        label: 'Throughput (đỉnh)', fmt: 'rpm', delta: 'rel', polarity: 'neutral',
+        label: 'Số lượng request theo phút (cao nhất)', fmt: 'rpm', delta: 'rel', polarity: 'neutral',
+        // "Cao nhất" là cao nhất TRONG MỘT Ô ĐO, không phải đỉnh thật. Ô đổi theo range
+        // (phút ≤24h · giờ · ngày), nên trên khung dài đỉnh bị san phẳng: 4000 request dồn
+        // trong 1 giờ của một ngày vẫn ra 4000/1440 ≈ 2,8/ph. Dòng metric-detail công bố
+        // độ phân giải đang dùng — đổi tên không chữa được chuyện này, phải đổi cách tính.
     },
 
     // ── Overview tab ──
@@ -165,7 +187,7 @@ export const METRICS = {
         // direction. Numerator is roster-intersected server-side, so it never exceeds 100.
     },
     new_accounts_in_period: {
-        label: 'Cấp mới trong kỳ', fmt: 'int', delta: 'abs', polarity: 'neutral',
+        label: 'Số lượng tài khoản được cấp mới trong kỳ', fmt: 'int', delta: 'abs', polarity: 'neutral',
         // Provisioning count — more/fewer is not itself good or bad. Absolute delta:
         // small headcounts make a relative % noisy.
     },
@@ -231,7 +253,7 @@ export const METRICS = {
 
     // ── Access / Ops (Phase 10) — source: /v1/_mw/access/summary and /v1/_mw/health ──
     http_p95_latency_ms: {
-        label: 'P95 tầng HTTP', fmt: 'ms', delta: 'rel', polarity: 'down-good',
+        label: 'Độ trễ P95 của máy chủ', fmt: 'ms', delta: 'rel', polarity: 'down-good',
         // Deliberately NOT p95_latency_ms. Both payloads expose a field of that name, but
         // they measure different things: p95_latency_ms is how long an upstream model took
         // to answer (tab Usage), this is the duration of every HTTP request the service
@@ -254,7 +276,7 @@ export const METRICS = {
         // which is the whole reason these are three figures and not one. No `bands`.
     },
     failed_dashboard_logins: {
-        label: 'Đăng nhập dashboard thất bại', fmt: 'int', delta: 'abs', polarity: 'down-good',
+        label: 'Số lần đăng nhập dashboard thất bại', fmt: 'int', delta: 'abs', polarity: 'down-good',
         // The label must keep the word "dashboard". Staff sign-ins are routed by nginx to
         // Open WebUI (`location /api/v1/auths/`) and never traverse this service, so this
         // figure cannot carry that signal — a bare "failed logins" invites the reader to
@@ -291,13 +313,13 @@ export const METRICS = {
         blockedReason: 'Cơ cấu tổ chức — không phụ thuộc khoảng thời gian đang xem',
     },
     provisioned_total: {
-        label: 'Tổng đã cấp', fmt: 'int', compare: false,
+        label: 'Tổng số lượng tài khoản đã cấp', fmt: 'int', compare: false,
         blockedReason: 'Snapshot roster (mw_users chưa xóa) — tính đến hiện tại, không '
             + 'thuộc cửa sổ thời gian. Đây là mẫu số của tỷ lệ áp dụng, không phải chỉ tiêu '
             + 'so kỳ riêng.',
     },
     dormant_count: {
-        label: 'Tài khoản ngủ', fmt: 'int', compare: false,
+        label: 'Tài khoản không được sử dụng', fmt: 'int', compare: false,
         blockedReason: 'Snapshot roster — đếm tài khoản chưa từng dùng / ngừng > 30 ngày '
             + 'tính đến hôm nay, không scoped theo range. Cùng lý do với pending_open_count.',
     },
@@ -324,17 +346,17 @@ export const METRICS = {
             + 'người có tạo hội thoại), nên phải đổi nhãn chứ không thay ngầm.',
     },
     pending_open_count: {
-        label: 'Pending', fmt: 'int', compare: false,
+        label: 'Số request đang chờ xử lý', fmt: 'int', compare: false,
         blockedReason: 'Không thuộc phạm vi khoảng thời gian — đếm toàn bảng mw_pending, '
             + 'nên trả cùng một giá trị ở cả ba cửa sổ. Gắn badge sẽ hiện 0% vĩnh viễn.',
     },
     pending_oldest_age_sec: {
-        label: 'Tuổi kẹt lâu nhất', fmt: 'age', compare: false,
+        label: 'Thời gian request chờ lâu nhất', fmt: 'age', compare: false,
         blockedReason: 'Snapshot toàn bảng mw_pending (min(ts)) — cùng lý do với pending_open_count, '
             + 'không thuộc cửa sổ thời gian nên không so kỳ được.',
     },
     usage_missing_calls: {
-        label: 'Usage Missing', fmt: 'int', compare: false,
+        label: 'Số lượt chat lỗi ghi nhận usage', fmt: 'int', compare: false,
         blockedReason: 'Chỉ số chẩn đoán chất lượng dữ liệu, không phải chỉ tiêu nghiệp vụ '
             + 'theo kỳ — miễn badge theo quyết định #9.',
     },
@@ -496,9 +518,17 @@ function line(prefix, metricKey, current, side, elementId) {
 
     const abs = document.createElement('span');
     abs.className = 'delta-abs';
-    // Always print the window actually being compared — no hidden suppression rules.
-    abs.textContent = `${prefix}: ${formatVnWindow(side.window)} (${formatValue(metricKey, side.value)})`;
+    // Just the baseline value. The date range it came from used to be printed here, and on
+    // a three-card row it wrapped to two lines per card and buried the arrow the reader
+    // actually scans for.
+    //
+    // It is moved to the tooltip, not dropped: which window a baseline came from is the one
+    // thing that makes the number checkable, and a comparison whose period cannot be
+    // recovered at all is a claim with no way to audit it. Hover still answers it, and the
+    // dimmed "KT: −" line has carried its window in a tooltip the same way all along.
+    abs.textContent = `${prefix}: ${formatValue(metricKey, side.value)}`;
     el.appendChild(abs);
+    if (side.window) el.title = formatVnWindow(side.window);
 
     if (side.lengthMismatch) {
         const warn = document.createElement('span');
