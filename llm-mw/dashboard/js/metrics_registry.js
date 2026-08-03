@@ -6,6 +6,24 @@
 // required to agree. It also makes the Vietnamese-label pass a one-file change instead
 // of ~30 scattered edits.
 //
+// renderDelta is also where the EVIDENCE RULE is enforced — a badge only renders when the
+// windows behind it hold at least `minSample` observations. That rule used to live in each
+// tab's own pick() function, where it was correct in exactly one tab (RAG Health, which
+// had hit the bug) and absent in the six that had not. The lesson stayed a comment instead
+// of becoming a rule, so Overview kept publishing deltas off three-vote windows.
+//
+// It lives here rather than in loadCompare because loadCompare's signature is
+// (path, pick, { extra }) — it never sees a metric key, so it cannot look up a threshold.
+// side() sees the key but only one past window at a time. renderDelta is the only place
+// that holds the metric's declaration and all three windows at once, and it is the choke
+// point every badge passes through.
+//
+// The bug being prevented, recorded from RAG Health where it was first caught: on the June
+// window a hit-rate badge read "+13.5 điểm %" against a May window holding five questions.
+// A window too thin to colour on its own is equally too thin to be the baseline of a
+// trend — the delta inherits every weakness of the figure it is measured against while
+// presenting itself as the firmer statement.
+//
 // Timestamps shown in badges are rendered in Vietnam time (UTC+7) — the same clock the
 // admin used to pick the range, and the same one period_compare.js evaluates the
 // leap-day clamp in.
@@ -163,6 +181,17 @@ export const METRICS = {
         // Numerator is only the cost that could be attributed to a department, so the card
         // is deliberately smaller than the table's total divided by the same count. The
         // note under the scorecard is what explains that gap.
+        //
+        // The DENOMINATOR does not move with the window. `department_count` comes from
+        // `SELECT id, name FROM "group"` (group_analytics.py:50) with no time filter, so it
+        // is identical in all three windows — which is also why department_count itself is
+        // declared compare:false below. Under a relative delta the constant divides out
+        // exactly:
+        //     (cost_KT/n − cost_now/n) / (cost_now/n)  ==  (cost_KT − cost_now) / cost_now
+        // so this badge reports the movement of attributable COST, not of a per-department
+        // figure, and a past window is normalised by a structure that may not have existed
+        // then. Both are acceptable — present structure is the only one the source records —
+        // but they must be said, hence the hint under the card.
     },
 
     // ── RAG Health (Phase 9) — source: /v1/_mw/rag-health/retrieval ──
@@ -414,12 +443,44 @@ function toneClass(metricKey, direction) {
 
 // ─── Badge rendering ─────────────────────────────────────────
 
-function line(prefix, metricKey, current, side) {
+// Does one window's observation count clear the metric's declared minimum?
+//
+// A metric declaring no minimum is never gated — `minSample` returns 0 and this returns
+// true before looking at `sample` at all, which is why the 20 of 26 `side()` calls that
+// name no sample field keep working untouched.
+//
+// A missing count on a metric that DOES declare a minimum is a programming error, not a
+// data state: the caller forgot to name the denominator. It is reported loudly and then
+// fails closed. Failing closed is not a guess about the data — it is the only direction
+// that cannot publish a claim the evidence has not been checked against.
+function meetsMinSample(metricKey, sample, whichWindow, elementId) {
+    const floor = minSample(metricKey);
+    if (!floor) return true;
+    if (sample == null) {
+        console.error(
+            `[compare] ${elementId} (${metricKey}) khai minSample=${floor} nhưng ${whichWindow} `
+            + 'không kèm số quan sát. Truyền sampleField cho side() và currentSample cho renderDelta().'
+        );
+        return false;
+    }
+    return sample >= floor;
+}
+
+function line(prefix, metricKey, current, side, elementId) {
     const el = document.createElement('div');
     el.className = 'delta-line';
 
-    // No data in that window: state it plainly instead of implying a zero change.
-    if (!side || side.value == null) {
+    // Two ways a baseline can be unusable, and at the level of ONE LINE they are the same
+    // statement — "this window cannot serve as a baseline" — so both render the em dash:
+    //   · the window held no data at all
+    //   · the window held data, but too little for this metric to be measured from
+    // The distinction that does matter is the current window, and renderDelta handles it
+    // by rendering no badge rather than a badge of dashes.
+    //
+    // Order matters: `||` short-circuits, so an empty window never reaches the sample
+    // check and never triggers its missing-count error.
+    if (!side || side.value == null
+        || !meetsMinSample(metricKey, side.sample, `kỳ ${prefix}`, elementId)) {
         el.classList.add('d-dim');
         el.textContent = `${prefix}: ${MINUS}`;
         if (side && side.window) el.title = formatVnWindow(side.window);
@@ -465,19 +526,43 @@ export function clearDelta(valueElementId) {
     if (badge) badge.remove();
 }
 
-export function renderDelta(valueElementId, metricKey, { current, kt, ck } = {}) {
+export function renderDelta(valueElementId, metricKey, { current, currentSample, kt, ck } = {}) {
     const anchor = document.getElementById(valueElementId);
     if (!anchor) return;
+
+    // The anchor must be the card's VALUE element, never a badge. An anchor that is itself
+    // a `.delta-badge` is found and removed by this function's own cleanup below, after
+    // which getElementById returns null and every later render exits at the line above —
+    // leaving the previous range's delta sitting under the new range's number. The failure
+    // renders a plausible badge instead of an error, which is how it survived review.
+    if (anchor.classList.contains('delta-badge')) {
+        console.error(
+            `[compare] renderDelta('${valueElementId}') trỏ vào một .delta-badge. `
+            + 'Phải truyền id của .metric-value — badge do hàm này tự dựng.'
+        );
+        return;
+    }
+
     const card = anchor.closest('.metric-card') || anchor.parentElement;
     if (!card) return;
 
+    // Cleared before every early return below. A badge is the only element on a card that
+    // survives a re-render on its own; any path that returns without clearing first leaves
+    // the previous range's delta in place.
     const existing = card.querySelector('.delta-badge');
     if (existing) existing.remove();
+
     if (!isComparable(metricKey)) return;
+
+    // Too little evidence in the CURRENT window: nothing on this card can support a
+    // comparison, so render no badge at all. Not a badge of dashes — dashes say the
+    // compared windows held nothing, which puts the reason on the past when it is here.
+    // The card's own detail line already carries it ("chưa đủ N để đánh giá").
+    if (!meetsMinSample(metricKey, currentSample, 'kỳ hiện tại', valueElementId)) return;
 
     const badge = document.createElement('div');
     badge.className = 'delta-badge';
-    badge.appendChild(line('KT', metricKey, current, kt));
-    badge.appendChild(line('CK', metricKey, current, ck));
+    badge.appendChild(line('KT', metricKey, current, kt, valueElementId));
+    badge.appendChild(line('CK', metricKey, current, ck, valueElementId));
     card.appendChild(badge);
 }

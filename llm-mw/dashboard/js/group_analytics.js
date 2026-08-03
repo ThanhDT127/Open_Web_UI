@@ -155,7 +155,10 @@ async function renderGroupCompare(data) {
     try {
         const cmp = await loadCompare('/v1/_mw/admin/analytics/groups', _pickDeptAvg);
         const n = data.department_count;
-        renderDelta('grpAvgCostDelta', 'dept_avg_cost', {
+        // Anchor on the VALUE element, never on a pre-built badge div: renderDelta clears
+        // any `.delta-badge` inside the card before drawing, so a badge used as the anchor
+        // deletes itself on the first render and every later one finds nothing.
+        renderDelta('grpAvgCostPerDept', 'dept_avg_cost', {
             current: n > 0 && data.dept_cost_total != null ? data.dept_cost_total / n : null,
             kt: side(cmp.kt, 'dept_avg_cost'),
             ck: side(cmp.ck, 'dept_avg_cost'),

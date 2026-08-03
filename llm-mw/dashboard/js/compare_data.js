@@ -12,9 +12,22 @@ import { getTimeWindow, currentTimeRange } from './filters.js';
 import { resolveCompareWindows } from './period_compare.js';
 
 // The window the comparison is anchored to. Refreshed only on an explicit trigger
-// (range change, tab open) — NOT on the 15s poll. Comparison periods are closed
-// periods: recomputing them every tick would re-fetch a constant, and would also
-// make the cache key churn so nothing ever hit.
+// (range change, tab open) — NOT on the 15s poll: recomputing it every tick would make the
+// cache key churn so nothing ever hit.
+//
+// Caching a past window assumes its contents are settled. That holds for everything drawn
+// from mw_request_log / mw_audit_log — append-only, no retention job, no path by which a
+// user can edit or delete a row. It does NOT hold for metrics read out of Open WebUI's own
+// tables: `feedback` carries created_at AND updated_at, Open WebUI rewrites the row in
+// place, and the query filters on created_at while reading the CURRENT rating (measured
+// 03/08/2026: all five rows had been rewritten, one of them 22 hours later; `version`
+// stayed 0 and no history table exists, so the earlier value is unrecoverable). For those,
+// a cached comparison is a reading taken at fetch time, not a constant.
+//
+// This does not make the CSAT figures wrong — satisfaction is an opinion, and an opinion
+// read as it currently stands is the honest reading; a rating the user withdrew should
+// stop being counted. The note is here so that later work does not lengthen this cache or
+// persist KT values on the premise that a closed period cannot move.
 let anchorWindow = null;
 const cache = new Map(); // `${path}|${start}|${end}` -> Promise<object|null>
 
@@ -115,11 +128,25 @@ export async function loadCompare(path, pick, { extra } = {}) {
     };
 }
 
-/** Shape one side for renderDelta: pull a single metric out of a side's totals. */
-export function side(sideObj, metricKey) {
+/**
+ * Shape one side for renderDelta: pull a single metric out of a side's totals.
+ *
+ * `sampleField` names the field in that payload holding the metric's denominator — the
+ * observation count renderDelta weighs against minSample(). It is passed by the caller
+ * rather than declared in the registry because the name belongs to the endpoint, not to
+ * the metric: the same quantity is `total` on /satisfaction, `evaluated` on RAG retrieval
+ * and `total_requests` on its coverage half. A registry that named one of them would be
+ * wrong everywhere else.
+ *
+ * Omit it for metrics that declare no minimum — `sample` then stays undefined and
+ * renderDelta has nothing to check.
+ */
+export function side(sideObj, metricKey, sampleField) {
     if (!sideObj) return null;
+    const totals = sideObj.totals;
     return {
-        value: sideObj.totals ? sideObj.totals[metricKey] : null,
+        value: totals ? totals[metricKey] : null,
+        sample: totals && sampleField ? totals[sampleField] : undefined,
         window: sideObj.window,
         lengthMismatch: sideObj.lengthMismatch,
     };

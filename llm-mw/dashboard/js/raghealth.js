@@ -192,30 +192,35 @@ const _pickIngestion = (json) => {
     const s = json && json.summary;
     return s && s.total_calls > 0 ? { embedding_calls: s.total_calls } : null;
 };
-// The minimum sample gates the COMPARISON window too, not just the current one. A past
-// window too thin to colour is equally too thin to be the baseline of a trend: on the
-// June window this badge read "+13.5 điểm %" against a May window holding 5 questions.
-// Each metric is gated on its own denominator — evaluated answers for the hit-rate,
-// questions asked for coverage — because the two thin out independently.
+// The minimum-sample rule itself now lives in renderDelta, so this function no longer
+// applies it — it only has to CARRY the two denominators so renderDelta can.
+//
+// The two must stay separate. They are two points on one funnel: every question asked,
+// then those with a document attached, then those whose answer was actually recorded.
+// `evaluated` is therefore always the smaller of the two, in every environment, and the
+// two shrink for unrelated reasons — attachment moves with how people work, pairing with
+// the infrastructure (a request answered after the window closes is never paired, by
+// design: the response CTE carries the same bounds). Collapsing them into one denominator
+// would either publish a hit-rate measured off a handful of answers or suppress a coverage
+// figure resting on thousands of questions.
 const _pickRetrieval = (json) => {
     const c = json && json.coverage;
     if (!c || !c.total_requests) return null;
-    const out = {};
-    if ((json.evaluated || 0) >= minSample('citation_hit_rate')) {
-        out.citation_hit_rate = json.hit_rate;
-    }
-    if (c.total_requests >= minSample('kb_coverage_percent')) {
-        out.kb_coverage_percent = c.coverage_percent;
-    }
-    // A metric left out renders its KT/CK line as "—", which is the honest reading:
-    // that window cannot say.
-    return out;
+    return {
+        citation_hit_rate: json.hit_rate,
+        kb_coverage_percent: c.coverage_percent,
+        evaluated: json.evaluated || 0,
+        total_requests: c.total_requests,
+    };
 };
 
-// Every path through these two clears the old badge FIRST. A badge is the only element
-// on a card that survives a re-render on its own, so an early return, a rejected fetch
-// or a sample that fell below the minimum would each leave the previous range's delta
-// sitting under the new range's number.
+// Both of these still clear the old badge FIRST, and the reason narrowed rather than went
+// away. renderDelta now clears the card itself before any of its own early returns, so the
+// two paths that used to need this guard no longer do — a sample below the minimum and an
+// empty comparison window both reach renderDelta and are handled inside it. What renderDelta
+// cannot cover is the path where it is never called at all: if loadCompare rejects, control
+// jumps straight to the catch, and without the clear below the previous range's delta would
+// sit under the new range's number precisely when the data failed to load.
 async function renderIngestionCompare(current) {
     clearDelta('ragIngestCalls');
     try {
@@ -235,32 +240,26 @@ async function renderRetrievalCompare(data, evaluated, extra) {
     clearDelta('ragCoverage');
 
     const cov = data.coverage || {};
-    // No badge below the minimum sample. The card's detail line already says why, and a
-    // delta between two figures neither of which can be trusted is just noise wearing a
-    // percentage sign.
-    const wantHit = evaluated >= minSample('citation_hit_rate');
-    const wantCoverage = (cov.total_requests || 0) >= minSample('kb_coverage_percent');
-    if (!wantHit && !wantCoverage) return;
-
     try {
         // The tab-local model/user filters travel with the comparison windows too.
         // Without them the badge would measure a filtered present against an unfiltered
         // past and call the difference a trend.
         const cmp = await loadCompare('/v1/_mw/rag-health/retrieval', _pickRetrieval, { extra });
-        if (wantHit) {
-            renderDelta('ragRetrHitRate', 'citation_hit_rate', {
-                current: data.hit_rate,
-                kt: side(cmp.kt, 'citation_hit_rate'),
-                ck: side(cmp.ck, 'citation_hit_rate'),
-            });
-        }
-        if (wantCoverage) {
-            renderDelta('ragCoverage', 'kb_coverage_percent', {
-                current: cov.coverage_percent,
-                kt: side(cmp.kt, 'kb_coverage_percent'),
-                ck: side(cmp.ck, 'kb_coverage_percent'),
-            });
-        }
+        // Each metric names its own denominator. `evaluated` counts answers we could read;
+        // `total_requests` counts questions asked. See _pickRetrieval for why one shared
+        // count cannot serve both.
+        renderDelta('ragRetrHitRate', 'citation_hit_rate', {
+            current: data.hit_rate,
+            currentSample: evaluated,
+            kt: side(cmp.kt, 'citation_hit_rate', 'evaluated'),
+            ck: side(cmp.ck, 'citation_hit_rate', 'evaluated'),
+        });
+        renderDelta('ragCoverage', 'kb_coverage_percent', {
+            current: cov.coverage_percent,
+            currentSample: cov.total_requests || 0,
+            kt: side(cmp.kt, 'kb_coverage_percent', 'total_requests'),
+            ck: side(cmp.ck, 'kb_coverage_percent', 'total_requests'),
+        });
     } catch (err) {
         console.error('RAG retrieval compare failed:', err);
     }
