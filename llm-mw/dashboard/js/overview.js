@@ -84,13 +84,23 @@ async function renderSummaryCompare(totals) {
     }
 }
 
-async function renderCsatCompare(current) {
+// `total` is the vote count behind the percentage — thumbs up plus thumbs down. It travels
+// as the sample so renderDelta can hold the badge to the same evidence bar the card already
+// applies to its own colour: until this, the card refused to colour a figure drawn from
+// three votes and then rendered a coloured arrow computed from those same three.
+//
+// On short ranges the badge will usually be absent, and that is the intended steady state
+// rather than a symptom of a young database: rating is voluntary, so only a fraction of
+// chats carry one, and the default range is Last 1h. The badge returns on the 30- and
+// 90-day ranges — which is where a satisfaction trend starts to mean something anyway.
+async function renderCsatCompare(current, currentSample) {
     try {
         const cmp = await loadCompare('/v1/_mw/admin/analytics/satisfaction', _pickCsatTotals);
         renderDelta('ovCsatValue', 'csat_percent', {
             current,
-            kt: side(cmp.kt, 'csat_percent'),
-            ck: side(cmp.ck, 'csat_percent'),
+            currentSample,
+            kt: side(cmp.kt, 'csat_percent', 'total'),
+            ck: side(cmp.ck, 'csat_percent', 'total'),
         });
     } catch (err) {
         console.error('Overview CSAT compare failed:', err);
@@ -116,7 +126,9 @@ async function loadCsat() {
         // minimum the card keeps its number but drops to a neutral state, because a colour
         // is a verdict and five votes cannot support one.
         setCardState('ovCardCsat', classify('csat_percent', pct, total));
-        renderCsatCompare(pct);
+        // Same `total` that gates the colour above now gates the badge — one evidence bar
+        // for the whole card.
+        renderCsatCompare(pct, total);
     } catch (err) {
         console.error('Overview CSAT load failed:', err);
         setText('ovCsatValue', '—');

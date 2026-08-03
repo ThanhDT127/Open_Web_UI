@@ -53,6 +53,7 @@ const _pickAccess = (json) => {
         denied_rate_percent: t.denied_rate_percent,
         throttled_rate_percent: t.throttled_rate_percent,
         http_p95_latency_ms: t.p95_latency_ms,
+        failed_dashboard_logins: t.failed_dashboard_logins,
     };
 };
 
@@ -67,6 +68,10 @@ async function _renderCompare(t) {
         wire('accessDeniedRate', 'denied_rate_percent', t.denied_rate_percent);
         wire('accessThrottledRate', 'throttled_rate_percent', t.throttled_rate_percent);
         wire('accessHttpP95', 'http_p95_latency_ms', t.p95_latency_ms);
+        // Declared comparable in the registry since Phase 10 but never wired, which reads
+        // as an oversight rather than a decision — the defect the registry exists to make
+        // visible. The payload already carried the field.
+        wire('accessFailedLogins', 'failed_dashboard_logins', t.failed_dashboard_logins);
     } catch (err) {
         console.error('Access compare failed:', err);
     }

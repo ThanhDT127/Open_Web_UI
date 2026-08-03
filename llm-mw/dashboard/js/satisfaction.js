@@ -37,6 +37,15 @@ export async function refreshSatisfaction() {
         const data = await res.json();
 
         // ── 1. Update CSAT summary metrics ──
+        //
+        // No KT/CK badge on this card, deliberately — not the same oversight that left
+        // failed_dashboard_logins declared-but-unwired. `csat_percent` IS comparable and
+        // Overview does badge it, because Overview answers "is satisfaction moving?" for a
+        // reader who sees one number. This tab is the working surface for that number: the
+        // model leaderboard and the feedback list below already carry the movement in a
+        // form you can act on, and a period arrow on top of them adds a second, coarser
+        // verdict about the same data. If that judgement is ever revisited, the badge needs
+        // `currentSample` (data.totals.total) wiring — see renderCsatCompare in overview.js.
         const scoreEl = document.getElementById('csatScoreValue');
         const posEl = document.getElementById('csatPositiveCount');
         const negEl = document.getElementById('csatNegativeCount');

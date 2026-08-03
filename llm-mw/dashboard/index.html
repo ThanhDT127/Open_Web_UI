@@ -562,8 +562,11 @@
                     <div class="metric-value" id="grpAvgCostPerDept">—</div>
                     <!-- The only card of the three that moves with the time range. Said here
                          so the reader does not assume the whole row is a standing fact. -->
-                    <div class="metric-hint">Chi phí trong khoảng đang xem · chỉ chia phần đã quy được về phòng ban</div>
-                    <div class="delta-badge" id="grpAvgCostDelta"></div>
+                    <div class="metric-hint">Chi phí trong khoảng đang xem · chia cho số phòng ban theo cơ cấu <strong>hiện tại</strong> · chỉ tính phần đã quy được về phòng ban</div>
+                    <!-- Không đặt sẵn phần tử .delta-badge ở đây. renderDelta nhận id của
+                         .metric-value và tự dựng badge; một phần tử neo mang class
+                         delta-badge sẽ bị chính bước dọn của renderDelta xoá mất, và từ
+                         lần render thứ hai trở đi badge đứng yên với số của range cũ. -->
                 </div>
             </div>
 
