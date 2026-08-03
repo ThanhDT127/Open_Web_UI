@@ -1,24 +1,26 @@
 // Usage tab logic - metrics, expanded tables, chart data, audit stream
 import { mwFetch, updateStatus } from './utils.js';
-import { currentTimeRange } from './filters.js';
+import { buildRangeParams } from './filters.js';
 import { addAuditEvent, clearAuditEvents } from './filters.js';
 import { eventSource, setEventSource, setRetryCount, retryCount, MAX_RETRY_DELAY } from './auth.js';
+import { renderDelta, formatValue } from './metrics_registry.js';
+import { loadCompare, side } from './compare_data.js';
 
 // Cache latest data for re-rendering on sort/top-N change
 let _lastSummaryData = null;
+
+// Accessor so other tabs (e.g. Overview) can reuse the global-range summary
+// without issuing a duplicate /summary fetch.
+export function getLastSummary() {
+    return _lastSummaryData;
+}
 
 // Load summary data
 export async function loadSummary() {
     try {
         updateStatus('ok', 'Loading data...');
 
-        const params = new URLSearchParams();
-        if (currentTimeRange.minutes) {
-            params.append('minutes', currentTimeRange.minutes);
-        } else {
-            params.append('start', currentTimeRange.start);
-            params.append('end', currentTimeRange.end);
-        }
+        const params = buildRangeParams();
 
         const res = await mwFetch(`/v1/_mw/summary?${params}`);
         if (!res) return;
@@ -26,6 +28,9 @@ export async function loadSummary() {
 
         const data = await res.json();
         _lastSummaryData = data;
+
+        // Notify dependent tabs (Overview) that fresh global-range summary is available
+        try { document.dispatchEvent(new CustomEvent('summary:updated', { detail: data })); } catch (e) { /* noop */ }
 
         if (!data || !data.totals) {
             document.getElementById('topUsersTable').innerHTML = '<tr><td colspan="8" class="no-data">No data in selected time range.<br>Try "Last 7d" or "Last 30d"</td></tr>';
@@ -35,6 +40,7 @@ export async function loadSummary() {
         }
 
         _renderMetrics(data.totals);
+        _renderCompare(data.totals);   // fire-and-forget: badges must never gate the cards
         _renderTables(data);
         _updateInsights(data);
 
@@ -106,6 +112,80 @@ function _renderMetrics(t) {
     }
 
     document.getElementById('metricPending').textContent = t.pending_open_count || 0;
+
+    // ── Request lens (Phase 3) — values formatted from the registry ──
+    const _set = (id, key) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = formatValue(key, t[key]);
+    };
+    _set('metricP50', 'p50_latency_ms');
+    _set('metricP99', 'p99_latency_ms');
+    _set('metricMaxLatency', 'max_latency_ms');
+    _set('metricCostPerReq', 'cost_per_request');
+    _set('metricCostPer1k', 'cost_per_1k_tokens');
+    _set('metricAvgTokens', 'avg_tokens_per_request');
+    _set('metricInOutRatio', 'tokens_in_out_ratio');
+    _set('metricRpmAvg', 'rpm_avg');
+    _set('metricRpmPeak', 'rpm_peak');
+    _set('metricPendingAge', 'pending_oldest_age_sec');
+
+    // Peak resolution: say which bucket the peak was measured over (per-minute exact
+    // only when buckets are minutes; hourly/daily on longer ranges smooth it).
+    const peakDetail = document.getElementById('metricRpmPeakDetail');
+    if (peakDetail && t.rpm_peak_bucket) {
+        const unit = { minute: 'phút', hour: 'giờ', day: 'ngày' }[t.rpm_peak_bucket] || t.rpm_peak_bucket;
+        // Nói ra ô đo, vì "cao nhất" chỉ chính xác khi ô là phút. Trên khung dài, ô là giờ
+        // hoặc ngày và giá trị bị chia đều trong ô đó — người đọc phải biết mình đang xem
+        // đỉnh thật hay đỉnh đã san phẳng.
+        peakDetail.textContent = `Cao nhất trong một ${unit}, quy về phút`;
+    }
+}
+
+// A window with no requests at all is "no data", not "zero change" — returning null
+// here is what makes the badge render an em dash instead of a fabricated 0%.
+function _pickTotals(json) {
+    const t = json && json.totals;
+    return t && t.requests_total > 0 ? t : null;
+}
+
+// Card id -> metric key in the registry. `metricPending` is listed on purpose: the
+// registry blocks it, so this proves the block rather than leaving it to chance.
+const _COMPARE_CARDS = [
+    ['metricLLMCalls', 'requests_total'],
+    ['metricCost', 'cost_total_usd'],
+    ['metricTokens', 'tokens_total'],
+    ['metricLatency', 'p95_latency_ms'],
+    ['metricErrorRate', 'error_rate_percent'],
+    ['metricBillableCalls', 'billable_calls'],
+    ['metricPending', 'pending_open_count'],
+    // Request lens (Phase 3) — windowed metrics get a KT/CK badge automatically.
+    ['metricP50', 'p50_latency_ms'],
+    ['metricP99', 'p99_latency_ms'],
+    ['metricMaxLatency', 'max_latency_ms'],
+    ['metricCostPerReq', 'cost_per_request'],
+    ['metricCostPer1k', 'cost_per_1k_tokens'],
+    ['metricAvgTokens', 'avg_tokens_per_request'],
+    ['metricInOutRatio', 'tokens_in_out_ratio'],
+    ['metricRpmAvg', 'rpm_avg'],
+    ['metricRpmPeak', 'rpm_peak'],
+    // Listed on purpose though compare:false — proves the registry block is enforced,
+    // not merely declared (no badge should appear).
+    ['metricPendingAge', 'pending_oldest_age_sec'],
+];
+
+async function _renderCompare(t) {
+    try {
+        const cmp = await loadCompare('/v1/_mw/summary', _pickTotals);
+        for (const [elementId, key] of _COMPARE_CARDS) {
+            renderDelta(elementId, key, {
+                current: t[key],
+                kt: side(cmp.kt, key),
+                ck: side(cmp.ck, key),
+            });
+        }
+    } catch (err) {
+        console.error('Compare badges failed:', err);
+    }
 }
 
 // ─── Tables rendering ────────────────────────────────────────
@@ -122,6 +202,7 @@ function _getSortedSlice(items, sortKey, countElId) {
     const sortFns = {
         cost: (a, b) => (b.cost_usd || 0) - (a.cost_usd || 0),
         requests: (a, b) => (b.requests_total || 0) - (a.requests_total || 0),
+        users: (a, b) => (b.unique_users || 0) - (a.unique_users || 0),
         tokens: (a, b) => (b.tokens_total || 0) - (a.tokens_total || 0),
         latency: (a, b) => (b.p95_latency_ms || 0) - (a.p95_latency_ms || 0),
         errors: (a, b) => (b.error_rate_percent || 0) - (a.error_rate_percent || 0)
@@ -166,7 +247,7 @@ function _renderUsersTable(users) {
 function _renderModelsTable(models) {
     const table = document.getElementById('topModelsTable');
     if (!models.length) {
-        table.innerHTML = '<tr><td colspan="8" class="no-data">No model data</td></tr>';
+        table.innerHTML = '<tr><td colspan="10" class="no-data">No model data</td></tr>';
         return;
     }
 
@@ -185,6 +266,8 @@ function _renderModelsTable(models) {
             <td>${(m.requests_total || 0).toLocaleString()}</td>
             <td>${(m.tokens_total || 0).toLocaleString()}</td>
             <td class="cost">$${(m.cost_usd || 0).toFixed(4)}</td>
+            <td>${(m.cost_share_percent || 0).toFixed(1)}%</td>
+            <td>${(m.unique_users || 0).toLocaleString()}</td>
             <td>$${avgCost.toFixed(4)}</td>
             <td>${m.p95_latency_ms ? m.p95_latency_ms.toFixed(0) + 'ms' : '-'}</td>
             <td class="${errClass}">${(m.error_rate_percent || 0).toFixed(1)}%</td>

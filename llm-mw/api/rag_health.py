@@ -11,37 +11,26 @@ accepts ``model`` and ``user_id``.
 """
 
 from typing import Optional
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from fastapi import Query, Request
 
-_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+from api.summary_v2 import _resolve_range
+
+# This tab's historical default when the caller sends no explicit window. The
+# dashboard always sends absolute start/end (buildRangeParams), so it only applies
+# to direct API calls.
+_DEFAULT_MINUTES = 60 * 24 * 7
 
 
-def _parse_range(start: Optional[str], end: Optional[str], default_hours: int = 24 * 7):
-    """Parse ISO start/end query params, defaulting to the last ``default_hours``."""
-    now = datetime.now(_TZ)
-    if start:
-        try:
-            cutoff = datetime.fromisoformat(start.replace("Z", "+00:00"))
-            if cutoff.tzinfo is None:
-                cutoff = cutoff.replace(tzinfo=_TZ)
-        except ValueError:
-            cutoff = now - timedelta(hours=default_hours)
-    else:
-        cutoff = now - timedelta(hours=default_hours)
+def _parse_range(start: Optional[str], end: Optional[str]):
+    """Resolve the window through the single shared resolver.
 
-    if end:
-        try:
-            end_time = datetime.fromisoformat(end.replace("Z", "+00:00"))
-            if end_time.tzinfo is None:
-                end_time = end_time.replace(tzinfo=_TZ)
-        except ValueError:
-            end_time = now
-    else:
-        end_time = now
-
+    The local copy this replaces swallowed ``ValueError`` and silently fell back to
+    the last 7 days, so a malformed ``start`` rendered a full page of plausible
+    numbers for a window nobody asked for — while the Usage tab answered 400 for the
+    same input. One bad parameter, two behaviours, no way for the reader to tell.
+    """
+    cutoff, end_time, _ = _resolve_range(minutes=_DEFAULT_MINUTES, start=start, end=end)
     return cutoff, end_time
 
 

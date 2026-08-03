@@ -1,12 +1,13 @@
 // Dashboard orchestrator: wires UI actions to modules and starts/stops loops.
 
 import { authenticate, stopDashboardLoops, setSummaryInterval } from './auth.js';
-import { setTimeRange, applyCustomRange, initAuditFilters } from './filters.js';
+import { setTimeRange, applyCustomRange, initAuditFilters, resolveTimeWindow } from './filters.js';
 import { switchTab } from './tabs.js';
 import { initCharts } from './charts.js';
 import { loadSummary, connectEventStream, refreshTables } from './usage.js';
 import { loadAccessData, connectAccessStream } from './access.js';
-import { applyLogFilters, resetLogFilters, loadMoreLogs, exportLogsToExcel } from './logs.js';
+import { applyLogFilters, resetLogFilters, loadMoreLogs, exportLogsToExcel, loadLogs } from './logs.js';
+import { loadAdoption } from './adoption.js';
 import { refreshAnalytics, initAnalyticsChart } from './analytics.js';
 import { initGroupAnalyticsChart, fetchData as refreshGroups } from './group_analytics.js';
 import { refreshSatisfaction } from './satisfaction.js';
@@ -19,9 +20,11 @@ import {
 	loadGroupToolAccess, showGroupToolModal, closeGroupToolModal, saveGroupTools
 } from './tool_access.js';
 import {
-	saveSMTP, saveQuotaThresholds, saveBudgets, saveNotifToggles, saveDefaultQuota, testSMTP
+	saveSMTP, saveQuotaThresholds, topUpProvider, correctProviderCredit, saveNotifToggles, saveDefaultQuota, testSMTP
 } from './settings.js';
-import { applyRagFilters, resetRagFilters } from './raghealth.js';
+import { applyRagFilters } from './raghealth.js';
+import { loadOverview } from './overview.js';
+import { applyKnowledgeFilters, resetKnowledgeFilters } from './knowledge.js';
 import {
 	recalcComparison, resetSimulator, showAddPriceModal, showEditPriceModal,
 	closePriceModal, savePrice, deletePrice
@@ -90,19 +93,41 @@ export async function initAPI() {
 	window.settingsAPI = {
 		saveSMTP,
 		saveQuotaThresholds,
-		saveBudgets,
+		topUpProvider,
+		correctProviderCredit,
 		saveNotifToggles,
 		saveDefaultQuota,
 		testSMTP
 	};
 
+	// `apply` is the tab's reload hook (filters.js calls it on a time-range change), not a
+	// filter handler — the tab-local filter bar was removed. No `reset`: there is nothing
+	// left to reset.
 	window.ragHealthAPI = {
-		apply: applyRagFilters,
-		reset: resetRagFilters
+		apply: applyRagFilters
+	};
+
+	window.knowledgeAPI = {
+		apply: applyKnowledgeFilters,
+		reset: resetKnowledgeFilters
 	};
 
 	window.groupAnalyticsAPI = {
 		fetchData: refreshGroups
+	};
+
+	window.overviewAPI = {
+		refresh: loadOverview
+	};
+
+	// Tabs that read the global range but were not being reloaded when it changed.
+	// Exposed here rather than imported into filters.js directly: each of these modules
+	// imports buildRangeParams FROM filters.js, so a direct import would close a cycle.
+	window.rangeScopedTabs = {
+		usersTab:    () => { loadUsers(); loadAdoption(); },
+		accessTab:   loadAccessData,
+		logsTab:     loadLogs,
+		overviewTab: loadOverview,
 	};
 
 	// One-time UI init
@@ -124,8 +149,11 @@ export function startDashboard() {
 	connectActiveUsersStream();
 	startNotifications();
 
-	// Refresh summary periodically (keeps charts/metrics fresh)
+	// Refresh summary periodically (keeps charts/metrics fresh).
+	// Re-pin the window first so presets keep rolling forward, and so every tab
+	// fetching during this cycle uses the same start/end.
 	const interval = setInterval(() => {
+		resolveTimeWindow();
 		loadSummary();
 	}, 15000);
 	setSummaryInterval(interval);

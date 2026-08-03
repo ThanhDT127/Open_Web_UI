@@ -1,6 +1,6 @@
 // Logs tab logic - Audit log query with dropdown filters and Excel export
 import { mwFetch } from './utils.js';
-import { currentTimeRange } from './filters.js';
+import { buildRangeParams } from './filters.js';
 import { escapeHtml } from './utils.js';
 
 let currentPage = 0;
@@ -19,18 +19,10 @@ export const logFilters = {
 // Load logs with current filters
 export async function loadLogs(append = false) {
     try {
-        const params = new URLSearchParams();
-
-        // Time range
-        if (currentTimeRange.minutes) {
-            const end = new Date();
-            const start = new Date(end.getTime() - currentTimeRange.minutes * 60 * 1000);
-            params.append('start', start.toISOString());
-            params.append('end', end.toISOString());
-        } else {
-            params.append('start', currentTimeRange.start);
-            params.append('end', currentTimeRange.end);
-        }
+        // Time range. Appended directly rather than through buildRangeParams'
+        // `extra` map, because that map drops falsy values and `offset` is 0
+        // on the first page.
+        const params = buildRangeParams();
 
         // Pagination
         params.append('limit', PAGE_SIZE);

@@ -78,17 +78,36 @@ def test_meta_size_defaults_zero():
 
 def test_classify_dead_vs_unproven():
     # Has chunks but zero demand -> dead; no chunks and zero demand -> unproven.
-    assert _classify(attach=0, hit_rate=0.0, chunk_count=100) == "dead"
-    assert _classify(attach=0, hit_rate=0.0, chunk_count=0) == "unproven"
+    assert _classify(attach=0, evaluated=0, hit_rate=None, chunk_count=100) == "dead"
+    assert _classify(attach=0, evaluated=0, hit_rate=None, chunk_count=0) == "unproven"
 
 
 def test_classify_unproven_below_sample_floor():
-    assert _classify(attach=MIN_SAMPLE_ATTACHMENTS - 1, hit_rate=100.0, chunk_count=10) == "unproven"
+    n = MIN_SAMPLE_ATTACHMENTS - 1
+    assert _classify(attach=n, evaluated=n, hit_rate=100.0, chunk_count=10) == "unproven"
 
 
 def test_classify_star_vs_needs_tuning():
-    assert _classify(attach=MIN_SAMPLE_ATTACHMENTS, hit_rate=GOOD_HIT_RATE, chunk_count=10) == "star"
-    assert _classify(attach=20, hit_rate=GOOD_HIT_RATE - 1, chunk_count=10) == "needs_tuning"
+    n = MIN_SAMPLE_ATTACHMENTS
+    assert _classify(attach=n, evaluated=n, hit_rate=GOOD_HIT_RATE, chunk_count=10) == "star"
+    assert _classify(attach=20, evaluated=20, hit_rate=GOOD_HIT_RATE - 1, chunk_count=10) == "needs_tuning"
+
+
+def test_classify_withholds_verdict_when_answers_were_never_logged():
+    """Demand proven, quality unmeasurable -> unproven, never needs_tuning.
+
+    A KB attached 35 times whose answers were never recorded used to be classified
+    "needs tuning", which names the knowledge base as the thing at fault on the
+    strength of missing logs. Streamed answers only began emitting chat.response on
+    2026-07-01, so the whole June corpus took that path.
+    """
+    assert _classify(attach=35, evaluated=0, hit_rate=None, chunk_count=983) == "unproven"
+    # Enough attachments but too few readable answers to judge quality.
+    assert _classify(attach=35, evaluated=MIN_SAMPLE_ATTACHMENTS - 1, hit_rate=0.0,
+                     chunk_count=983) == "unproven"
+    # Once enough answers are readable the ordinary verdict resumes.
+    assert _classify(attach=35, evaluated=MIN_SAMPLE_ATTACHMENTS, hit_rate=0.0,
+                     chunk_count=983) == "needs_tuning"
 
 
 def test_stems_to_kbs_detects_ambiguity():
@@ -123,10 +142,55 @@ def test_empty_corpus_is_safe():
         ka._compute_corpus, ka._query_stem_usage = orig_compute, orig_usage
         ka._corpus_cache["data"] = None
 
-    assert inv["totals"] == {"knowledge_bases": 0, "files": 0, "chunks": 0, "storage_bytes": 0}
+    assert inv["totals"] == {
+        "knowledge_bases": 0, "files": 0, "unique_documents": 0, "dangling_files": 0,
+        "chunks": 0, "storage_bytes": 0,
+    }
     assert val["knowledge_bases"] == []
     assert val["category_counts"] == {"star": 0, "needs_tuning": 0, "dead": 0, "unproven": 0}
     assert gov["duplicates"] == [] and gov["reclaimable_bytes"] == 0
+
+
+def test_duplicates_found_without_file_hash():
+    # The corpus this was measured against carried a hash on 4 of 21 rows. Grouping on
+    # `hash` skipped the rest and reported one duplicate group worth ~1.9 MB where the
+    # real waste was ~15 MB, so the null-hash case is the one that has to be pinned down.
+    import core.knowledge_analytics as ka
+
+    def _f(fid, name, size, hash_=None, kb="kb-1"):
+        return {
+            "id": fid, "filename": name, "stem": ka._stem(name), "owner": "u1",
+            "size": size, "content_type": "application/pdf", "hash": hash_,
+            "knowledge_id": kb, "dangling_kb_id": None, "collection_name": None,
+            "created_at": 0,
+        }
+
+    corpus = {
+        "knowledge": {"kb-1": {"id": "kb-1", "name": "KB", "owner": "u1",
+                               "created_at": 0, "updated_at": 0}},
+        "files": [
+            _f("1", "report.pdf", 1000),           # no hash
+            _f("2", "report.pdf", 1000),           # no hash — same document
+            _f("3", "Report.PDF", 1000),           # no hash, different case/extension case
+            _f("4", "other.pdf", 500, "abc123"),   # hashed, only copy
+        ],
+        "chunks_by_collection": {},
+        "users": {},
+    }
+    orig = ka._compute_corpus
+    ka._compute_corpus = lambda: corpus
+    ka._corpus_cache["data"] = None
+    try:
+        gov = ka.query_governance()
+    finally:
+        ka._compute_corpus = orig
+        ka._corpus_cache["data"] = None
+
+    # Three copies of one document, two of them redundant. The lone hashed file is not a
+    # duplicate and must not be charged.
+    assert len(gov["duplicates"]) == 1
+    assert gov["duplicates"][0]["copies"] == 3
+    assert gov["reclaimable_bytes"] == 2000
 
 
 def test_corpus_cache_reuses_within_ttl():

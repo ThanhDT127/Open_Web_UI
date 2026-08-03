@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from fastapi import Request, HTTPException
 from collections import defaultdict
 
-from config import AUDIT_LOG_FILE, LOG_DIR
+from config import AUDIT_LOG_FILE, LOG_DIR, logger
 
 
 def _db_available() -> bool:
@@ -49,6 +49,31 @@ def _get_global_pending_count() -> int:
         return max(0, len(rows) - 1)
     except Exception:
         return 0
+
+
+def _get_oldest_pending_age_sec() -> Optional[int]:
+    """Age in seconds of the oldest still-open pending request, or None if none.
+
+    mw_pending.ts is epoch SECONDS (int(time.time()) in cost._append_pending_db), so
+    a plain subtraction against the current epoch is correct. Whole-table snapshot,
+    not scoped to any time window. DB-only; returns None if unavailable.
+    """
+    if _db_available():
+        try:
+            from core.db import db_conn
+            with db_conn() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT min(ts) FROM mw_pending")
+                row = cur.fetchone()
+                cur.close()
+            oldest = row[0] if row else None
+            if oldest is None:
+                return None
+            now_epoch = int(dt.datetime.now(dt.timezone.utc).timestamp())
+            return max(0, now_epoch - int(oldest))
+        except Exception:
+            return None
+    return None
 
 
 def _load_entries_from_db(cutoff, end_time) -> List[Dict[str, Any]]:
@@ -106,21 +131,16 @@ def _load_entries_from_files(cutoff, end_time) -> List[Dict[str, Any]]:
     return entries
 
 
-def get_summary_v2(
-    request: Request,
+def _resolve_range(
     minutes: Optional[int] = None,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    bucket: str = "auto"
+    bucket: str = "auto",
 ):
     """
-    Enhanced admin endpoint: Aggregate usage statistics with time range support.
-    Uses DB if available, falls back to audit.jsonl files.
+    Phase 1: resolve request params into a concrete time window and bucket size.
+    Pure — no Request object, no auth. Raises HTTPException on invalid input.
     """
-    from utils.auth_guard import require_admin_or_session
-    require_admin_or_session(request)
-
-    
     # Determine time range
     now_utc = dt.datetime.now(tz=dt.timezone.utc)
     
@@ -165,7 +185,20 @@ def get_summary_v2(
             bucket_size = "day"
     else:
         bucket_size = bucket
-    
+
+    return cutoff, end_time, bucket_size
+
+
+def compute_usage_summary(cutoff, end_time, bucket_size: str) -> Dict[str, Any]:
+    """
+    Phase 2+3: load audit entries for the window, aggregate them, and format the result.
+
+    Pure — takes no Request, performs no auth, raises no HTTP errors. This is the single
+    aggregation implementation for mw_audit_log; every dashboard endpoint needing these
+    numbers MUST call this instead of re-aggregating the table itself.
+
+    Breakdown lists are returned UNTRUNCATED; callers decide whether to cap them.
+    """
     # Define LLM endpoints
     LLM_ENDPOINTS = {
         "/v1/chat/completions": "chat",
@@ -188,6 +221,9 @@ def get_summary_v2(
         "errors": 0
     })
     
+    # Hour-of-day activity: 0..23 -> set of distinct rids (same discipline as timeseries)
+    hourly_rids: Dict[int, set] = defaultdict(set)
+
     # Breakdown data (use sets for distinct rid counting)
     user_data: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
         "requests": set(),
@@ -195,7 +231,13 @@ def get_summary_v2(
         "errors": 0,
         "tokens_total": 0,
         "cost_total": 0.0,
-        "latencies": []
+        # Keyed by rid, not a flat list: one request must contribute one timing, or the
+        # sample count stops being comparable to the request count it is shown against.
+        "latencies": {},
+        # Sets of rids, not counters: a request logged twice for the same model
+        # (error then reconciled) must count once, so the model percentages the
+        # Groups tab renders share the unit its request column already uses.
+        "models": defaultdict(set)
     })
     
     model_data: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
@@ -204,12 +246,18 @@ def get_summary_v2(
         "errors": 0,
         "tokens_total": 0,
         "cost_total": 0.0,
-        "latencies": []
+        "latencies": {},  # rid -> latency, same one-timing-per-request rule as above
+        "users": set()  # distinct user_id per model (Phase 5 — unique_users column)
     })
     
     # Breakdown by LLM type
     llm_type_counts = {"chat": 0, "embedding": 0, "image": 0, "audio": 0, "video": 0}
-    
+
+    # Prompt/completion token split (for the in:out ratio) — the loop below only sums
+    # tokens_total, so these are accumulated separately over successful requests.
+    total_tokens_in = 0
+    total_tokens_out = 0
+
     # Load entries from DB or file
     try:
         if _db_available():
@@ -253,11 +301,18 @@ def get_summary_v2(
             bucket_key = _get_bucket_key(entry_time, bucket_size)
             timeseries_data[bucket_key]["requests"].add(rid)
 
+            # Hour-of-day bucketing. Counting distinct rids keeps a request that
+            # straddles an hour boundary (pending 14:59 -> reconciled 15:01) from
+            # being counted in both hours.
+            hourly_rids[entry_time.hour].add(rid)
+
             # Only aggregate tokens/cost from final status (ok/reconciled)
             if status in ["ok", "reconciled"]:
                 tokens = entry.get("tokens_total", 0)
                 cost = entry.get("cost_usd", 0.0)
                 latency = entry.get("latency_ms")
+                total_tokens_in += entry.get("tokens_in", 0) or 0
+                total_tokens_out += entry.get("tokens_out", 0) or 0
 
                 timeseries_data[bucket_key]["tokens_total"] += tokens
                 timeseries_data[bucket_key]["cost_total"] += cost
@@ -267,23 +322,40 @@ def get_summary_v2(
                 user_data[user_id]["requests_ok"].add(rid)
                 user_data[user_id]["tokens_total"] += tokens
                 user_data[user_id]["cost_total"] += cost
+                user_data[user_id]["models"][model].add(rid)
                 if latency:
-                    user_data[user_id]["latencies"].append(latency)
+                    user_data[user_id]["latencies"][rid] = latency
 
                 # Model breakdown
                 model_data[model]["requests"].add(rid)
                 model_data[model]["requests_ok"].add(rid)
+                model_data[model]["users"].add(user_id)
                 model_data[model]["tokens_total"] += tokens
                 model_data[model]["cost_total"] += cost
                 if latency:
-                    model_data[model]["latencies"].append(latency)
+                    model_data[model]["latencies"][rid] = latency
 
             elif status == "error":
                 timeseries_data[bucket_key]["errors"] += 1
                 user_data[user_id]["requests"].add(rid)
                 user_data[user_id]["errors"] += 1
+                # Count the model here too, mirroring model_data below. Otherwise a user
+                # whose requests all failed reports top_model="unknown" while the model
+                # breakdown still lists the model they were calling.
+                user_data[user_id]["models"][model].add(rid)
                 model_data[model]["requests"].add(rid)
+                model_data[model]["users"].add(user_id)
                 model_data[model]["errors"] += 1
+
+            else:
+                # Anything not yet resolved (pending, or a status this code does not know).
+                # Catch-all on purpose: requests_total counts every rid in rid_status, so
+                # without this branch a request that is still open belongs to nobody and
+                # the per-user breakdown sums to less than the total it is derived from.
+                # Only the request itself is attributed — there is no cost, token count
+                # or latency to attribute yet.
+                user_data[user_id]["requests"].add(rid)
+                user_data[user_id]["models"][model].add(rid)
 
 
         # Calculate totals from rid_status (control-grade: last status per rid)
@@ -344,13 +416,22 @@ def get_summary_v2(
         # Calculate P95 latency from all final events
         all_latencies = []
         for user_stats in user_data.values():
-            all_latencies.extend(user_stats["latencies"])
+            all_latencies.extend(user_stats["latencies"].values())
         
-        p95_latency = None
+        p50_latency = p95_latency = p99_latency = max_latency = None
         if all_latencies:
             all_latencies.sort()
-            p95_idx = int(len(all_latencies) * 0.95)
-            p95_latency = all_latencies[p95_idx] if p95_idx < len(all_latencies) else all_latencies[-1]
+            n_lat = len(all_latencies)
+
+            def _pct(p):
+                # Same index+guard the P95 line has always used, reused for every percentile.
+                idx = int(n_lat * p)
+                return all_latencies[idx] if idx < n_lat else all_latencies[-1]
+
+            p50_latency = _pct(0.50)
+            p95_latency = _pct(0.95)
+            p99_latency = _pct(0.99)
+            max_latency = all_latencies[-1]
         
         # Calculate error rate
         error_rate = (error_count / requests_total * 100) if requests_total > 0 else 0.0
@@ -364,10 +445,14 @@ def get_summary_v2(
             
             user_p95 = None
             if stats["latencies"]:
-                sorted_lat = sorted(stats["latencies"])
+                sorted_lat = sorted(stats["latencies"].values())
                 p95_idx = int(len(sorted_lat) * 0.95)
                 user_p95 = sorted_lat[p95_idx] if p95_idx < len(sorted_lat) else sorted_lat[-1]
             
+            # models maps model -> set of rids, so the count per model is distinct requests.
+            user_model_counts = {m: len(rids) for m, rids in stats["models"].items()}
+            user_top_model = max(user_model_counts.items(), key=lambda kv: kv[1])[0] if user_model_counts else "unknown"
+
             breakdown_by_user.append({
                 "user_id": user_id,
                 "requests_total": user_requests_total,
@@ -376,12 +461,41 @@ def get_summary_v2(
                 "error_rate_percent": round(user_error_rate, 2),
                 "tokens_total": stats["tokens_total"],
                 "cost_usd": round(stats["cost_total"], 6),
-                "p95_latency_ms": round(user_p95, 2) if user_p95 else None
+                # The same figure without the rounding, for callers that regroup these
+                # rows. Rounding per user and then adding the results cannot land on
+                # totals.cost_total_usd, which rounds once at the end: that error grows
+                # with the number of users, so it stays invisible on a 13-user dev set
+                # and reaches the fourth decimal — the last digit the dashboard shows —
+                # at the 200+ users this system is sized for.
+                "cost_usd_raw": stats["cost_total"],
+                "p95_latency_ms": round(user_p95, 2) if user_p95 else None,
+                "top_model": user_top_model,
+                # Phase 7a: the sum and the sample count, not an average. Callers that
+                # aggregate several users divide one total by the other; handing them a
+                # rounded average to multiply back out would round twice.
+                # sample_count also states the coverage — latency_ms is absent on every
+                # reconciled row, so it never spans all successful requests.
+                "latency_sum_ms": round(sum(stats["latencies"].values()), 2),
+                "latency_sample_count": len(stats["latencies"]),
+                # Per-model distinct-request counts, so a caller can build its own model
+                # distribution without re-reading the audit log.
+                "model_counts": user_model_counts
             })
         
         # Sort by cost descending
         breakdown_by_user.sort(key=lambda x: x["cost_usd"], reverse=True)
-        
+
+        # Cost concentration: share of total cost held by the top 10% of users.
+        # Computed over the FULL user population (before the [:20] truncation below)
+        # so the figure reflects everyone, not just the top 20 returned. Reused by
+        # the Overview "Cost Concentration" card and later by Phase 4 (Pareto).
+        top10_pct_cost_share = 0.0
+        n_users = len(breakdown_by_user)
+        if n_users > 0 and total_cost > 0:
+            top_k = (n_users + 9) // 10  # ceil(n * 0.10), at least 1 when n > 0
+            top_cost = sum(u["cost_usd"] for u in breakdown_by_user[:top_k])
+            top10_pct_cost_share = min(100.0, top_cost / total_cost * 100)
+
         # Format breakdown by model
         breakdown_by_model = []
         for model, stats in model_data.items():
@@ -391,7 +505,7 @@ def get_summary_v2(
             
             model_p95 = None
             if stats["latencies"]:
-                sorted_lat = sorted(stats["latencies"])
+                sorted_lat = sorted(stats["latencies"].values())
                 p95_idx = int(len(sorted_lat) * 0.95)
                 model_p95 = sorted_lat[p95_idx] if p95_idx < len(sorted_lat) else sorted_lat[-1]
             
@@ -403,7 +517,12 @@ def get_summary_v2(
                 "error_rate_percent": round(model_error_rate, 2),
                 "tokens_total": stats["tokens_total"],
                 "cost_usd": round(stats["cost_total"], 6),
-                "p95_latency_ms": round(model_p95, 2) if model_p95 else None
+                "p95_latency_ms": round(model_p95, 2) if model_p95 else None,
+                # Phase 5 (dashboard-model-lens): distinct users per model, and this model's
+                # share of population-wide cost. Share uses the global total_cost so the value
+                # is correct even after get_summary_v2 caps the list at [:20].
+                "unique_users": len(stats["users"]),
+                "cost_share_percent": round(stats["cost_total"] / total_cost * 100, 1) if total_cost > 0 else 0.0
             })
         
         # Sort by cost descending
@@ -420,8 +539,30 @@ def get_summary_v2(
                 "cost_usd": round(data["cost_total"], 6),
                 "errors": data["errors"]
             })
-        
 
+        # Format hour-of-day activity: always all 24 slots so the chart keeps its shape.
+        hourly_activity = [{"hour": h, "count": len(hourly_rids.get(h, ()))} for h in range(24)]
+
+        # ── Request-lens derived metrics (Phase 3) ──
+        # Denominator is requests_ok, not requests_total: total_cost/total_tokens are summed
+        # over successful requests only, so dividing by all requests would dilute the unit
+        # figure with failures that cost nothing (design D7).
+        cost_per_request = (total_cost / requests_ok) if requests_ok > 0 else 0.0
+        avg_tokens_per_request = (total_tokens / requests_ok) if requests_ok > 0 else 0.0
+        cost_per_1k_tokens = (total_cost / total_tokens * 1000) if total_tokens > 0 else 0.0
+        tokens_in_out_ratio = (total_tokens_in / total_tokens_out) if total_tokens_out > 0 else None
+
+        # Throughput: avg and peak BOTH in requests/minute so they compare on one scorecard.
+        # Peak = busiest bucket normalised by its own length; rpm_peak_bucket exposes the
+        # resolution behind it (per-minute exact only when buckets are minutes).
+        window_minutes = (end_time - cutoff).total_seconds() / 60.0
+        rpm_avg = (requests_total / window_minutes) if window_minutes > 0 else 0.0
+        _bucket_minutes = {"minute": 1, "hour": 60, "day": 1440}.get(bucket_size, 1)
+        _peak_bucket_requests = max((len(d["requests"]) for d in timeseries_data.values()), default=0)
+        rpm_peak = _peak_bucket_requests / _bucket_minutes
+
+        # Queue health snapshot (whole-table, not window-scoped).
+        pending_oldest_age_sec = _get_oldest_pending_age_sec()
 
         return {
             "time_range": {
@@ -446,15 +587,60 @@ def get_summary_v2(
                 # NEW: Billable metrics
                 "billable_calls": billable_calls,
                 "nonbillable_calls": nonbillable_calls,
-                "usage_missing_calls": usage_missing_calls
+                "usage_missing_calls": usage_missing_calls,
+                # NEW: cost concentration (top 10% of users' share of total cost)
+                "top10_pct_cost_share": round(top10_pct_cost_share, 1),
+                # NEW (Phase 3 — request lens): latency percentiles, unit economics,
+                # throughput, queue health. All derived server-side so period-compare reuses them.
+                "p50_latency_ms": round(p50_latency, 2) if p50_latency is not None else None,
+                "p99_latency_ms": round(p99_latency, 2) if p99_latency is not None else None,
+                "max_latency_ms": round(max_latency, 2) if max_latency is not None else None,
+                "cost_per_request": round(cost_per_request, 6),
+                "cost_per_1k_tokens": round(cost_per_1k_tokens, 6),
+                "avg_tokens_per_request": round(avg_tokens_per_request, 1),
+                "tokens_in_out_ratio": round(tokens_in_out_ratio, 2) if tokens_in_out_ratio is not None else None,
+                "rpm_avg": round(rpm_avg, 3),
+                "rpm_peak": round(rpm_peak, 3),
+                "rpm_peak_bucket": bucket_size,
+                "pending_oldest_age_sec": pending_oldest_age_sec
             },
-            "breakdown_by_user": breakdown_by_user[:20],  # Top 20
-            "breakdown_by_model": breakdown_by_model[:20],  # Top 20
-            "timeseries": timeseries
+            # Returned in full; callers cap these themselves (get_summary_v2 takes top 20).
+            "breakdown_by_user": breakdown_by_user,
+            "breakdown_by_model": breakdown_by_model,
+            "timeseries": timeseries,
+            "hourly_activity": hourly_activity
         }
     
     except Exception as e:
+        # This is the single aggregation both the Usage and Chat Analytics tabs depend on.
+        # Returning the error without logging it makes both tabs render zeros with no trace.
+        logger.error("compute_usage_summary failed (%s -> %s): %s", cutoff, end_time, e, exc_info=True)
         return {"error": str(e)}
+
+
+def get_summary_v2(
+    request: Request,
+    minutes: Optional[int] = None,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    bucket: str = "auto"
+):
+    """
+    Enhanced admin endpoint: Aggregate usage statistics with time range support.
+    Uses DB if available, falls back to audit.jsonl files.
+    """
+    from utils.auth_guard import require_admin_or_session
+    require_admin_or_session(request)
+
+    cutoff, end_time, bucket_size = _resolve_range(minutes, start, end, bucket)
+    result = compute_usage_summary(cutoff, end_time, bucket_size)
+
+    # This endpoint caps the leaderboards; compute_usage_summary returns them in full.
+    if "breakdown_by_user" in result:
+        result["breakdown_by_user"] = result["breakdown_by_user"][:20]
+    if "breakdown_by_model" in result:
+        result["breakdown_by_model"] = result["breakdown_by_model"][:20]
+    return result
 
 
 def _get_audit_log_files() -> List[str]:

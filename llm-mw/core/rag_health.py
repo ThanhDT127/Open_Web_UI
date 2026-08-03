@@ -32,9 +32,18 @@ logger = logging.getLogger("llm_mw")
 
 # Ported from api/chat.py so retrieval detection stays decoupled from the
 # runtime image-injection path (design decision 1).
-#   - source tag: <source id="N"> optionally carrying name="...".
+#   - source tag: <source id="N"> optionally carrying name="..." and resource-type="...".
 #   - citation marker: [N] or [N, M, ...].
-_SOURCE_RE = re.compile(r'<source\s+id="(\d+)"(?:\s+name="([^"]*)")?', re.IGNORECASE)
+#
+# `resource-type` separates the shared knowledge bases (``collection``) from a file the
+# user dragged into one chat (``file``). Coverage counts only the former: a personal PDF
+# is not the corpus the company invested in, and folding the two together inflates the
+# figure with something it does not measure.
+_SOURCE_RE = re.compile(
+    r'<source\s+id="(\d+)"(?:\s+name="([^"]*)")?(?:\s+resource-type="([^"]*)")?',
+    re.IGNORECASE,
+)
+_KB_SOURCE_KIND = "collection"
 _CITATION_RE = re.compile(r'\[(\d+(?:\s*,\s*\d+)*)\]')
 
 # Rough characters-per-chunk estimate used only for the heuristic chunk-count
@@ -164,15 +173,25 @@ def _sources_from_body(body: Any) -> List[Dict[str, str]]:
     if not isinstance(body, dict):
         return []
     text = _message_text(body.get("messages"))
-    sources = []
-    seen = set()
-    for sid, name in _SOURCE_RE.findall(text):
-        if sid in seen:
-            continue
-        seen.add(sid)
-        label = (name or "").strip() or f"source #{sid}"
-        sources.append({"id": sid, "name": label})
-    return sources
+    # A named tag beats a bare one carrying the same id. OpenWebUI emits its citation
+    # *instruction template* — a bare ``<source id="1">`` — ahead of the real attachment
+    # tags, so keeping the first match per id labelled every document in the corpus
+    # ``source #1`` and collapsed the whole By-Source table into one meaningless row.
+    # core/knowledge_analytics.py documents the same trap and sidesteps it by matching
+    # ``Filename:`` / ``Source:`` markers instead of the tag.
+    found: Dict[str, Dict[str, str]] = {}
+    for sid, name, kind in _SOURCE_RE.findall(text):
+        entry = found.setdefault(sid, {"name": "", "kind": ""})
+        # Each attribute is filled by whichever occurrence actually carries it; the bare
+        # template tag carries neither, so it can no longer shadow the real one.
+        if (name or "").strip():
+            entry["name"] = name.strip()
+        if (kind or "").strip():
+            entry["kind"] = kind.strip().lower()
+    return [
+        {"id": sid, "name": e["name"] or f"source #{sid}", "kind": e["kind"] or "unknown"}
+        for sid, e in found.items()
+    ]
 
 
 def _has_citation(content: Optional[str]) -> bool:
@@ -191,26 +210,44 @@ def query_retrieval_health(
     KB attachment is detected by ``<source id="N">`` tags in the logged
     ``chat.request`` body; a "hit" is at least one ``[N]`` marker in the paired
     ``chat.response`` content (joined by request id ``rid``).
+
+    A request whose answer was never logged is reported as ``unpaired`` and kept out
+    of the rate entirely — it is evidence of nothing. Streamed answers only began
+    emitting ``chat.response`` on 2026-07-01 (``api/chat.py``), so every earlier
+    streamed chat lands there; counting them as misses is what made this function
+    report a 0.0% hit-rate for the whole of June, which reads as "the model never
+    cites" when the truth was "we never recorded the answer".
     """
     from core.db import db_conn
 
-    conditions_req = [
+    # Split deliberately: the coverage denominator must carry the SAME model/user filters
+    # as the numerator, or filtering the tab would divide a filtered count by an
+    # unfiltered one. Only the `<source>` condition separates the two.
+    base_conditions = [
         "ts >= %s", "ts <= %s",
         "payload->>'event' = 'chat.request'",
-        r"(payload->'body')::text ~* '<source\s+id\s*='",
+        "payload->>'rid' IS NOT NULL",
     ]
-    params_req: List[Any] = [start, end]
+    base_params: List[Any] = [start, end]
     if model:
-        conditions_req.append("payload->>'model' = %s")
-        params_req.append(model)
+        base_conditions.append("payload->>'model' = %s")
+        base_params.append(model)
     if user_id:
-        conditions_req.append("payload->>'user' = %s")
-        params_req.append(user_id)
+        base_conditions.append("payload->>'user' = %s")
+        base_params.append(user_id)
 
-    where_req = " AND ".join(conditions_req)
+    where_base = " AND ".join(base_conditions)
+    where_req = where_base + r" AND (payload->'body')::text ~* '<source\s+id\s*='"
+    params_req = list(base_params)
 
     with db_conn() as conn:
         cur = conn.cursor()
+        # Coverage denominator: every question asked in the window, attachment or not.
+        # Counting rows (not DISTINCT rid) on purpose — the numerator counts rows from the
+        # same base filter, so the ratio cannot exceed 100% by construction.
+        cur.execute(f"SELECT count(*) FROM mw_request_log WHERE {where_base}", tuple(base_params))
+        total_requests = int(cur.fetchone()[0] or 0)
+
         cur.execute(
             f"""
             WITH req AS (
@@ -222,7 +259,6 @@ def query_retrieval_health(
                        payload#>'{{body,messages}}'   AS messages
                 FROM mw_request_log
                 WHERE {where_req}
-                  AND payload->>'rid' IS NOT NULL
             ),
             resp AS (
                 SELECT DISTINCT ON (payload->>'rid')
@@ -245,32 +281,56 @@ def query_retrieval_health(
         rows = cur.fetchall()
         cur.close()
 
-    total = 0
+    attached = 0
+    evaluated = 0
     hits = 0
+    # Coverage numerator, and the ad-hoc figure kept beside it so the difference between
+    # "the corpus was used" and "someone uploaded their own file" stays visible.
+    kb_requests = 0
+    adhoc_requests = 0
     by_model: Dict[str, Dict[str, int]] = {}
     by_source: Dict[str, Dict[str, int]] = {}
+    # Feeds the tab's user filter. It used to be populated from the zero-citation list,
+    # which only ever contained users who had a miss — and once unpaired requests stopped
+    # being counted as misses, that list (and the filter with it) emptied out.
+    by_user: Dict[str, Dict[str, int]] = {}
     zero_citation: List[Dict[str, Any]] = []
 
+    def _bucket(store: Dict[str, Dict[str, int]], key: str) -> Dict[str, int]:
+        return store.setdefault(key, {"attached": 0, "evaluated": 0, "cited": 0})
+
     for rid, ts, r_user, r_model, prompt, messages, content in rows:
-        total += 1
-        cited = _has_citation(content)
-        if cited:
-            hits += 1
-
-        mkey = r_model or "unknown"
-        m = by_model.setdefault(mkey, {"attached": 0, "cited": 0})
-        m["attached"] += 1
-        if cited:
-            m["cited"] += 1
-
-        for src in _sources_from_body({"messages": messages}):
-            skey = src["name"]
-            s = by_source.setdefault(skey, {"attached": 0, "cited": 0})
-            s["attached"] += 1
+        attached += 1
+        # NULL content means the LEFT JOIN found no chat.response row, not that the
+        # answer cited nothing. The two must never collapse into the same counter.
+        readable = content is not None
+        cited = readable and _has_citation(content)
+        if readable:
+            evaluated += 1
             if cited:
-                s["cited"] += 1
+                hits += 1
 
-        if not cited and len(zero_citation) < zero_citation_limit:
+        sources = _sources_from_body({"messages": messages})
+        if any(s["kind"] == _KB_SOURCE_KIND for s in sources):
+            kb_requests += 1
+        elif sources:
+            adhoc_requests += 1
+
+        buckets = [_bucket(by_model, r_model or "unknown")]
+        if r_user:
+            buckets.append(_bucket(by_user, r_user))
+        buckets += [_bucket(by_source, src["name"]) for src in sources]
+        for b in buckets:
+            b["attached"] += 1
+            if readable:
+                b["evaluated"] += 1
+                if cited:
+                    b["cited"] += 1
+
+        # Only an answer we actually read can be said to have cited nothing. Listing an
+        # unpaired request here sends the reader off to investigate a question that may
+        # well have been answered perfectly.
+        if readable and not cited and len(zero_citation) < zero_citation_limit:
             preview = (prompt or "").strip().replace("\n", " ")
             zero_citation.append({
                 "rid": rid,
@@ -280,24 +340,52 @@ def query_retrieval_health(
                 "question_preview": preview[:200],
             })
 
-    def _rate(d: Dict[str, int]) -> float:
-        return (d["cited"] / d["attached"] * 100.0) if d["attached"] else 0.0
+    # None, not 0.0: with no answer to read there is no rate, and 0.0 is a verdict.
+    # Rounding happens once, in the display layer (see metrics_registry.js).
+    def _rate(d: Dict[str, int]) -> Optional[float]:
+        return (d["cited"] / d["evaluated"] * 100.0) if d["evaluated"] else None
+
+    def _row(key_name: str, key: str, v: Dict[str, int]) -> Dict[str, Any]:
+        return {
+            key_name: key,
+            "attached": v["attached"],
+            "evaluated": v["evaluated"],
+            "unpaired": v["attached"] - v["evaluated"],
+            "cited": v["cited"],
+            "hit_rate": _rate(v),
+        }
 
     return {
-        "kb_attached": total,
+        "kb_attached": attached,
+        "evaluated": evaluated,
+        "unpaired": attached - evaluated,
         "cited": hits,
-        "hit_rate": (hits / total * 100.0) if total else 0.0,
+        "hit_rate": (hits / evaluated * 100.0) if evaluated else None,
         "by_model": sorted(
-            [{"model": k, "attached": v["attached"], "cited": v["cited"], "hit_rate": _rate(v)}
-             for k, v in by_model.items()],
+            [_row("model", k, v) for k, v in by_model.items()],
             key=lambda x: x["attached"], reverse=True,
         ),
         "by_source": sorted(
-            [{"source": k, "attached": v["attached"], "cited": v["cited"], "hit_rate": _rate(v)}
-             for k, v in by_source.items()],
+            [_row("source", k, v) for k, v in by_source.items()],
+            key=lambda x: x["attached"], reverse=True,
+        ),
+        "by_user": sorted(
+            [_row("user_id", k, v) for k, v in by_user.items()],
             key=lambda x: x["attached"], reverse=True,
         ),
         "zero_citation_messages": zero_citation,
+        # Coverage — "of everything asked, how much reached the shared corpus". Both
+        # sides come from chat.request in this same window under the same filters, so
+        # the ratio cannot exceed 100%.
+        #
+        # It deliberately does NOT reuse `kb_attached` as its numerator: that figure
+        # counts any <source> tag, including a file the user dragged into one chat.
+        "coverage": {
+            "total_requests": total_requests,
+            "kb_requests": kb_requests,
+            "adhoc_requests": adhoc_requests,
+            "coverage_percent": (kb_requests / total_requests * 100.0) if total_requests else None,
+        },
     }
 
 
