@@ -7,11 +7,14 @@ import { formatValue } from './metrics_registry.js';
 let growthChart = null;
 let loading = false;
 
+// Must stay word-for-word identical to the four card labels in index.html — the cards are
+// a count of the rows carrying each label, and two spellings of one category read as two
+// different things.
 const CATEGORY_LABEL = {
-    star: '⭐ Star',
-    needs_tuning: '🛠️ Needs Tuning',
-    dead: '💀 Dead',
-    unproven: '🌱 Unproven',
+    star: '⭐ Hiệu quả',
+    needs_tuning: '🛠️ Cần chỉnh',
+    dead: '💀 Không ai dùng',
+    unproven: '🌱 Chưa đủ dữ liệu',
 };
 
 function buildParams(extra = {}) {
@@ -37,9 +40,9 @@ function fmtTs(ts) {
 // strength of a dead connection. Show the reason and paint nothing.
 //
 // Returns true when the section may be rendered.
-function sectionOk(bannerId, data, valueIds, tableIds) {
+function sectionOk(bannerId, data, valueIds, tableIds, textIds) {
     const err = data && data.error;
-    if (err) sectionFailed(bannerId, err, valueIds, tableIds);
+    if (err) sectionFailed(bannerId, err, valueIds, tableIds, textIds);
     else {
         const el = document.getElementById(bannerId);
         if (el) { el.textContent = ''; el.classList.add('hidden'); }
@@ -52,7 +55,7 @@ function sectionOk(bannerId, data, valueIds, tableIds) {
 // numbers left over from the previously selected range still reads as though those
 // numbers describe the range now on screen — the same trap the Overview CSAT card was
 // fixed for in Phase 8.
-function sectionFailed(bannerId, message, valueIds = [], tableIds = []) {
+function sectionFailed(bannerId, message, valueIds = [], tableIds = [], textIds = []) {
     const el = document.getElementById(bannerId);
     if (el) {
         el.textContent = `Không đọc được dữ liệu: ${message}`;
@@ -65,6 +68,14 @@ function sectionFailed(bannerId, message, valueIds = [], tableIds = []) {
     for (const [id, cols] of tableIds) {
         const t = document.getElementById(id);
         if (t) t.innerHTML = `<tr><td colspan="${cols}" class="loading">Không đọc được dữ liệu</td></tr>`;
+    }
+    // Captions carrying counts of their own ("3 unique docs · 16 in deleted KBs") are
+    // reset to their static label rather than blanked: left as they were they would
+    // state a breakdown of a total that is no longer on screen. Mirrors the caption
+    // handling in raghealth.js.
+    for (const [id, fallback] of textIds) {
+        const t = document.getElementById(id);
+        if (t) t.textContent = fallback;
     }
 }
 
@@ -94,8 +105,8 @@ function ensureCharts() {
                 type: 'line',
                 data: {
                     labels: [], datasets: [
-                        { label: 'KBs', data: [], borderColor: '#22c55e', backgroundColor: '#22c55e22', tension: 0.3, borderWidth: 2, pointRadius: 2 },
-                        { label: 'Files', data: [], borderColor: '#3b82f6', backgroundColor: '#3b82f622', tension: 0.3, borderWidth: 2, pointRadius: 2 },
+                        { label: 'Kho tri thức', data: [], borderColor: '#22c55e', backgroundColor: '#22c55e22', tension: 0.3, borderWidth: 2, pointRadius: 2 },
+                        { label: 'File', data: [], borderColor: '#3b82f6', backgroundColor: '#3b82f622', tension: 0.3, borderWidth: 2, pointRadius: 2 },
                     ]
                 },
                 options: {
@@ -113,7 +124,12 @@ function ensureCharts() {
 }
 
 // ── Inventory ──
-const INVENTORY_SLOTS = [['knTotKB', 'knTotFiles', 'knTotChunks', 'knTotStorage'], [['knTypeTable', 3]]];
+const FILES_DETAIL_BASE = 'Số lượt upload';
+// Placeholder rows in index.html are Vietnamese too; a table that says "No data" under a
+// Vietnamese header reads as a section that failed rather than one that is simply empty.
+const INVENTORY_SLOTS = [['knTotKB', 'knTotFiles', 'knTotChunks', 'knTotStorage'],
+                         [['knTypeTable', 3]],
+                         [['knTotFilesDetail', FILES_DETAIL_BASE]]];
 const KB_VALUE_SLOTS = [['knCatStar', 'knCatTuning', 'knCatDead', 'knCatUnproven'],
                         [['knValueTable', 9], ['knAmbiguousTable', 3]]];
 const GOVERNANCE_SLOTS = [['knReclaimable', 'knAdhoc', 'knDangling'],
@@ -134,6 +150,21 @@ async function loadInventory() {
     document.getElementById('knTotChunks').textContent = t.chunks ?? 0;
     document.getElementById('knTotStorage').textContent = fmtBytes(t.storage_bytes);
 
+    // Says what the raw upload count is made of. Deliberately ONE figure: the deleted-KB
+    // count used to sit here too, and two counts side by side read as a breakdown that
+    // should add up to the total when in fact they are independent cuts of the same rows
+    // (a row can be both a duplicate and attached to a deleted KB). That count has its own
+    // card — 🔗 Dangling Files under Governance — where it stands alone and cannot be
+    // mistaken for a part of this one.
+    //
+    // Omitted when it adds nothing: with every row already a distinct document the caption
+    // would just restate the value above it.
+    const detailParts = [FILES_DETAIL_BASE];
+    if (t.unique_documents != null && t.unique_documents !== t.files) {
+        detailParts.push(`${t.unique_documents} tài liệu khác nhau`);
+    }
+    document.getElementById('knTotFilesDetail').textContent = detailParts.join(' · ');
+
     if (ensureCharts() && growthChart) {
         const g = data.growth || [];
         growthChart.data.labels = g.map(b => new Date(b.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
@@ -148,7 +179,7 @@ async function loadInventory() {
             <td>${escapeHtml(x.content_type)}</td>
             <td>${x.count}</td>
             <td>${escapeHtml(fmtBytes(x.bytes))}</td>
-        </tr>`).join('') : '<tr><td colspan="3" class="loading">No files</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="3" class="loading">Chưa có file nào</td></tr>';
 }
 
 // ── KB Value ──
@@ -179,7 +210,7 @@ async function loadKbValue() {
             <td>${escapeHtml(fmtBytes(r.size_bytes))}</td>
             <td>${escapeHtml(fmtTs(r.last_attached))}</td>
             <td>${escapeHtml(CATEGORY_LABEL[r.category] || r.category)}</td>
-        </tr>`).join('') : '<tr><td colspan="9" class="loading">No knowledge bases</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="9" class="loading">Chưa có kho tri thức nào</td></tr>';
 
     const amb = data.ambiguous_sources || [];
     document.getElementById('knAmbiguousTable').innerHTML = amb.length ? amb.map(a => `
@@ -187,7 +218,7 @@ async function loadKbValue() {
             <td>${escapeHtml(a.source)}</td>
             <td>${a.attach}</td>
             <td>${a.kb_count}</td>
-        </tr>`).join('') : '<tr><td colspan="3" class="loading">None 🎉</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="3" class="loading">Không có trường hợp nào 🎉</td></tr>';
 }
 
 // ── Governance ──
@@ -213,7 +244,7 @@ async function loadGovernance() {
             <td>${d.kb_count}</td>
             <td>${escapeHtml(fmtBytes(d.size_bytes))}</td>
             <td>${escapeHtml(fmtBytes(d.reclaimable_bytes))}</td>
-        </tr>`).join('') : '<tr><td colspan="5" class="loading">None 🎉</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="5" class="loading">Không có file trùng nào 🎉</td></tr>';
 
     const owners = data.owners || [];
     document.getElementById('knOwnerTable').innerHTML = owners.length ? owners.map(w => `
@@ -222,7 +253,7 @@ async function loadGovernance() {
             <td>${w.knowledge_bases}</td>
             <td>${w.files}</td>
             <td>${escapeHtml(fmtBytes(w.storage_bytes))}</td>
-        </tr>`).join('') : '<tr><td colspan="4" class="loading">No data</td></tr>';
+        </tr>`).join('') : '<tr><td colspan="4" class="loading">Chưa có dữ liệu</td></tr>';
 }
 
 export async function loadKnowledge() {

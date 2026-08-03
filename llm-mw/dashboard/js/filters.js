@@ -69,6 +69,46 @@ export const auditUserOptions = new Set();
 export const auditModelOptions = new Set();
 export let auditFilters = { user_id: '', model: '' };
 
+// Everything that has to be re-fetched when the admin picks a different range.
+//
+// One function, called by both entry points. It used to be two near-identical copies —
+// one in setTimeRange, one in applyCustomRange — and a tab added to one copy but not the
+// other would refresh from the preset buttons yet stay stale after Apply. Keeping it in
+// one place is what stops the two paths drifting apart again.
+//
+// ⚠️ Every tab that calls buildRangeParams() must appear here. Four were missing until
+// 03/08/2026 (Users/adoption · Access · Logs · Overview): they only reloaded on tab
+// switch, so after Apply the admin had to leave the tab and come back to see the new
+// range. Overview was the worst of the four — its `summary:updated` listener refreshed
+// two cards while CSAT, Cost MTD and adoption kept the previous range's numbers, so the
+// screen mixed two periods with nothing to say so.
+//
+// This list is still something a new tab must remember to join. The structural fix is for
+// each module to subscribe to `range:changed` itself; not done here because a half-migrated
+// design (some tabs listed, some subscribing) is harder to reason about than either.
+function reloadForRangeChange() {
+    // Always reloaded, visible or not: other tabs read their cached results (Overview
+    // renders from the Usage summary, for one), so leaving them stale poisons those too.
+    if (window.dashboardAPI) {
+        window.dashboardAPI.loadSummary?.();
+        window.dashboardAPI.refreshAnalytics?.();
+        window.dashboardAPI.refreshSatisfaction?.();
+    }
+    window.groupAnalyticsAPI?.fetchData?.();
+
+    // Reloaded only when open — nobody else reads their data, so fetching for a hidden
+    // tab would just be traffic.
+    if (document.getElementById('raghealthTab')?.classList.contains('active')) {
+        window.ragHealthAPI?.apply?.();
+    }
+    if (document.getElementById('knowledgeTab')?.classList.contains('active')) {
+        window.knowledgeAPI?.apply?.();
+    }
+    for (const [tabId, reload] of Object.entries(window.rangeScopedTabs || {})) {
+        if (document.getElementById(tabId)?.classList.contains('active')) reload();
+    }
+}
+
 // FIX: Pass event explicitly instead of using global event
 export async function setTimeRange(e, minutes) {
     // Update active button
@@ -79,29 +119,7 @@ export async function setTimeRange(e, minutes) {
     currentTimeRange = { minutes };
     resolveTimeWindow();
     announceRangeChange();
-
-    // Reload data
-    if (window.dashboardAPI) {
-        if (window.dashboardAPI.loadSummary) {
-            window.dashboardAPI.loadSummary();
-        }
-        if (window.dashboardAPI.refreshAnalytics) {
-            window.dashboardAPI.refreshAnalytics();
-        }
-        if (window.dashboardAPI.refreshSatisfaction) {
-            window.dashboardAPI.refreshSatisfaction();
-        }
-    }
-    if (window.groupAnalyticsAPI && window.groupAnalyticsAPI.fetchData) {
-        window.groupAnalyticsAPI.fetchData();
-    }
-    // RAG Health & Knowledge share this range too; reload them when open.
-    if (document.getElementById('raghealthTab')?.classList.contains('active') && window.ragHealthAPI?.apply) {
-        window.ragHealthAPI.apply();
-    }
-    if (document.getElementById('knowledgeTab')?.classList.contains('active') && window.knowledgeAPI?.apply) {
-        window.knowledgeAPI.apply();
-    }
+    reloadForRangeChange();
 }
 
 export async function applyCustomRange() {
@@ -136,29 +154,7 @@ export async function applyCustomRange() {
     };
     resolveTimeWindow();
     announceRangeChange();
-
-    // Reload data
-    if (window.dashboardAPI) {
-        if (window.dashboardAPI.loadSummary) {
-            window.dashboardAPI.loadSummary();
-        }
-        if (window.dashboardAPI.refreshAnalytics) {
-            window.dashboardAPI.refreshAnalytics();
-        }
-        if (window.dashboardAPI.refreshSatisfaction) {
-            window.dashboardAPI.refreshSatisfaction();
-        }
-    }
-    if (window.groupAnalyticsAPI && window.groupAnalyticsAPI.fetchData) {
-        window.groupAnalyticsAPI.fetchData();
-    }
-    // RAG Health & Knowledge share this range too; reload them when open.
-    if (document.getElementById('raghealthTab')?.classList.contains('active') && window.ragHealthAPI?.apply) {
-        window.ragHealthAPI.apply();
-    }
-    if (document.getElementById('knowledgeTab')?.classList.contains('active') && window.knowledgeAPI?.apply) {
-        window.knowledgeAPI.apply();
-    }
+    reloadForRangeChange();
 }
 
 // Initialize audit filters

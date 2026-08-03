@@ -67,7 +67,7 @@ export function initAnalyticsChart() {
                 labels: [],
                 datasets: [
                     {
-                        label: 'Requests',
+                        label: 'Lượt gọi',
                         data: [],
                         borderColor: '#3b82f6',
                         backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -76,7 +76,7 @@ export function initAnalyticsChart() {
                         fill: true
                     },
                     {
-                        label: 'Cost (USD)',
+                        label: 'Chi phí (USD)',
                         data: [],
                         borderColor: '#10b981',
                         backgroundColor: 'rgba(16, 185, 129, 0.1)',
@@ -102,7 +102,7 @@ export function initAnalyticsChart() {
                         position: 'left',
                         ticks: { color: '#94a3b8' },
                         grid: { color: '#334155' },
-                        title: { display: true, text: 'Requests', color: '#3b82f6' },
+                        title: { display: true, text: 'Lượt gọi', color: '#3b82f6' },
                         beginAtZero: true
                     },
                     y1: {
@@ -111,7 +111,7 @@ export function initAnalyticsChart() {
                         position: 'right',
                         ticks: { color: '#94a3b8' },
                         grid: { drawOnChartArea: false },
-                        title: { display: true, text: 'Cost (USD)', color: '#10b981' },
+                        title: { display: true, text: 'Chi phí (USD)', color: '#10b981' },
                         beginAtZero: true
                     }
                 }
@@ -127,7 +127,9 @@ export function initAnalyticsChart() {
             data: {
                 labels: Array.from({ length: 24 }, (_, i) => `${i}h`),
                 datasets: [{
-                    label: 'Requests',
+                    // Each bar is one clock hour summed across every day in the window, so
+                    // the legend must not read as a per-day figure.
+                    label: 'Lượt gọi (cộng dồn mọi ngày)',
                     data: [],
                     backgroundColor: '#8b5cf6', // Purple
                     borderRadius: 4
@@ -195,7 +197,7 @@ export async function refreshAnalytics() {
     if (!tableBody) return;
 
     try {
-        tableBody.innerHTML = '<tr><td colspan="9" class="loading">Loading analytics...</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="9" class="loading">Đang tải...</td></tr>';
 
         // buildRangeParams still carries `minutes` for presets — get_chat_analytics
         // picks its bucket size from it, and the label formatting below reads it too.
@@ -263,7 +265,7 @@ export async function refreshAnalytics() {
         if (modelsTable && data.model_breakdown) {
             modelsTable.innerHTML = '';
             if (data.model_breakdown.length === 0) {
-                modelsTable.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#64748b;">No data</td></tr>';
+                modelsTable.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#64748b;">Chưa có dữ liệu</td></tr>';
             } else {
                 data.model_breakdown.forEach(m => {
                     const tr = document.createElement('tr');

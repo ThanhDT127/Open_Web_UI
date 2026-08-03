@@ -142,10 +142,55 @@ def test_empty_corpus_is_safe():
         ka._compute_corpus, ka._query_stem_usage = orig_compute, orig_usage
         ka._corpus_cache["data"] = None
 
-    assert inv["totals"] == {"knowledge_bases": 0, "files": 0, "chunks": 0, "storage_bytes": 0}
+    assert inv["totals"] == {
+        "knowledge_bases": 0, "files": 0, "unique_documents": 0, "dangling_files": 0,
+        "chunks": 0, "storage_bytes": 0,
+    }
     assert val["knowledge_bases"] == []
     assert val["category_counts"] == {"star": 0, "needs_tuning": 0, "dead": 0, "unproven": 0}
     assert gov["duplicates"] == [] and gov["reclaimable_bytes"] == 0
+
+
+def test_duplicates_found_without_file_hash():
+    # The corpus this was measured against carried a hash on 4 of 21 rows. Grouping on
+    # `hash` skipped the rest and reported one duplicate group worth ~1.9 MB where the
+    # real waste was ~15 MB, so the null-hash case is the one that has to be pinned down.
+    import core.knowledge_analytics as ka
+
+    def _f(fid, name, size, hash_=None, kb="kb-1"):
+        return {
+            "id": fid, "filename": name, "stem": ka._stem(name), "owner": "u1",
+            "size": size, "content_type": "application/pdf", "hash": hash_,
+            "knowledge_id": kb, "dangling_kb_id": None, "collection_name": None,
+            "created_at": 0,
+        }
+
+    corpus = {
+        "knowledge": {"kb-1": {"id": "kb-1", "name": "KB", "owner": "u1",
+                               "created_at": 0, "updated_at": 0}},
+        "files": [
+            _f("1", "report.pdf", 1000),           # no hash
+            _f("2", "report.pdf", 1000),           # no hash — same document
+            _f("3", "Report.PDF", 1000),           # no hash, different case/extension case
+            _f("4", "other.pdf", 500, "abc123"),   # hashed, only copy
+        ],
+        "chunks_by_collection": {},
+        "users": {},
+    }
+    orig = ka._compute_corpus
+    ka._compute_corpus = lambda: corpus
+    ka._corpus_cache["data"] = None
+    try:
+        gov = ka.query_governance()
+    finally:
+        ka._compute_corpus = orig
+        ka._corpus_cache["data"] = None
+
+    # Three copies of one document, two of them redundant. The lone hashed file is not a
+    # duplicate and must not be charged.
+    assert len(gov["duplicates"]) == 1
+    assert gov["duplicates"][0]["copies"] == 3
+    assert gov["reclaimable_bytes"] == 2000
 
 
 def test_corpus_cache_reuses_within_ttl():
