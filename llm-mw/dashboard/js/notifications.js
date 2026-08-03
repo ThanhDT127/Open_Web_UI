@@ -136,6 +136,19 @@ async function poll() {
 
 export function initNotifications() {
     window.notifAPI = { toggle, markAllRead: doMarkAllRead, clickItem };
+}
+
+/** Chỉ poll sau khi đã đăng nhập: poll lúc chưa có cookie sẽ ăn 403, và handler 403
+ *  đá người dùng về màn login — kể cả phiên vừa đăng nhập thành công. */
+export function startNotifications() {
+    if (_pollInterval) return;
     poll();
     _pollInterval = setInterval(poll, 30000);
+}
+
+export function stopNotifications() {
+    if (_pollInterval) {
+        clearInterval(_pollInterval);
+        _pollInterval = null;
+    }
 }

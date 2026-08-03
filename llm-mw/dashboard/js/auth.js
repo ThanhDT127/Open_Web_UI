@@ -124,7 +124,7 @@ async function checkAuthStatus() {
 }
 
 // Setup Enter key for login
-export function initAuth() {
+export async function initAuth() {
     // Set 403 handler in utils to avoid circular dependency
     set403Handler(async (message) => {
         // Import stopDashboard dynamically to avoid circular dependency
@@ -142,18 +142,23 @@ export function initAuth() {
 
     // Check cookie-backed session on page load. Do not require sessionStorage;
     // a valid HttpOnly cookie should be enough to restore the dashboard.
-    document.addEventListener('DOMContentLoaded', async () => {
-        try {
-            const authenticated = await checkAuthStatus();
-            if (authenticated) {
-                document.getElementById('authPrompt').classList.add('hidden');
-                document.getElementById('dashboard').classList.remove('hidden');
-                const { startDashboard } = await import('./main.js');
-                startDashboard();
-            }
-        } catch (err) {
-            // Not logged in, stay on login screen
-            console.log('Not logged in:', err);
+    //
+    // Checked directly rather than from a DOMContentLoaded listener: initAuth() runs
+    // after four awaits in the bootstrap (three dynamic imports plus initAPI), and
+    // DOMContentLoaded has already fired by the first of them. A listener registered
+    // here never ran, so a live cookie never restored the session — and every tab's
+    // opening request was refused, which is where 89 of the recorded 401/403 came from.
+    // By the time this line executes the document is necessarily ready.
+    try {
+        const authenticated = await checkAuthStatus();
+        if (authenticated) {
+            document.getElementById('authPrompt').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+            const { startDashboard } = await import('./main.js');
+            startDashboard();
         }
-    });
+    } catch (err) {
+        // Not logged in, stay on login screen
+        console.log('Not logged in:', err);
+    }
 }

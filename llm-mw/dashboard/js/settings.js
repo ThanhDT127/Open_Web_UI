@@ -29,7 +29,6 @@ export async function loadSettings() {
         document.getElementById('adminEmails').value = (adminAlerts.emails || []).join(', ');
 
         // 2. Populate Quota Thresholds
-        // 2. Populate Quota Thresholds
         const userAlerts = config.user_alerts || {};
         
         // Take the last two thresholds from the existing array (or default to 80, 100)
@@ -41,13 +40,8 @@ export async function loadSettings() {
         document.getElementById('thresholdWarning').value = thresholds[0] || 80;
         document.getElementById('thresholdCritical').value = thresholds[1] || 100;
 
-        // 3. Populate API Budgets
-        const budgets = adminAlerts.api_budgets || {};
-        document.getElementById('budgetOpenAI').value = budgets.openai?.budget_usd || 0;
-        document.getElementById('budgetGemini').value = budgets.gemini?.budget_usd || 0;
-        document.getElementById('budgetXai').value = budgets.xai?.budget_usd || 0;
-        document.getElementById('budgetAnthropic').value = budgets.anthropic?.budget_usd || 0;
-        document.getElementById('budgetDeepseek').value = budgets.deepseek?.budget_usd || 0;
+        // 3. Populate provider prepaid credit rows (Phase 6)
+        _renderProviderCredits(adminAlerts.api_budgets || {});
 
         // 4. Populate Default Quota for lazy-provisioned users
         const defaultQuota = config.provisioning?.default_quota || {};
@@ -139,19 +133,60 @@ export async function saveQuotaThresholds() {
     await _savePartialConfig(data, 'Global Quota thresholds');
 }
 
-export async function saveBudgets() {
-    const data = {
-        admin_alerts: {
-            api_budgets: {
-                openai: { budget_usd: parseFloat(document.getElementById('budgetOpenAI').value) || 0 },
-                gemini: { budget_usd: parseFloat(document.getElementById('budgetGemini').value) || 0 },
-                xai: { budget_usd: parseFloat(document.getElementById('budgetXai').value) || 0 },
-                anthropic: { budget_usd: parseFloat(document.getElementById('budgetAnthropic').value) || 0 },
-                deepseek: { budget_usd: parseFloat(document.getElementById('budgetDeepseek').value) || 0 }
-            }
-        }
-    };
-    await _savePartialConfig(data, 'API budgets');
+// ── Provider prepaid credit (Phase 6) ───────────────────────────────
+function _fmtFunded(iso) {
+    if (!iso) return 'chưa nạp';
+    try {
+        const d = new Date(iso);
+        return d.toLocaleDateString('vi-VN') + ' ' + d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+    } catch { return iso; }
+}
+
+function _renderProviderCredits(budgets) {
+    const host = document.getElementById('providerCreditRows');
+    if (!host) return;
+    const names = Object.keys(budgets);
+    if (!names.length) {
+        host.innerHTML = '<div class="no-data">Chưa có billing account nào</div>';
+        return;
+    }
+    host.innerHTML = names.map(name => {
+        const p = budgets[name] || {};
+        const dep = Number(p.deposited || 0);
+        return `
+            <div class="form-group" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <label style="min-width:110px"><strong>${name}</strong></label>
+                <span class="quota-detail" style="min-width:200px">Số dư: $${dep.toFixed(2)} · nạp: ${_fmtFunded(p.funded_at)}</span>
+                <input type="number" step="0.01" min="0" id="credit_${name}" placeholder="Số tiền" style="width:120px">
+                <button type="button" class="btn-apply" onclick="window.settingsAPI.topUpProvider('${name}')">Nạp thêm</button>
+                <button type="button" class="btn-secondary" onclick="window.settingsAPI.correctProviderCredit('${name}')">Sửa</button>
+            </div>`;
+    }).join('');
+}
+
+export async function topUpProvider(account) {
+    const el = document.getElementById(`credit_${account}`);
+    const amount = parseFloat(el && el.value);
+    if (!amount || amount <= 0) { alert('Nhập số tiền nạp (> 0)'); return; }
+    const res = await mwFetch('/v1/_mw/providers/topup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account, amount })
+    });
+    if (res && res.ok) { alert(`Đã nạp thêm $${amount} vào ${account}`); loadSettings(); }
+    else { alert('Nạp thất bại'); }
+}
+
+// "Sửa" — correct a mistyped balance WITHOUT counting it as a new top-up. Reuses the
+// existing deep-merge alert-config endpoint so funded_at is preserved untouched.
+export async function correctProviderCredit(account) {
+    const el = document.getElementById(`credit_${account}`);
+    const val = parseFloat(el && el.value);
+    if (isNaN(val) || val < 0) { alert('Nhập số dư đúng (>= 0)'); return; }
+    if (!confirm(`Sửa số dư ${account} thành $${val}? (giữ nguyên mốc nạp)`)) return;
+    const data = { admin_alerts: { api_budgets: { [account]: { deposited: val } } } };
+    await _savePartialConfig(data, `Sửa credit ${account}`);
+    loadSettings();
 }
 
 function _renderDefaultQuotaHint(config) {

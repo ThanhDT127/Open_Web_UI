@@ -42,7 +42,10 @@ export default defineConfig({
 
     webServer: {
         command: 'echo "Docker stack should already be running"',
-        url: 'http://localhost:3000',
+        // Follows BASE_URL like `use.baseURL` does. Hardcoding :3000 meant the whole
+        // suite refused to start whenever nginx was down, even for tests that never
+        // open a browser — the middleware itself serves the dashboard on :5000.
+        url: process.env.BASE_URL || 'https://localhost:3000',
         reuseExistingServer: true,
         timeout: 5000,
     },

@@ -97,16 +97,137 @@
         <!-- Tab Navigation -->
         <div class="tabs">
             <button class="tab active" onclick="window.dashboardAPI.switchTab(event, 'usage')">📈 Usage</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'overview')">🎯 Overview</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'providers')">🏭 Providers</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'access')">🌐 Access</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'users')">👥 Users</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'logs')">📋 Logs</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'raghealth')">🧬 RAG Health</button>
+            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'knowledge')">📚 Knowledge</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'groups')">🏢 Groups</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'analytics')">💬 Chat Analytics</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'satisfaction')">⭐ Satisfaction</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'prices')">💸 Prices</button>
-            <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'knowledge')">📚 Knowledge</button>
             <button class="tab" onclick="window.dashboardAPI.switchTab(event, 'settings')">⚙️ Settings</button>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- OVERVIEW TAB (Phase 1 — executive summary cards)   -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="overviewTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">🎯</span>
+                <span class="insight-text">Tổng quan cấp lãnh đạo — chi phí, mức áp dụng, chất lượng và sức khỏe
+                    hệ thống trong một màn hình. Trừ "Chi phí tháng này" (cố định theo tháng), các thẻ khác theo
+                    khoảng thời gian đang chọn ở bộ lọc.</span>
+            </div>
+            <div class="metrics metrics-lg">
+                <!-- Cost MTD (fixed: current month, ignores global range) -->
+                <div class="metric-card" id="ovCardSpend">
+                    <div class="metric-label">💸 Chi phí tháng này</div>
+                    <div class="metric-q">Đang tiêu bao nhiêu từ đầu tháng?</div>
+                    <div class="metric-value" id="ovSpendValue">-</div>
+                    <div class="metric-hint">Tháng này (đến hiện tại) · không theo khoảng đang xem</div>
+                </div>
+                <!-- CSAT (global range) -->
+                <div class="metric-card" id="ovCardCsat">
+                    <div class="metric-label">⭐ Mức hài lòng</div>
+                    <div class="metric-q">Người dùng có hài lòng không?</div>
+                    <div class="metric-value" id="ovCsatValue">-</div>
+                    <div class="metric-detail" id="ovCsatDetail">- lượt khen/chê</div>
+                    <div class="metric-hint">Theo khoảng đang xem</div>
+                </div>
+                <!-- System Health (global range) -->
+                <div class="metric-card" id="ovCardHealth">
+                    <div class="metric-label">🩺 Sức khỏe hệ thống</div>
+                    <div class="metric-q">Hệ thống có đang lỗi/chậm không?</div>
+                    <div class="metric-value" id="ovHealthValue">-</div>
+                    <div class="metric-detail" id="ovHealthDetail">P95: -</div>
+                    <!-- Phase 10: infrastructure signals from /v1/_mw/health. Deliberately
+                         no account count here — the Users tab already answers that, under
+                         a different definition (see design decision 2). -->
+                    <div class="metric-detail" id="ovHealthInfra">—</div>
+                    <div class="metric-hint" id="ovHealthUptime"></div>
+                    <div class="metric-hint">Tỷ lệ lỗi · theo khoảng đang xem</div>
+                </div>
+                <!-- Phase 10: spend anomaly. Computed in the browser from the series the
+                     chart already fetched — no new endpoint, no second query. -->
+                <div class="insight-banner" id="ovCostAnomaly" style="display:none"></div>
+                <!-- Cost Concentration (global range) -->
+                <div class="metric-card" id="ovCardConcentration">
+                    <div class="metric-label">📊 Mức tập trung chi phí</div>
+                    <div class="metric-q">Chi phí có dồn vào một nhóm nhỏ?</div>
+                    <div class="metric-value" id="ovConcentrationValue">-</div>
+                    <div class="metric-hint">Top 10% người dùng chiếm ?% tổng chi · theo khoảng đang xem</div>
+                </div>
+                <!-- Adoption rate (Phase 4 — /v1/_mw/adoption) -->
+                <div class="metric-card" id="ovCardAdoption">
+                    <div class="metric-label">📈 Tỷ lệ sử dụng</div>
+                    <div class="metric-q">Bao nhiêu nhân viên thật sự dùng?</div>
+                    <div class="metric-value" id="ovAdoptionValue">—</div>
+                    <div class="metric-detail" id="ovAdoptionDetail">Đã dùng / đã cấp</div>
+                    <div class="metric-hint">Người dùng trong kỳ / tổng đã cấp · theo khoảng đang xem</div>
+                </div>
+                <!-- Cost per active user (Phase 4 — /v1/_mw/adoption) -->
+                <div class="metric-card" id="ovCardCpu">
+                    <div class="metric-label">👤 Chi phí / người dùng thật</div>
+                    <div class="metric-q">Thêm 1 người dùng tốn thêm bao nhiêu?</div>
+                    <div class="metric-value" id="ovCpuValue">—</div>
+                    <div class="metric-hint">Tổng chi phí / số người dùng thật · theo khoảng đang xem</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- PROVIDERS TAB (Phase 6 — prepaid credit per billing account) -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="providersTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">🏭</span>
+                <span class="insight-text">Credit trả trước theo <strong>nhà cung cấp thanh toán</strong> (nơi nạp tiền
+                    thật). Mỗi provider: đã nạp bao nhiêu, đã tiêu từ lần nạp gần nhất, còn lại và dự kiến bao lâu nữa
+                    cạn. <em>Trang này luôn theo credit hiện tại — KHÔNG theo khoảng thời gian đang lọc.</em>
+                    Ngân sách/nạp tiền cấu hình ở tab Settings.</span>
+            </div>
+            <div class="metrics metrics-lg">
+                <div class="metric-card">
+                    <div class="metric-label">🏭 Số lượng nhà cung cấp</div>
+                    <div class="metric-value" id="provProviderCount">—</div>
+                    <div class="metric-hint">Số billing account có cấu hình</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">💰 Tổng còn lại</div>
+                    <div class="metric-value" id="provTotalRemaining">—</div>
+                    <div class="metric-hint">Tổng credit chưa tiêu · mọi provider</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">💸 Tổng đã tiêu</div>
+                    <div class="metric-value" id="provTotalSpent">—</div>
+                    <div class="metric-hint">Từ lần nạp gần nhất của mỗi provider</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">🧠 Tổng số model</div>
+                    <div class="metric-value" id="provTotalModels">—</div>
+                    <div class="metric-hint">Model đang deploy trên LiteLLM</div>
+                </div>
+            </div>
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Provider</th>
+                            <th>Số dư nạp</th>
+                            <th>Đã tiêu (từ nạp)</th>
+                            <th>Còn lại (%)</th>
+                            <th>Dự kiến cạn</th>
+                            <th>Trạng thái</th>
+                        </tr>
+                    </thead>
+                    <tbody id="providersTable">
+                        <tr><td colspan="6" class="loading">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         <!-- ═══════════════════════════════════════════════════ -->
@@ -153,24 +274,83 @@
                     <div class="metric-detail" id="metricErrorCount">0 errors</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-label">💰 Billable</div>
+                    <div class="metric-label">💰 Số request có số liệu tính phí</div>
                     <div class="metric-value" id="metricBillableCalls">-</div>
-                    <div class="metric-detail">Requests có usage tracked</div>
+                    <div class="metric-detail">Có cost hoặc token — cơ sở để tính chi phí</div>
                 </div>
                 <div class="metric-card usage-missing">
-                    <div class="metric-label">⚠️ Usage Missing</div>
+                    <div class="metric-label">⚠️ Số lượt chat lỗi ghi nhận usage</div>
                     <div class="metric-value" id="metricUsageMissing">-</div>
-                    <div class="metric-detail">OK nhưng thiếu tokens (BUG)</div>
+                    <div class="metric-detail">Gọi thành công nhưng không ghi được token — lỗi dữ liệu</div>
                 </div>
                 <div class="metric-card interactive" onclick="window.dashboardAPI.showPendingModal()">
-                    <div class="metric-label">⏳ Pending</div>
+                    <div class="metric-label">⏳ Số request đang chờ xử lý</div>
                     <div class="metric-value" id="metricPending">-</div>
-                    <div class="metric-detail">Đang chờ xử lý (Xem chi tiết)</div>
+                    <div class="metric-detail">Bấm để xem chi tiết</div>
                 </div>
                 <div class="metric-card" id="cardActiveUsers">
                     <div class="metric-label"><span class="pulse-dot"></span> Active Users</div>
                     <div class="metric-value" id="metricActiveUsers">-</div>
                     <div class="metric-detail">Hoạt động (Real-time)</div>
+                </div>
+            </div>
+
+            <!-- Section: Request lens (Phase 3) — percentiles, unit economics, throughput, queue -->
+            <div class="insight-banner">
+                <span class="insight-icon">🔬</span>
+                <span class="insight-text">Lăng kính Request/Call — độ trễ theo phân vị, đơn giá thực,
+                    cường độ tải và sức khỏe hàng đợi.</span>
+            </div>
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-label">⚡ P50 Latency</div>
+                    <div class="metric-value" id="metricP50">-</div>
+                    <div class="metric-detail">Một nửa requests nhanh hơn</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">⚡ P99 Latency</div>
+                    <div class="metric-value" id="metricP99">-</div>
+                    <div class="metric-detail">99% requests nhanh hơn</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">⚡ Max Latency</div>
+                    <div class="metric-value" id="metricMaxLatency">-</div>
+                    <div class="metric-detail">Request chậm nhất</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">💵 Chi phí / request</div>
+                    <div class="metric-value" id="metricCostPerReq">-</div>
+                    <div class="metric-detail">Trên mỗi request thành công</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">💵 Chi phí / 1k tokens</div>
+                    <div class="metric-value" id="metricCostPer1k">-</div>
+                    <div class="metric-detail">Đơn giá theo token</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">🔤 TB tokens / request</div>
+                    <div class="metric-value" id="metricAvgTokens">-</div>
+                    <div class="metric-detail">Trên mỗi request thành công</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">↔️ Tỷ lệ token vào:ra</div>
+                    <div class="metric-value" id="metricInOutRatio">-</div>
+                    <div class="metric-detail">Input : Output</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">📈 Số lượng request theo phút (trung bình)</div>
+                    <div class="metric-value" id="metricRpmAvg">-</div>
+                    <div class="metric-detail">Chia đều trên toàn khoảng đang chọn</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">📈 Số lượng request theo phút (cao nhất)</div>
+                    <div class="metric-value" id="metricRpmPeak">-</div>
+                    <div class="metric-detail" id="metricRpmPeakDetail">Đo trên từng ô thời gian, quy về phút</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">⏳ Thời gian request chờ lâu nhất</div>
+                    <div class="metric-value" id="metricPendingAge">-</div>
+                    <div class="metric-detail">Tính đến hiện tại · không theo khoảng đang chọn</div>
                 </div>
             </div>
 
@@ -293,6 +473,7 @@
                     <select id="topModelsSortBy" onchange="window.dashboardAPI.refreshUsage()">
                         <option value="cost" selected>💰 Cost</option>
                         <option value="requests">🚀 Requests</option>
+                        <option value="users">👥 Người dùng</option>
                         <option value="tokens">🔤 Tokens</option>
                         <option value="latency">⚡ Latency</option>
                         <option value="errors">❌ Errors</option>
@@ -318,6 +499,8 @@
                                 <th>Requests</th>
                                 <th>Tokens</th>
                                 <th>Cost (USD)</th>
+                                <th>Tỷ trọng CP</th>
+                                <th>Người dùng</th>
                                 <th>Avg $/req</th>
                                 <th>P95 Latency</th>
                                 <th>Error %</th>
@@ -325,7 +508,7 @@
                         </thead>
                         <tbody id="topModelsTable">
                             <tr>
-                                <td colspan="8" class="loading">Loading...</td>
+                                <td colspan="10" class="loading">Loading...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -350,6 +533,8 @@
                 </div>
             </div>
         </div>
+        <!-- /usageTab. Thiếu thẻ đóng này thì mọi tab sau đều lồng vào trong Usage
+             và bị display:none theo nó khi chuyển tab. -->
 
         <!-- ═══════════════════════════════════════════════════ -->
         <!-- GROUP ANALYTICS TAB                                -->
@@ -360,6 +545,35 @@
                 <span class="insight-text">Phân bổ chi phí và thống kê theo phòng ban (Primary Group) — Nhóm được gán tự
                     động dựa trên group cũ nhất của user bên Open WebUI.</span>
             </div>
+
+            <div class="metrics metrics-lg">
+                <div class="metric-card">
+                    <div class="metric-label">🏢 Số phòng ban</div>
+                    <div class="metric-value" id="grpDeptCount">—</div>
+                    <div class="metric-hint">Theo cơ cấu tổ chức · không đổi theo khoảng thời gian</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">👥 Nhân sự đã có phòng ban</div>
+                    <div class="metric-value" id="grpAssignedMembers">—</div>
+                    <div class="metric-hint" id="grpAssignedHint">Trên tổng số tài khoản đang hoạt động</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">💵 Chi phí bình quân mỗi phòng ban</div>
+                    <div class="metric-value" id="grpAvgCostPerDept">—</div>
+                    <!-- The only card of the three that moves with the time range. Said here
+                         so the reader does not assume the whole row is a standing fact. -->
+                    <div class="metric-hint">Chi phí trong khoảng đang xem · chia cho số phòng ban theo cơ cấu <strong>hiện tại</strong> · chỉ tính phần đã quy được về phòng ban</div>
+                    <!-- Không đặt sẵn phần tử .delta-badge ở đây. renderDelta nhận id của
+                         .metric-value và tự dựng badge; một phần tử neo mang class
+                         delta-badge sẽ bị chính bước dọn của renderDelta xoá mất, và từ
+                         lần render thứ hai trở đi badge đứng yên với số của range cũ. -->
+                </div>
+            </div>
+
+            <!-- Filled by group_analytics.js: department count, the "current org structure"
+                 caveat, the note explaining what the scorecard denominators leave out, and a
+                 warning when someone sits in more than one group. -->
+            <div id="groupAnalyticsNotes" style="margin-top: 10px; font-size: 12px; color: #94a3b8;"></div>
 
             <div class="section-controls" style="margin-top: 15px;">
                 <div class="section-title">🏆 Top Spenders by Department</div>
@@ -375,22 +589,54 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>ID Phòng Ban</th>
                                 <th>Tên Phòng Ban</th>
                                 <th>Requests</th>
                                 <th>Tokens</th>
                                 <th>Chi phí (USD)</th>
+                                <th>Tỷ trọng chi phí</th>
+                                <th>Nhân sự phòng</th>
+                                <th>Chi phí / nhân sự</th>
+                                <th>Chi phí / người có dùng</th>
                                 <th>Avg Latency (ms)</th>
                                 <th>Model ưa thích (%)</th>
                             </tr>
                         </thead>
                         <tbody id="groupAnalyticsTable">
                             <tr>
-                                <td colspan="7" class="loading">Loading...</td>
+                                <td colspan="10" class="loading">Loading...</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+            </div>
+
+            <div class="section-controls" style="margin-top: 25px;">
+                <div class="section-title">🔧 Phân quyền Tool theo phòng ban</div>
+                <button class="btn-apply" style="margin-top:0;"
+                    onclick="window.dashboardAPI.loadGroupToolAccess()">↻ Refresh</button>
+            </div>
+            <div class="insight-banner">
+                <span class="insight-icon">🔐</span>
+                <span class="insight-text">Bật tool cho một phòng ban là mọi thành viên phòng đó thấy tool trong tool
+                    picker của khung chat. Phòng ban <strong>0 thành viên</strong> thì bật cũng không ai dùng được —
+                    gán thành viên trong Open WebUI → Admin → Groups.</span>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Phòng ban</th>
+                            <th>Thành viên</th>
+                            <th>Tool được bật</th>
+                            <th>Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody id="groupToolAccessTable">
+                        <tr>
+                            <td colspan="4" class="loading">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
 
@@ -402,25 +648,57 @@
                 <div class="section-title">🌐 HTTP Access Summary</div>
                 <div class="metrics" style="margin-bottom: 20px;">
                     <div class="metric-card">
-                        <div class="metric-label">Total Requests</div>
+                        <div class="metric-label">Số lượng request</div>
                         <div class="metric-value" id="accessTotal">-</div>
                     </div>
+                    <!-- Phase 10: the single "Error Rate" card was split into three.
+                         Each group maps to one repair action: call someone / review an
+                         access decision / raise a limit. The combined figure is gone from
+                         the UI entirely — it supported none of those actions. -->
                     <div class="metric-card">
-                        <div class="metric-label">Error Rate</div>
-                        <div class="metric-value" id="accessErrorRate">-</div>
+                        <div class="metric-label">Tỷ lệ lỗi hệ thống</div>
+                        <div class="metric-value" id="accessFailureRate">-</div>
+                        <div class="metric-detail" id="accessFailureDetail">5xx · không tính healthcheck</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-label">Avg Latency</div>
+                        <div class="metric-label">Tỷ lệ bị từ chối</div>
+                        <div class="metric-value" id="accessDeniedRate">-</div>
+                        <div class="metric-detail" id="accessDeniedDetail">401 · 403</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Tỷ lệ chạm giới hạn</div>
+                        <div class="metric-value" id="accessThrottledRate">-</div>
+                        <div class="metric-detail" id="accessThrottledDetail">429</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Độ trễ trung bình</div>
                         <div class="metric-value" id="accessLatency">-</div>
                     </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Độ trễ P95 của máy chủ</div>
+                        <div class="metric-value" id="accessHttpP95">-</div>
+                        <div class="metric-detail" id="accessHttpP95Detail">—</div>
+                        <div class="metric-hint">Mọi request HTTP, kể cả tải file tĩnh — khác P95 tab Usage (thời gian model trả lời)</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Số lần đăng nhập dashboard thất bại</div>
+                        <div class="metric-value" id="accessFailedLogins">-</div>
+                        <div class="metric-detail">Chỉ cửa dashboard — đăng nhập của nhân viên đi thẳng Open WebUI, không qua đây</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Số lượt healthcheck tự báo lỗi</div>
+                        <div class="metric-value" id="accessHealthProbe">-</div>
+                        <div class="metric-detail">5xx trên /health — container tự thăm dò, không phải người dùng gặp lỗi</div>
+                    </div>
                 </div>
+                <div class="insight-banner" id="accessErrorBanner" style="display:none"></div>
                 <table>
                     <thead>
                         <tr>
                             <th>Path</th>
-                            <th>Requests</th>
-                            <th>Errors</th>
-                            <th>Error %</th>
+                            <th>Số lượng request</th>
+                            <th>Số lượng lỗi</th>
+                            <th>Tỷ lệ lỗi</th>
                         </tr>
                     </thead>
                     <tbody id="accessPathsTable">
@@ -431,7 +709,7 @@
                 </table>
             </div>
             <div class="section">
-                <div class="section-title">📡 Access Events Stream</div>
+                <div class="section-title">📡 Nhật ký truy cập theo thời gian thực</div>
                 <div id="accessEvents">
                     <div class="loading">Connecting...</div>
                 </div>
@@ -448,12 +726,91 @@
                     User mới (lazy provisioning) nhận mặc định: <b id="defaultQuotaHint">…</b> — đổi tại tab
                     Settings.</span>
             </div>
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-label">👥 Tổng số users</div>
+                    <div class="metric-value" id="metricTotalUsers">-</div>
+                    <div class="metric-detail">Tổng tài khoản đã cấp (chưa xóa)</div>
+                </div>
+            </div>
+
+            <!-- ═══ Adoption (Phase 4) — /v1/_mw/adoption ═══ -->
+            <div class="insight-banner">
+                <span class="insight-icon">📈</span>
+                <span class="insight-text">Mức độ áp dụng — bao nhiêu nhân sự thật sự dùng, ai được cấp rồi
+                    bỏ đó, và xu hướng người dùng hoạt động theo ngày/tuần.</span>
+            </div>
+            <div class="metrics">
+                <div class="metric-card">
+                    <div class="metric-label">📈 Tỷ lệ áp dụng</div>
+                    <div class="metric-value" id="metricAdoptionRate">-</div>
+                    <div class="metric-detail" id="metricAdoptionDetail">Đã dùng / đã cấp</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">🆕 Số lượng tài khoản được cấp mới trong kỳ</div>
+                    <div class="metric-value" id="metricNewAccounts">-</div>
+                    <div class="metric-detail">Tài khoản cấp trong khoảng đang xem</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">👤 Chi phí / người dùng thật</div>
+                    <div class="metric-value" id="metricCostPerUser">-</div>
+                    <div class="metric-detail">Tổng chi phí / số người dùng thật</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">🗂️ Tổng số lượng tài khoản đã cấp</div>
+                    <div class="metric-value" id="metricProvisioned">-</div>
+                    <div class="metric-detail">Tài khoản chưa xóa (snapshot)</div>
+                </div>
+            </div>
+            <div class="chart-grid">
+                <div class="chart-container" style="flex:2">
+                    <div class="chart-title">📊 Số lượng người dùng hoạt động theo ngày &amp; tuần</div>
+                    <canvas id="adoptionActivityChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <div class="chart-title">📉 Chi phí theo người dùng — xếp từ cao xuống thấp &amp; luỹ kế %</div>
+                    <canvas id="adoptionParetoChart"></canvas>
+                </div>
+            </div>
+            <div class="section" style="margin-top: 20px;">
+                <div class="section-title">📶 Phân phối mức dùng quota</div>
+                <div id="quotaHistogram"></div>
+            </div>
+            <div class="section" style="margin-top: 20px;">
+                <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>💤 Tài khoản không được sử dụng
+                        <span class="badge" style="margin-left:10px; background:#334155; font-size:12px; padding:3px 10px; border-radius:12px;">
+                            🔴 Chưa dùng: <span id="dormantNeverCount">-</span> ·
+                            🟠 Ngừng &gt; 30 ngày: <span id="dormantStoppedCount">-</span>
+                        </span>
+                    </span>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Ngày cấp</th>
+                                <th>Dùng lần cuối</th>
+                                <th>Im lặng</th>
+                                <th>Trạng thái</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dormantTable">
+                            <tr>
+                                <td colspan="5" class="loading">Loading...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <div class="section">
                 <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>👥 User Management & Quota
+                    <span>👥 Bảng quản lý người dùng và Quota
                         <span id="userCountBadge" class="badge"
                             style="margin-left:10px; background:#334155; font-size:12px; padding:3px 10px; border-radius:12px;">
-                            Active: <span id="activeUserCount">-</span> / Total: <span id="totalUserCount">-</span>
+                            Đang bật: <span id="activeUserCount">-</span> · Tổng: <span id="totalUserCount">-</span>
                         </span>
                     </span>
                     <div style="display: flex; gap: 10px;">
@@ -465,15 +822,15 @@
                     <table>
                         <thead>
                             <tr>
-                                <th>User ID</th>
-                                <th>Role</th>
-                                <th>Status</th>
-                                <th>Models</th>
-                                <th>Period</th>
-                                <th>Cost Used</th>
-                                <th>Limit</th>
-                                <th>Quota Usage</th>
-                                <th>Actions</th>
+                                <th>Người dùng</th>
+                                <th>Vai trò</th>
+                                <th>Trạng thái</th>
+                                <th>Các models được sử dụng</th>
+                                <th>Chu kỳ</th>
+                                <th>Chi phí đã dùng</th>
+                                <th>Hạn mức</th>
+                                <th>Mức sử dụng quota</th>
+                                <th>Thao tác</th>
                             </tr>
                         </thead>
                         <tbody id="usersTable">
@@ -486,7 +843,7 @@
             </div>
 
             <div class="section" style="margin-top: 30px;">
-                <div class="section-title">🔄 User Sync Status (Open WebUI ⇄ Middleware)</div>
+                <div class="section-title">🔄 Bảng quản lý trạng thái đồng bộ tài khoản (Open WebUI ⇄ Middleware)</div>
                 <div class="insight-banner">
                     <span class="insight-icon">🔄</span>
                     <span class="insight-text">Đối chiếu tài khoản chéo giữa Open WebUI DB và Middleware DB. Trạng thái
@@ -496,11 +853,11 @@
                     <thead>
                         <tr>
                             <th>Email / User ID</th>
-                            <th>Name</th>
+                            <th>Tên</th>
                             <th>Open WebUI Role</th>
-                            <th>Middleware Active</th>
-                            <th>Sync Status</th>
-                            <th>Actions</th>
+                            <th>Trạng thái kích hoạt ở Middleware</th>
+                            <th>Trạng thái đồng bộ</th>
+                            <th>Thao tác</th>
                         </tr>
                     </thead>
                     <tbody id="syncTable">
@@ -605,11 +962,49 @@
                             </select>
                         </div>
                     </div>
+
+                    <!-- Tool access — chỉ hiện khi sửa user đã map sang Open WebUI -->
+                    <div id="modalToolsSection" class="tool-access" style="display:none">
+                        <div class="tool-access-header">
+                            <label>🔧 Tool được phép dùng</label>
+                            <span class="tool-access-hint" id="modalToolsGroups"></span>
+                        </div>
+                        <div id="modalToolsList" class="tool-access-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button class="btn btn-secondary" onclick="window.dashboardAPI.closeUserModal()">Cancel</button>
                     <button class="btn btn-primary" id="modalSaveBtn"
                         onclick="window.dashboardAPI.saveUser()">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Group Tool Access Modal -->
+        <div id="groupToolModal" class="modal-overlay" style="display:none">
+            <div class="modal-content modal-sm">
+                <div class="modal-header">
+                    <span id="groupToolModalTitle">Edit Group</span>
+                    <button class="modal-close" onclick="window.dashboardAPI.closeGroupToolModal()">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="tool-access">
+                        <div class="tool-access-header">
+                            <label>🔧 Tool được phép dùng</label>
+                            <span class="tool-access-hint" id="groupToolMembers"></span>
+                        </div>
+                        <div id="groupToolList" class="tool-access-list">
+                            <div class="loading">Loading...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary"
+                        onclick="window.dashboardAPI.closeGroupToolModal()">Cancel</button>
+                    <button class="btn btn-primary" id="groupToolSaveBtn"
+                        onclick="window.dashboardAPI.saveGroupTools()">Save Changes</button>
                 </div>
             </div>
         </div>
@@ -816,64 +1211,48 @@
         <div id="raghealthTab" class="tab-content">
             <div class="insight-banner">
                 <span class="insight-icon">🧬</span>
-                <span class="insight-text">RAG pipeline health — embedding ingestion failures, retrieval
-                    citation hit-rate, and vector-storage anomalies. All data is read-only.</span>
+                <span class="insight-text">Sức khỏe của tính năng "hỏi theo tài liệu công ty", chia theo ba
+                    công đoạn: nạp tài liệu vào kho → tìm lại đúng đoạn để trả lời → giữ kho gọn gàng. Chia
+                    như vậy để khi câu trả lời kém thì biết ngay hỏng ở khâu nào. Chỉ đọc, không sửa gì.</span>
             </div>
 
-            <!-- Shared filters (apply to all three sections) -->
-            <div class="log-filters"
-                style="display: grid; grid-template-columns: repeat(4, 1fr) auto; gap: 15px; margin-bottom: 20px; padding: 15px; background: #1e293b; border-radius: 8px; align-items: flex-end;">
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Start</label>
-                    <input type="datetime-local" id="ragStart" class="filter-select">
-                </div>
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">End</label>
-                    <input type="datetime-local" id="ragEnd" class="filter-select">
-                </div>
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Model</label>
-                    <select id="ragModel" class="filter-select">
-                        <option value="">All Models</option>
-                    </select>
-                </div>
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">User</label>
-                    <select id="ragUser" class="filter-select">
-                        <option value="">All Users</option>
-                    </select>
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button onclick="window.ragHealthAPI.apply()" class="btn-apply">Apply</button>
-                    <button onclick="window.ragHealthAPI.reset()" class="btn-secondary">Reset</button>
-                </div>
-            </div>
+            <!-- The model/user filter bar that used to sit here was removed. It sat above all
+                 three sections but only ever reached the retrieval one — the ingestion cards
+                 never read it (its endpoint does not even accept the parameters), and they
+                 could not: mw_audit_log records the *embedding* model for those rows, while
+                 the dropdown offered chat models, and its user_id is only ever 'admin' or
+                 empty. Both dimensions are now shown as tables/charts instead, which display
+                 every value at once rather than requiring a selection to see one.
+                 Time range still comes from the shared dashboard control above. -->
 
             <!-- ── Ingestion ── -->
             <div class="section">
-                <div class="section-title">📥 Ingestion — Embedding Failures</div>
+                <div class="section-title">📥 Tình trạng nạp tài liệu vào kho</div>
+                <!-- Without this a rejected range (400) left the previous window's numbers
+                     on screen with nothing to say they were stale. -->
+                <div id="ragIngestError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
                 <div class="metrics">
                     <div class="metric-card">
-                        <div class="metric-label">🔢 Embedding Calls</div>
+                        <div class="metric-label">🔢 Số lượt nạp tài liệu</div>
                         <div class="metric-value" id="ragIngestCalls">-</div>
-                        <div class="metric-detail">/v1/embeddings in range</div>
+                        <div class="metric-detail">Số lần gọi /v1/embeddings trong khoảng đang xem</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-label">❌ Failure Rate</div>
+                        <div class="metric-label">❌ Tỷ lệ nạp tài liệu thất bại</div>
                         <div class="metric-value" id="ragIngestFailRate">-</div>
-                        <div class="metric-detail" id="ragIngestFailCount">0 failures</div>
+                        <div class="metric-detail" id="ragIngestFailCount">0 lượt lỗi</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-label">⚡ Avg Latency</div>
+                        <div class="metric-label">⚡ Thời gian trung bình mỗi lượt nạp</div>
                         <div class="metric-value" id="ragIngestLatency">-</div>
-                        <div class="metric-detail">Embedding call latency</div>
+                        <div class="metric-detail">Tính trên các lượt nạp trong khoảng đang xem</div>
                     </div>
                 </div>
                 <div class="chart-container">
-                    <div class="chart-title">📉 Failure Rate Over Time</div>
+                    <div class="chart-title">📉 Tỷ lệ nạp thất bại theo ngày</div>
                     <canvas id="ragIngestChart"></canvas>
                 </div>
-                <div class="section-title" style="margin-top: 20px;">Recent Failures</div>
+                <div class="section-title" style="margin-top: 20px;">Các lượt nạp thất bại gần đây</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -886,7 +1265,7 @@
                         </thead>
                         <tbody id="ragIngestFailures">
                             <tr>
-                                <td colspan="4" class="loading">No data</td>
+                                <td colspan="4" class="loading">Đang tải…</td>
                             </tr>
                         </tbody>
                     </table>
@@ -895,51 +1274,99 @@
 
             <!-- ── Retrieval ── -->
             <div class="section">
-                <div class="section-title">🔎 Retrieval — Citation Hit-Rate</div>
+                <div class="section-title">🔎 Mức độ trích dẫn nguồn khi có tài liệu kèm theo</div>
+                <div id="ragRetrError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
                 <div class="metrics">
                     <div class="metric-card">
-                        <div class="metric-label">📎 KB-Attached Messages</div>
+                        <div class="metric-label">📎 Số câu hỏi được kèm tài liệu</div>
                         <div class="metric-value" id="ragRetrAttached">-</div>
-                        <div class="metric-detail">Requests with a &lt;source&gt; tag</div>
+                        <div class="metric-detail">Có thẻ &lt;source&gt; được nạp vào prompt</div>
                     </div>
                     <div class="metric-card">
-                        <div class="metric-label">✅ Cited</div>
+                        <div class="metric-label">✅ Số câu trả lời có ghi số nguồn</div>
                         <div class="metric-value" id="ragRetrCited">-</div>
-                        <div class="metric-detail">Produced a [N] citation</div>
+                        <div class="metric-detail" id="ragRetrCitedDetail">Có dấu [N] trong câu trả lời</div>
                     </div>
-                    <div class="metric-card accent-green">
-                        <div class="metric-label">🎯 Hit-Rate</div>
+                    <div class="metric-card" id="ragCardHitRate">
+                        <div class="metric-label">🎯 Tỷ lệ trích được nguồn</div>
                         <div class="metric-value" id="ragRetrHitRate">-</div>
-                        <div class="metric-detail"
-                            title="Logged response text is truncated at 2000 chars; late citation markers may be missed.">
-                            Citation hit-rate ⓘ</div>
+                        <div class="metric-detail" id="ragRetrHitRateDetail"
+                            title="Câu trả lời lưu trong log bị cắt ở 2000 ký tự, nên dấu trích dẫn nằm cuối câu trả lời dài có thể bị bỏ sót.">
+                            Chia trên số câu trả lời đọc được ⓘ</div>
+                    </div>
+                    <!-- Coverage. Its numerator is NOT the KB-Attached card beside it: that
+                         one counts every <source> tag, this one only the shared knowledge
+                         bases. The detail line prints both so the gap is never a mystery. -->
+                    <!-- No id: this card is deliberately never given an ok/warn/danger
+                         accent. Nobody has stated what share of questions should reach the
+                         knowledge base, and a colour would publish that verdict anyway. -->
+                    <div class="metric-card">
+                        <div class="metric-label">📚 Tỷ lệ câu hỏi dùng kho chung</div>
+                        <div class="metric-value" id="ragCoverage">-</div>
+                        <div class="metric-detail" id="ragCoverageDetail"
+                            title="Đếm lượt hỏi có kho tài liệu chung được nạp vào prompt (resource-type=collection). Không tính lượt người dùng tự kéo file lẻ vào chat — đó không phải kho chung. Đơn vị là LƯỢT HỎI, không phải cuộc trò chuyện: log của middleware không mang chat_id.">
+                            trên tổng lượt hỏi ⓘ</div>
                     </div>
                 </div>
+                <!-- Only rendered when answers are missing. An unpaired request is not a
+                     failure to cite, so it must be named rather than folded into the rate. -->
+                <div id="ragRetrUnpairedNote" style="margin-top: 10px; font-size: 12px; color: #94a3b8;"></div>
                 <div class="chart-container">
-                    <div class="chart-title">📊 Hit-Rate by Model</div>
+                    <div class="chart-title">📊 Tỷ lệ trích dẫn theo model</div>
+                    <!-- Models with no readable answer are not plotted, so the chart can go
+                         empty. An empty chart with no caption reads as "no data at all". -->
+                    <div id="ragRetrModelNote" style="font-size: 12px; color: #94a3b8; margin-bottom: 6px;"></div>
                     <canvas id="ragRetrModelChart"></canvas>
                 </div>
                 <div class="section-title" style="margin-top: 20px;"
-                    title="Grouped by source document; the <source id> index is per-request, not a knowledge-base id.">
-                    By Source ⓘ</div>
+                    title="Gom theo tên tài liệu. Số id trong thẻ <source id> chỉ là số thứ tự trong từng request, không phải mã kho tài liệu.">
+                    Mức sử dụng và tỷ lệ trích dẫn theo từng tài liệu ⓘ</div>
                 <div class="table-container">
                     <table>
                         <thead>
                             <tr>
                                 <th>Source</th>
                                 <th>Attached</th>
+                                <th title="Số lượt đọc được câu trả lời — mẫu số của Hit-Rate">Evaluated</th>
                                 <th>Cited</th>
                                 <th>Hit-Rate</th>
                             </tr>
                         </thead>
                         <tbody id="ragRetrBySource">
                             <tr>
-                                <td colspan="4" class="loading">No data</td>
+                                <td colspan="5" class="loading">Đang tải…</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                <div class="section-title" style="margin-top: 20px;">Zero-Citation Messages</div>
+                <!-- Replaces the user dropdown that used to sit at the top of the tab. The
+                     data was already being computed and sent; it was used only to fill that
+                     dropdown and then discarded, so every user but the selected one stayed
+                     invisible. A table shows them all without a selection. -->
+                <div class="section-title" style="margin-top: 20px;"
+                    title="Gom theo người đặt câu hỏi. Chỉ tính các lượt hỏi có kèm tài liệu.">
+                    Mức sử dụng và tỷ lệ trích dẫn theo người dùng ⓘ</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Người dùng</th>
+                                <th>Lượt kèm tài liệu</th>
+                                <th title="Số lượt đọc được câu trả lời — mẫu số của tỷ lệ trích dẫn">Đọc được đáp án</th>
+                                <th>Có trích nguồn</th>
+                                <th>Tỷ lệ trích dẫn</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ragRetrByUser">
+                            <tr>
+                                <td colspan="5" class="loading">Đang tải…</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="section-title" style="margin-top: 20px;"
+                    title="Chỉ liệt kê những lượt đã đọc được câu trả lời mà trong đó không có dấu [N] nào. Lượt không ghi được câu trả lời KHÔNG nằm ở đây.">
+                    Các câu hỏi có tài liệu nhưng không được trích nguồn ⓘ</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -952,7 +1379,7 @@
                         </thead>
                         <tbody id="ragRetrZeroCite">
                             <tr>
-                                <td colspan="4" class="loading">No data</td>
+                                <td colspan="4" class="loading">Đang tải…</td>
                             </tr>
                         </tbody>
                     </table>
@@ -961,27 +1388,27 @@
 
             <!-- ── Storage ── -->
             <div class="section">
-                <div class="section-title">💾 Storage — Vector Anomalies</div>
+                <div class="section-title">💾 Các bất thường trong kho lưu trữ</div>
                 <div class="metrics">
                     <div class="metric-card usage-missing">
-                        <div class="metric-label">🈳 Zero-Chunk KBs</div>
+                        <div class="metric-label">🈳 Số kho có file nhưng chưa xử lý</div>
                         <div class="metric-value" id="ragStorZeroKB">-</div>
-                        <div class="metric-detail">KBs with files but no chunks</div>
+                        <div class="metric-detail">Tài liệu đã tải lên nhưng chatbot chưa tra được</div>
                     </div>
                     <div class="metric-card usage-missing">
-                        <div class="metric-label">👻 Orphaned Collections</div>
+                        <div class="metric-label">👻 Số mảng dữ liệu không còn thuộc kho nào</div>
                         <div class="metric-value" id="ragStorOrphan">-</div>
-                        <div class="metric-detail">Chunks with no file/KB</div>
+                        <div class="metric-detail">Không thuộc file hay kho nào còn tồn tại</div>
                     </div>
                     <div class="metric-card usage-missing">
-                        <div class="metric-label">📐 Chunk Outliers</div>
+                        <div class="metric-label">📐 Số file xử lý ra ít dữ liệu bất thường</div>
                         <div class="metric-value" id="ragStorOutlier">-</div>
-                        <div class="metric-detail" title="Heuristic: chunk count vs. estimate from file size.">
-                            Anomalously low chunks ⓘ</div>
+                        <div class="metric-detail" title="Ước lượng thô: so số đoạn dữ liệu thực tế với số đoạn suy ra từ dung lượng file. Dấu hiệu file hỏng hoặc đọc không ra chữ.">
+                            Dấu hiệu file hỏng hoặc đọc không ra chữ ⓘ</div>
                     </div>
                 </div>
                 <div id="ragStorError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
-                <div class="section-title" style="margin-top: 20px;">Zero-Chunk Knowledge Bases</div>
+                <div class="section-title" style="margin-top: 20px;">Danh sách kho có file nhưng chưa xử lý</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -994,12 +1421,12 @@
                         </thead>
                         <tbody id="ragStorZeroKBTable">
                             <tr>
-                                <td colspan="4" class="loading">No data</td>
+                                <td colspan="4" class="loading">Đang tải…</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                <div class="section-title" style="margin-top: 20px;">Orphaned Chunks</div>
+                <div class="section-title" style="margin-top: 20px;">Danh sách dữ liệu không còn thuộc kho nào</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -1010,13 +1437,13 @@
                         </thead>
                         <tbody id="ragStorOrphanTable">
                             <tr>
-                                <td colspan="2" class="loading">No data</td>
+                                <td colspan="2" class="loading">Đang tải…</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
                 <div class="section-title" style="margin-top: 20px;"
-                    title="Heuristic — chunk count vs. estimate from file size.">Chunk-Count Outliers ⓘ</div>
+                    title="Ước lượng thô — so số đoạn dữ liệu thực tế với số đoạn suy ra từ dung lượng file.">Danh sách file xử lý ra ít dữ liệu bất thường ⓘ</div>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -1030,8 +1457,200 @@
                         </thead>
                         <tbody id="ragStorOutlierTable">
                             <tr>
-                                <td colspan="5" class="loading">No data</td>
+                                <td colspan="5" class="loading">Đang tải…</td>
                             </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════ -->
+        <!-- KNOWLEDGE ANALYTICS TAB                            -->
+        <!-- ═══════════════════════════════════════════════════ -->
+        <div id="knowledgeTab" class="tab-content">
+            <div class="insight-banner">
+                <span class="insight-icon">📚</span>
+                <span class="insight-text">Kho tri thức đang được dùng tới đâu và đang lãng phí chỗ nào — đã tạo
+                    những gì, thực sự dùng bao nhiêu, chỗ nào tốn dung lượng vô ích. Chỉ đọc, không sửa gì. Lượt
+                    dùng chỉ tính các phiên chat có ghi log; một tên file nằm trong nhiều kho sẽ được xếp vào mục
+                    "không rõ thuộc kho nào" thay vì gán bừa cho một kho.</span>
+            </div>
+
+            <!-- Time range comes from the shared dashboard control above; no tab-local filters. -->
+
+            <!-- ── Inventory ── -->
+            <div class="section">
+                <div class="section-title">📦 Chi tiết kho tri thức</div>
+                <!-- The three sections read three independent endpoints, so each carries its
+                     own banner: one failing must not hide the two that answered. Without
+                     these the endpoints' `error` field was returned and never displayed, and
+                     a dead database rendered as a corpus of zeros. -->
+                <div id="knInventoryError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
+                <div class="metrics">
+                    <div class="metric-card">
+                        <div class="metric-label">📚 Kho tri thức</div>
+                        <div class="metric-value" id="knTotKB">-</div>
+                        <div class="metric-detail">Tổng số kho tri thức</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">📄 File</div>
+                        <div class="metric-value" id="knTotFiles">-</div>
+                        <!-- "Uploaded documents" read as a document count; the figure is one
+                             row per upload, so re-uploads and post-failure retries inflate it.
+                             The breakdown is filled in by knowledge.js. -->
+                        <div class="metric-detail" id="knTotFilesDetail"
+                            title="Tài liệu khác nhau được đếm theo (tên file, dung lượng) — cột file.hash rỗng ở phần lớn dòng nên không dùng được.">
+                            Số lượt upload</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">🧩 Chunk</div>
+                        <div class="metric-value" id="knTotChunks">-</div>
+                        <div class="metric-detail">Số lượng chunk</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">💽 Dung lượng</div>
+                        <div class="metric-value" id="knTotStorage">-</div>
+                        <div class="metric-detail">Tổng dung lượng file</div>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div class="chart-title">📈 Xu hướng phát triển của kho tri thức và file</div>
+                    <canvas id="knGrowthChart"></canvas>
+                </div>
+                <div class="section-title" style="margin-top: 20px;">Phân loại file</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Loại file</th>
+                                <th>Số file</th>
+                                <th>Dung lượng</th>
+                            </tr>
+                        </thead>
+                        <tbody id="knTypeTable">
+                            <tr><td colspan="3" class="loading">Đang tải...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ── KB Value Matrix ── -->
+            <div class="section">
+                <div class="section-title">⭐ Đánh giá giá trị từng kho</div>
+                <div id="knKbValueError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
+                <div class="metrics">
+                    <div class="metric-card accent-green">
+                        <div class="metric-label">⭐ Hiệu quả</div>
+                        <div class="metric-value" id="knCatStar">-</div>
+                        <div class="metric-detail">Dùng nhiều, trích dẫn tốt</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">🛠️ Cần chỉnh</div>
+                        <div class="metric-value" id="knCatTuning">-</div>
+                        <div class="metric-detail">Có dùng nhưng ít trích được</div>
+                    </div>
+                    <div class="metric-card usage-missing">
+                        <div class="metric-label">💀 Không ai dùng</div>
+                        <div class="metric-value" id="knCatDead">-</div>
+                        <div class="metric-detail">Đã nạp xong nhưng chưa từng dùng</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">🌱 Chưa đủ dữ liệu</div>
+                        <div class="metric-value" id="knCatUnproven">-</div>
+                        <div class="metric-detail" title="Số lượt đính kèm chưa đạt mức tối thiểu để kết luận về chất lượng.">Quá ít lượt dùng ⓘ</div>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Kho tri thức</th>
+                                <th>Người tạo</th>
+                                <th title="Số phiên chat có đính kèm tài liệu của kho này (chỉ tính phiên có ghi log).">Lượt dùng ⓘ</th>
+                                <th title="Tỷ lệ câu trả lời có trích dẫn nguồn [N] trên số lượt đọc được câu trả lời.">Tỷ lệ trích dẫn ⓘ</th>
+                                <th>Số file</th>
+                                <th>Số chunk</th>
+                                <th>Dung lượng</th>
+                                <th>Dùng lần cuối</th>
+                                <th>Phân loại</th>
+                            </tr>
+                        </thead>
+                        <tbody id="knValueTable">
+                            <tr><td colspan="9" class="loading">Đang tải...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="section-title" style="margin-top: 20px;" title="Tên tài liệu xuất hiện ở nhiều kho — không thể quy lượt dùng về một kho cụ thể.">Không rõ thuộc kho nào ⓘ</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tên tài liệu</th>
+                                <th>Lượt dùng</th>
+                                <th>Có trong mấy kho</th>
+                            </tr>
+                        </thead>
+                        <tbody id="knAmbiguousTable">
+                            <tr><td colspan="3" class="loading">Đang tải...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ── Governance ── -->
+            <div class="section">
+                <div class="section-title">🏛️ Dọn dẹp &amp; quản lý kho</div>
+                <div id="knGovernanceError" class="error-msg hidden" style="margin-bottom: 15px;"></div>
+                <div class="metrics">
+                    <div class="metric-card usage-missing">
+                        <div class="metric-label">♻️ Có thể thu hồi</div>
+                        <div class="metric-value" id="knReclaimable">-</div>
+                        <div class="metric-detail"
+                            title="Ước tính: file trùng được gom theo (tên file, dung lượng) vì cột file.hash rỗng ở phần lớn dòng. Hai tài liệu khác nhau mà trùng cả tên lẫn dung lượng sẽ bị gộp.">
+                            Dung lượng lãng phí do file trùng ⓘ</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">🧾 File ngoài kho</div>
+                        <div class="metric-value" id="knAdhoc">-</div>
+                        <div class="metric-detail">Kéo thẳng vào chat, không vào kho nào</div>
+                    </div>
+                    <div class="metric-card usage-missing">
+                        <div class="metric-label">🔗 File mồ côi</div>
+                        <div class="metric-value" id="knDangling">-</div>
+                        <div class="metric-detail" title="File vẫn trỏ tới một kho đã bị xóa.">Kho cha đã bị xóa ⓘ</div>
+                    </div>
+                </div>
+                <div class="section-title" style="margin-top: 20px;">File trùng lặp</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tên file</th>
+                                <th>Số bản</th>
+                                <th>Số kho</th>
+                                <th>Dung lượng</th>
+                                <th>Thu hồi được</th>
+                            </tr>
+                        </thead>
+                        <tbody id="knDupTable">
+                            <tr><td colspan="5" class="loading">Đang tải...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="section-title" style="margin-top: 20px;">Phân bố theo người tạo</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Người tạo</th>
+                                <th>Số kho</th>
+                                <th>Số file</th>
+                                <th>Dung lượng</th>
+                            </tr>
+                        </thead>
+                        <tbody id="knOwnerTable">
+                            <tr><td colspan="4" class="loading">Đang tải...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -1044,8 +1663,9 @@
         <div id="analyticsTab" class="tab-content">
             <div class="insight-banner">
                 <span class="insight-icon">💬</span>
-                <span class="insight-text">Chat Analytics — Thống kê tập trung về mức độ sử dụng từ Open WebUI và Chi
-                    phí từ Middleware.</span>
+                <span class="insight-text">Thống kê sử dụng và chi phí — mức độ dùng lấy từ Open WebUI, còn lượt gọi,
+                    token và chi phí lấy từ middleware. Hai nguồn khác nhau nên các thẻ không cộng trừ với nhau
+                    được.</span>
             </div>
 
 
@@ -1053,42 +1673,47 @@
             <!-- Summary Metrics -->
             <div class="metrics" style="margin-bottom: 20px;">
                 <div class="metric-card">
-                    <div class="metric-label">💬 Total Chats</div>
+                    <div class="metric-label">💬 Hội thoại mới</div>
                     <div class="metric-value" id="analyticsTotalChats">-</div>
-                    <div class="metric-detail">Số phiên chat (Open WebUI)</div>
+                    <div class="metric-detail" title="Đếm theo thời điểm tạo hội thoại. Hội thoại cũ được dùng tiếp trong kỳ không được tính lại.">Số hội thoại được mở trong kỳ ⓘ</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-label">📩 Total Requests</div>
+                    <div class="metric-label">📩 Lượt gọi</div>
                     <div class="metric-value" id="analyticsTotalMessages">-</div>
-                    <div class="metric-detail">Số requests (Middleware)</div>
+                    <div class="metric-detail">Số request qua middleware</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-label">🔤 Total Tokens</div>
+                    <div class="metric-label">🔤 Token</div>
                     <div class="metric-value" id="analyticsTotalTokens">-</div>
-                    <div class="metric-detail">Tokens (Middleware)</div>
+                    <div class="metric-detail">Tổng token đã dùng</div>
                 </div>
                 <div class="metric-card accent-green">
-                    <div class="metric-label">💰 Total Cost</div>
+                    <div class="metric-label">💰 Chi phí</div>
                     <div class="metric-value" id="analyticsTotalCost">-</div>
-                    <div class="metric-detail">Chi phí USD (Middleware)</div>
+                    <div class="metric-detail">Tổng chi phí (USD)</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-label">👥 Active Users</div>
+                    <!-- Not "active users": the query filters chat.created_at, so someone who
+                         spent the whole period inside a conversation opened earlier is absent
+                         from this figure. The label has to say *opened*, not *used*. -->
+                    <div class="metric-label">👥 Người mở hội thoại mới</div>
                     <div class="metric-value" id="analyticsActiveUsers">-</div>
-                    <div class="metric-detail">Số người dùng có hoạt động</div>
+                    <div class="metric-detail" title="Đếm theo thời điểm tạo hội thoại. Người chỉ hỏi tiếp trong hội thoại cũ sẽ không có mặt ở đây.">Số người mở ít nhất 1 hội thoại mới ⓘ</div>
                 </div>
             </div>
 
             <!-- Row 1: Daily Trend & Hourly Activity -->
             <div class="chart-grid">
                 <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
-                    <div class="chart-title" style="flex-shrink: 0;">📈 Daily Trend (Requests vs Cost)</div>
+                    <div class="chart-title" style="flex-shrink: 0;">📈 Diễn biến theo ngày (lượt gọi và chi phí)</div>
                     <div style="position: relative; flex: 1; min-height: 0;">
                         <canvas id="analyticsDualChart"></canvas>
                     </div>
                 </div>
                 <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
-                    <div class="chart-title" style="flex-shrink: 0;">🕐 Hourly Activity (0h - 23h)</div>
+                    <div class="chart-title" style="flex-shrink: 0;"
+                        title="Cộng dồn mọi ngày trong khoảng đang xem theo giờ trong ngày: cột 9h là tổng các lượt gọi lúc 9h của tất cả các ngày. Giờ tính theo múi giờ máy chủ.">
+                        🕐 Khung giờ sử dụng trong ngày (0h - 23h) ⓘ</div>
                     <div style="position: relative; flex: 1; min-height: 0;">
                         <canvas id="analyticsHourlyChart"></canvas>
                     </div>
@@ -1098,20 +1723,20 @@
             <!-- Row 2: Model Breakdown & Top Models Table -->
             <div class="chart-grid">
                 <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
-                    <div class="chart-title" style="flex-shrink: 0;">🍩 Model Breakdown (Cost)</div>
+                    <div class="chart-title" style="flex-shrink: 0;">🍩 Tỷ trọng chi phí theo model</div>
                     <div style="position: relative; flex: 1; min-height: 0;">
                         <canvas id="analyticsModelChart"></canvas>
                     </div>
                 </div>
                 <div class="chart-container" style="height: 360px; display: flex; flex-direction: column;">
-                    <div class="chart-title" style="flex-shrink: 0;">🤖 Top Models</div>
+                    <div class="chart-title" style="flex-shrink: 0;">🤖 Model dùng nhiều nhất</div>
                     <div style="overflow-y: auto; flex: 1; min-height: 0;">
                         <table>
                             <thead>
                                 <tr>
                                     <th>Model</th>
-                                    <th>Requests</th>
-                                    <th>Cost (USD)</th>
+                                    <th>Lượt gọi</th>
+                                    <th>Chi phí (USD)</th>
                                 </tr>
                             </thead>
                             <tbody id="analyticsTopModelsTable">
@@ -1124,7 +1749,7 @@
             <!-- Leaderboard Table -->
             <div class="section">
                 <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>🏆 Top Users Leaderboard</span>
+                    <span>🏆 Bảng xếp hạng người dùng</span>
                     <button onclick="window.dashboardAPI.refreshAnalytics()" class="btn-apply" style="margin-top:0;">↻
                         Refresh</button>
                 </div>
@@ -1133,18 +1758,18 @@
                         <tr>
                             <th>#</th>
                             <th>Email (User ID)</th>
-                            <th>Display Name</th>
-                            <th>Chats</th>
-                            <th>Requests</th>
-                            <th>Tokens</th>
-                            <th>Cost (USD)</th>
-                            <th>Cost Share</th>
-                            <th>Top Model</th>
+                            <th>Tên hiển thị</th>
+                            <th>Hội thoại</th>
+                            <th>Lượt gọi</th>
+                            <th>Token</th>
+                            <th>Chi phí (USD)</th>
+                            <th>Tỷ trọng chi phí</th>
+                            <th>Model dùng nhiều nhất</th>
                         </tr>
                     </thead>
                     <tbody id="analyticsLeaderboardTable">
                         <tr>
-                            <td colspan="9" class="loading">Loading analytics...</td>
+                            <td colspan="9" class="loading">Đang tải...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1157,38 +1782,51 @@
         <div id="satisfactionTab" class="tab-content">
             <div class="insight-banner">
                 <span class="insight-icon">⭐</span>
-                <span class="insight-text">User Satisfaction — Điểm CSAT, bảng xếp hạng model và phản hồi chi tiết từ
-                    người dùng.</span>
+                <span class="insight-text">Mức độ hài lòng của người dùng — điểm CSAT, xếp hạng model theo đánh giá
+                    và các phản hồi chi tiết. Chỉ tính những câu trả lời được người dùng bấm khen hoặc chê; câu
+                    không ai đánh giá không nằm trong bất kỳ con số nào ở đây.</span>
             </div>
 
             <!-- CSAT Summary Metrics -->
             <div class="metrics" style="margin-bottom: 20px;">
                 <div class="metric-card accent-green">
-                    <div class="metric-label">😊 CSAT Score</div>
+                    <!-- Same name as the Overview card (ovCardCsat) on purpose: it is the same
+                         number, and one figure carrying two names across tabs reads as two
+                         different measurements. "CSAT" survives in the tooltip and in the
+                         leaderboard column, so the term is still findable. -->
+                    <div class="metric-label">😊 Mức hài lòng</div>
                     <div class="metric-value" id="csatScoreValue">-%</div>
-                    <div class="metric-detail">Tỷ lệ đánh giá tích cực</div>
+                    <div class="metric-detail"
+                        title="CSAT = Khen / (Khen + Chê). Câu trả lời không ai bấm khen hay chê không nằm trong mẫu số.">
+                        Tỷ lệ khen trên tổng lượt khen/chê ⓘ</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-label">👍 Positive</div>
+                    <div class="metric-label">👍 Lượt khen</div>
                     <div class="metric-value" id="csatPositiveCount">-</div>
                     <div class="metric-detail">Số lượt đánh giá tốt</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-label">👎 Negative</div>
+                    <div class="metric-label">👎 Lượt chê</div>
                     <div class="metric-value" id="csatNegativeCount">-</div>
                     <div class="metric-detail">Số lượt đánh giá xấu</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-label">📊 Total Votes</div>
+                    <div class="metric-label">📊 Tổng lượt đánh giá</div>
                     <div class="metric-value" id="csatTotalCount">-</div>
-                    <div class="metric-detail">Tổng số lượt đánh giá</div>
+                    <!-- Says khen/chê, not "đánh giá": this is the CSAT denominator, so
+                         feedback carrying neither rating is not in it. -->
+                    <div class="metric-detail">Tổng lượt khen/chê — mẫu số của CSAT</div>
                 </div>
             </div>
+
+            <!-- Filled by satisfaction.js only when feedback rows exist that carry
+                 neither a positive nor a negative rating. Empty otherwise. -->
+            <div id="csatExcludedNote" style="margin-top: 10px; font-size: 12px; color: #94a3b8;"></div>
 
             <!-- Model Leaderboard -->
             <div class="section">
                 <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
-                    <span>🏆 Model Satisfaction Leaderboard</span>
+                    <span>🏆 Xếp hạng model theo mức hài lòng</span>
                     <button onclick="window.dashboardAPI.refreshSatisfaction()" class="btn-apply"
                         style="margin-top:0;">↻ Refresh</button>
                 </div>
@@ -1197,15 +1835,15 @@
                         <tr>
                             <th>#</th>
                             <th>Model</th>
-                            <th>👍 Positive</th>
-                            <th>👎 Negative</th>
-                            <th>Total</th>
+                            <th>👍 Khen</th>
+                            <th>👎 Chê</th>
+                            <th>Tổng</th>
                             <th>CSAT %</th>
                         </tr>
                     </thead>
                     <tbody id="csatModelLeaderboard">
                         <tr>
-                            <td colspan="6" class="loading">Loading satisfaction data...</td>
+                            <td colspan="6" class="loading">Đang tải...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1215,199 +1853,7 @@
             <div class="section">
                 <div class="section-title">💬 Phản hồi gần đây</div>
                 <div id="csatRecentFeedback" style="max-height: 500px; overflow-y: auto;">
-                    <div class="loading">Loading feedback...</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══════════════════════════════════════════════════ -->
-        <!-- KNOWLEDGE ANALYTICS TAB                            -->
-        <!-- ═══════════════════════════════════════════════════ -->
-        <div id="knowledgeTab" class="tab-content">
-            <div class="insight-banner">
-                <span class="insight-icon">📚</span>
-                <span class="insight-text">Knowledge-base adoption &amp; value — what's created, what's actually
-                    used, and where storage is wasted. Read-only. Usage reflects logged chats only; a filename
-                    shared across several KBs is shown as ambiguous rather than credited to one.</span>
-            </div>
-
-            <!-- Date-range filter (applies to growth + usage-derived signals) -->
-            <div class="log-filters"
-                style="display: grid; grid-template-columns: repeat(2, 1fr) auto; gap: 15px; margin-bottom: 20px; padding: 15px; background: #1e293b; border-radius: 8px; align-items: flex-end;">
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">Start</label>
-                    <input type="datetime-local" id="knStart" class="filter-select">
-                </div>
-                <div>
-                    <label style="font-size: 13px; color: #94a3b8; display: block; margin-bottom: 5px;">End</label>
-                    <input type="datetime-local" id="knEnd" class="filter-select">
-                </div>
-                <div style="display: flex; gap: 10px;">
-                    <button onclick="window.knowledgeAPI.apply()" class="btn-apply">Apply</button>
-                    <button onclick="window.knowledgeAPI.reset()" class="btn-secondary">Reset</button>
-                </div>
-            </div>
-
-            <!-- ── Inventory ── -->
-            <div class="section">
-                <div class="section-title">📦 Inventory &amp; Growth</div>
-                <div class="metrics">
-                    <div class="metric-card">
-                        <div class="metric-label">📚 Knowledge Bases</div>
-                        <div class="metric-value" id="knTotKB">-</div>
-                        <div class="metric-detail">Total KBs</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">📄 Files</div>
-                        <div class="metric-value" id="knTotFiles">-</div>
-                        <div class="metric-detail">Uploaded documents</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">🧩 Chunks</div>
-                        <div class="metric-value" id="knTotChunks">-</div>
-                        <div class="metric-detail">Embedded vectors</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">💽 Storage</div>
-                        <div class="metric-value" id="knTotStorage">-</div>
-                        <div class="metric-detail">Total file bytes</div>
-                    </div>
-                </div>
-                <div class="chart-container">
-                    <div class="chart-title">📈 KB &amp; File Growth Over Time</div>
-                    <canvas id="knGrowthChart"></canvas>
-                </div>
-                <div class="section-title" style="margin-top: 20px;">File Types</div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Content Type</th>
-                                <th>Files</th>
-                                <th>Bytes</th>
-                            </tr>
-                        </thead>
-                        <tbody id="knTypeTable">
-                            <tr><td colspan="3" class="loading">No data</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- ── KB Value Matrix ── -->
-            <div class="section">
-                <div class="section-title">⭐ KB Value Matrix</div>
-                <div class="metrics">
-                    <div class="metric-card accent-green">
-                        <div class="metric-label">⭐ Star</div>
-                        <div class="metric-value" id="knCatStar">-</div>
-                        <div class="metric-detail">Used + cited well</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">🛠️ Needs Tuning</div>
-                        <div class="metric-value" id="knCatTuning">-</div>
-                        <div class="metric-detail">Used but rarely cited</div>
-                    </div>
-                    <div class="metric-card usage-missing">
-                        <div class="metric-label">💀 Dead Knowledge</div>
-                        <div class="metric-value" id="knCatDead">-</div>
-                        <div class="metric-detail">Has chunks, never used</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">🌱 Unproven</div>
-                        <div class="metric-value" id="knCatUnproven">-</div>
-                        <div class="metric-detail" title="Fewer than the minimum attachments to judge quality.">Too little usage ⓘ</div>
-                    </div>
-                </div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Knowledge Base</th>
-                                <th>Owner</th>
-                                <th title="Chats that attached one of this KB's documents (logged only).">Demand ⓘ</th>
-                                <th title="Share of attachments whose answer produced a [N] citation.">Hit-Rate ⓘ</th>
-                                <th>Files</th>
-                                <th>Chunks</th>
-                                <th>Size</th>
-                                <th>Last Used</th>
-                                <th>Category</th>
-                            </tr>
-                        </thead>
-                        <tbody id="knValueTable">
-                            <tr><td colspan="9" class="loading">No data</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="section-title" style="margin-top: 20px;" title="A source filename that exists in more than one KB — usage cannot be pinned to a single KB.">Ambiguous Usage ⓘ</div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Source (filename stem)</th>
-                                <th>Attachments</th>
-                                <th>Appears in # KBs</th>
-                            </tr>
-                        </thead>
-                        <tbody id="knAmbiguousTable">
-                            <tr><td colspan="3" class="loading">None 🎉</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- ── Governance ── -->
-            <div class="section">
-                <div class="section-title">🏛️ Governance</div>
-                <div class="metrics">
-                    <div class="metric-card usage-missing">
-                        <div class="metric-label">♻️ Reclaimable</div>
-                        <div class="metric-value" id="knReclaimable">-</div>
-                        <div class="metric-detail">Wasted on duplicate files</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-label">🧾 Ad-hoc Files</div>
-                        <div class="metric-value" id="knAdhoc">-</div>
-                        <div class="metric-detail">Uploaded outside any KB</div>
-                    </div>
-                    <div class="metric-card usage-missing">
-                        <div class="metric-label">🔗 Dangling Files</div>
-                        <div class="metric-value" id="knDangling">-</div>
-                        <div class="metric-detail" title="Files whose knowledge_id points to a deleted KB.">KB deleted ⓘ</div>
-                    </div>
-                </div>
-                <div class="section-title" style="margin-top: 20px;">Duplicate Files (by content hash)</div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Filename</th>
-                                <th>Copies</th>
-                                <th># KBs</th>
-                                <th>Size</th>
-                                <th>Reclaimable</th>
-                            </tr>
-                        </thead>
-                        <tbody id="knDupTable">
-                            <tr><td colspan="5" class="loading">None 🎉</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="section-title" style="margin-top: 20px;">Owner Concentration</div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Owner</th>
-                                <th>KBs</th>
-                                <th>Files</th>
-                                <th>Storage</th>
-                            </tr>
-                        </thead>
-                        <tbody id="knOwnerTable">
-                            <tr><td colspan="4" class="loading">No data</td></tr>
-                        </tbody>
-                    </table>
+                    <div class="loading">Đang tải...</div>
                 </div>
             </div>
         </div>
@@ -1591,35 +2037,16 @@
                     </form>
                 </div>
 
-                <!-- Section: API Budgets -->
+                <!-- Section: Provider prepaid credit (Phase 6) -->
                 <div class="section">
-                    <div class="section-title">💳 API Budgets (Monthly USD)</div>
-                    <form id="apiBudgetForm" class="settings-form">
-                        <div class="form-group">
-                            <label>OpenAI Budget ($)</label>
-                            <input type="number" step="0.01" id="budgetOpenAI">
-                        </div>
-                        <div class="form-group">
-                            <label>Gemini Budget ($)</label>
-                            <input type="number" step="0.01" id="budgetGemini">
-                        </div>
-                        <div class="form-group">
-                            <label>xAI (Grok) Budget ($)</label>
-                            <input type="number" step="0.01" id="budgetXai">
-                        </div>
-                        <div class="form-group">
-                            <label>Anthropic Budget ($)</label>
-                            <input type="number" step="0.01" id="budgetAnthropic">
-                        </div>
-                        <div class="form-group">
-                            <label>DeepSeek Budget ($)</label>
-                            <input type="number" step="0.01" id="budgetDeepseek">
-                        </div>
-                        <div class="form-actions">
-                            <button type="button" onclick="window.settingsAPI.saveBudgets()" class="btn-apply">Save
-                                Budgets</button>
-                        </div>
-                    </form>
+                    <div class="section-title">💳 Credit trả trước theo nhà cung cấp (billing account)</div>
+                    <div class="insight-text" style="margin-bottom:10px;font-size:13px;opacity:.8">
+                        Nạp tiền vào tài khoản thanh toán thật. <strong>Nạp thêm</strong> = cộng credit + đặt lại mốc
+                        tính tiêu (đóng dấu thời điểm nạp). <strong>Sửa</strong> = chỉnh số nhập nhầm, giữ nguyên mốc nạp.
+                    </div>
+                    <div id="providerCreditRows">
+                        <div class="loading">Loading...</div>
+                    </div>
                 </div>
 
                 <!-- Section: Notification Toggles -->
@@ -1686,7 +2113,11 @@
             closePriceModal: () => console.warn('Dashboard still loading...'),
             savePrice: () => console.warn('Dashboard still loading...'),
             editPrice: () => console.warn('Dashboard still loading...'),
-            deletePrice: () => console.warn('Dashboard still loading...')
+            deletePrice: () => console.warn('Dashboard still loading...'),
+            loadGroupToolAccess: () => console.warn('Dashboard still loading...'),
+            showGroupToolModal: () => console.warn('Dashboard still loading...'),
+            closeGroupToolModal: () => console.warn('Dashboard still loading...'),
+            saveGroupTools: () => console.warn('Dashboard still loading...')
         };
     </script>
 
@@ -1697,7 +2128,10 @@
         const { initAPI } = await import(`/dashboard/js/main.js?v=${v}`);
         const { initNotifications } = await import(`/dashboard/js/notifications.js?v=${v}`);
         await initAPI();
-        initAuth();
+        // Awaited: initAuth now restores the session inline, and initNotifications
+        // immediately requests admin/notifications/unread — 53 of the 89 recorded
+        // refusals came from that request racing session restoration.
+        await initAuth();
         initNotifications();
     </script>
 </body>

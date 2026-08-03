@@ -280,6 +280,100 @@ Mỗi bản ghi bao gồm:
 - `ip`: Địa chỉ IP client
 - `user_agent`: User agent client
 
+## Nhóm Phòng ban & Phân quyền Tool
+
+Từ change `department-plugin-access`, quyền dùng tool được cấp **theo group phòng ban** thay vì mở cho mọi user. Nguyên tắc: **mặc định private** — tool không có `access_grants` thì chỉ admin thấy.
+
+### 8 group phòng ban mẫu
+
+| Slug                | Phòng ban                  |
+| ------------------- | -------------------------- |
+| `ban-lanh-dao`      | Ban lãnh đạo               |
+| `kinh-doanh`        | Kinh doanh                 |
+| `marketing`         | Marketing                  |
+| `ke-toan-tai-chinh` | Kế toán – Tài chính        |
+| `hcns`              | Hành chính – Nhân sự       |
+| `ky-thuat-rd`       | Kỹ thuật / R&D             |
+| `san-xuat`          | Sản xuất                   |
+| `it`                | IT                         |
+
+Group được tạo bằng script seed (idempotent, chạy lại an toàn):
+
+```bash
+python scripts/seed_department_access.py --dry-run     # xem trước, không ghi
+python scripts/seed_department_access.py               # chạy đủ 5 phase
+python scripts/seed_department_access.py --phase tools # chỉ 1 phase
+python scripts/seed_department_access.py --rollback    # gỡ những gì script đã tạo
+```
+
+Script xác thực qua `OPENWEBUI_ADMIN_TOKEN`, hoặc `TEST_ADMIN_EMAIL`/`TEST_ADMIN_PASSWORD` trong `.env`.
+
+**4 phase, chạy theo thứ tự:**
+
+| Phase | Làm gì |
+| --- | --- |
+| `groups` | Tạo 8 group phòng ban |
+| `tools` | **Đẩy source từ `tools/` trong repo lên Open WebUI** — Open WebUI lưu tool trong DB chứ không đọc thư mục, nên đây là cách thay cho copy-paste qua UI. Bơm luôn valves từ `.env`, bật function, đặt filter phê duyệt thành global |
+| `models` | Mở model AI gốc cho user thường (xem cảnh báo dưới) |
+| `grants` | Gắn access_grants theo ma trận tool → group (+ override theo user) |
+
+> ⚠️ **Vì sao cần phase `models`**: Open WebUI 0.9.6 (`utils/models.py: get_filtered_models`) chỉ cho user thường thấy model **có dòng cấu hình trong bảng `model`**; model nào không có dòng bị coi là "chưa cấu hình quyền" và **chỉ admin thấy**. Model gốc đến từ connection tới middleware nên không có dòng nào → nếu bỏ qua phase này, user đăng nhập vào sẽ **mất sạch model AI, không còn gì để chat**. Phase `models` tạo dòng cấu hình + grants public cho 5 model auto và 15 model `chat-*` (bỏ `img-*`/embedding/rerank vì không dùng để chat).
+
+Chạy script từ máy có `requests`, hoặc trong container tạm trên cùng network:
+
+```bash
+docker run --rm --network oppen_web_ui_openwebui-network -v "$PWD":/repo -w /repo \
+  python:3.11-slim sh -c "pip install -q requests && \
+  python scripts/seed_department_access.py --url http://open-webui:8080"
+```
+
+**Gán thành viên vào group**: Admin → Settings → Groups → chọn group → thêm user (làm tay; chưa đồng bộ từ HR).
+
+### Ma trận tool → group (mặc định)
+
+| Tool                                   | Được cấp cho                    |
+| -------------------------------------- | ------------------------------- |
+| `fetch`, `sequential-thinking` (mcpo)  | Mọi user (public)               |
+| `postgres`, `playwright` (mcpo)        | `it`, `ky-thuat-rd`             |
+| `office365` (mcpo)                     | Mọi group phòng ban             |
+| `google_gmail_tool`, `google_drive_tool` | Mọi group phòng ban           |
+| `github_tool`                          | `it`, `ky-thuat-rd`             |
+| `code_interpreter`                     | `it`, `ky-thuat-rd`             |
+
+Sửa ma trận trong `scripts/seed_department_access.py` (`MCPO_SERVER_MATRIX`, `WORKSPACE_TOOL_MATRIX`) rồi chạy lại script — hoặc bật/tắt trực tiếp trong dashboard (**Groups → Edit Group**, **Users → Edit User**).
+
+> **Office365 do MCP phụ trách.** Mảng Office 365 hiện chỉ có MCP server `office365` (`server:office365` trong tool picker) — bản do mentor cung cấp, sẽ thay bằng bản thật sau. Tool Python `office365_tool.py` **đã gỡ bỏ** để tránh hai bản chạy song song.
+>
+> Grant của MCP server **không nằm trong bảng `access_grant`** mà nhúng trong JSON `config.tool_server.connections[].config.access_grants`, nên **không bật/tắt được từ Edit Group / Edit User** — chỉ sửa qua `MCPO_SERVER_MATRIX` trong script seed.
+
+### Trục phân quyền: GROUP + USER (model không liên quan)
+
+Quyền dùng tool nằm **hoàn toàn** ở bảng `access_grant` của Open WebUI, cấp cho:
+
+- **Group** (phòng ban) — trục chính, theo ma trận ở trên.
+- **User** — ngoại lệ cho cá nhân, cấp thêm ngoài chính sách group.
+
+**Model KHÔNG gate tool.** User chọn model AI gốc bất kỳ (cả 20 model đều public), rồi **tự bật tool** trong tool picker của khung chat — danh sách tool đã được lọc sẵn theo quyền của họ. Không có "trợ lý phòng ban" hay preset nào ràng tool vào model nữa.
+
+> Đây là điểm từng gây hiểu nhầm: trước kia có 5 model preset "Trợ lý" mang sẵn `meta.toolIds`, khiến admin tưởng quyền tool đi theo model. Thực ra không phải — 5 preset đó **đã được gỡ bỏ hoàn toàn**.
+
+**Bật/tắt tool ở đâu** — trong dashboard middleware, theo đúng trục quyền:
+
+| Cần làm | Vào đâu |
+|---|---|
+| Đổi tool của cả một phòng ban | Tab **Groups** → bảng *Phân quyền Tool theo phòng ban* → ✏️ **Edit Group** |
+| Cấp thêm tool cho riêng một người | Tab **Users** → ✏️ **Edit User** → mục **🔧 Tool được phép dùng** |
+
+Quyền có hiệu lực ngay, không cần restart. Trong Edit User, tool user đã có **qua group** hiện là đã bật nhưng **khóa** kèm nhãn tên group — muốn thu hồi thì sửa ở Edit Group. Mục Tool chỉ hiện với user đã map sang Open WebUI (`openwebui_user_id`), vì quyền gắn vào tài khoản Open WebUI chứ không phải tài khoản middleware.
+
+> **Vì sao không dùng UI của Open WebUI?** Open WebUI chỉ cho biên tập quyền từ phía *tool* (Workspace → Tools → Access Control), tức trả lời "tool này cho ai" — ngược với cách admin tư duy. Và nó **không có màn hình phân quyền theo user** nào cả: `group.permissions` chỉ chứa quyền năng lực thô (được tạo/sửa tool hay không), không phải danh sách tool được dùng.
+
+> Grant cấp tay cho user **không bị mất** khi chạy lại `--phase grants`: script giữ nguyên mọi grant `principal_type=user` đang có (`preserved_user_grants()`). Chỉ grant theo group mới bị áp lại theo ma trận — nên nếu sửa quyền group trong UI, nhớ cập nhật `WORKSPACE_TOOL_MATRIX` cho khớp.
+
+**Enforcement là thật, không chỉ ẩn/hiện UI**: `utils/tools.py: get_tools()` kiểm tra lại quyền cho từng tool ngay lúc chạy — gọi thẳng API với `tool_ids` không có quyền vẫn bị loại khỏi context (log `Access denied to tool ...`).
+
+Thêm plugin mới cho một phòng ban: xem [Runbook 18](18-runbook-plugin-phong-ban.md).
+
 ## Thực hành Bảo mật Tốt nhất
 
 1. **Lưu trữ Khóa:**

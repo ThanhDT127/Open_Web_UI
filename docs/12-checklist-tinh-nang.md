@@ -32,6 +32,9 @@
 | 5   |                     | Quản lý user (Admin)          | Thêm/xoá user, đổi role, reset password           | OK        | Admin → Settings → Users         |
 | 6   |                     | Access Control trên Knowledge | Giới hạn quyền truy cập Knowledge theo user/group | OK        | Hỗ trợ JSON access_control       |
 | 7   |                     | Access Control trên Model     | Giới hạn model nào user nào được dùng             | OK        | Admin → Settings → Models        |
+| 10  | Nhóm phòng ban      | 8 group phòng ban mẫu         | Seed bằng `scripts/seed_department_access.py`     | OK        | Gán thành viên tay qua Admin UI  |
+| 11  |                     | Phân quyền tool theo group    | `access_grant` cho workspace tool + mcpo server    | OK        | Mặc định private, xem doc 09     |
+| 12  |                     | Phân quyền tool theo user     | Override cá nhân ngoài chính sách group            | OK        | Workspace → Tools → Access Control |
 | 8   | Quản lý log (Admin) | Log hoạt động API requests    | Ghi log: user, model, tokens, cost, timestamp     | OK        | PostgreSQL (mw_audit_log) + file |
 | 9   |                     | Dashboard quản trị            | Tổng quan chi phí, request, top users/models      | OK        | `http://<server>:5000/dashboard` |
 
@@ -125,6 +128,12 @@
 | 6   | Xuất DOCX        | Xuất hội thoại → Word        | Action → "Xuất DOCX"                              | OK        | `tool docx.py`   |
 | 7   | Custom Functions | Framework function tuỳ chỉnh | Admin thêm Python functions chạy trong Open WebUI | Chưa test | Hạ tầng sẵn sàng |
 | 8   | Custom Tools     | Framework tool tuỳ chỉnh     | Admin tạo tools cho AI gọi (function calling)     | Chưa test | Hạ tầng sẵn sàng |
+| 9   | Tool cá nhân hóa | Gmail — gửi mail đứng tên user | Chat: "gửi mail cho anh B..." → duyệt → gửi     | OK        | `google_gmail_tool.py`, OAuth broker |
+| 10  |                  | Office 365 — mail/lịch/Teams/SharePoint | Gửi/đọc mail, tạo/xem lịch, nhắn Teams, đọc file | ⚠️ Mô phỏng | MCP `office365` hiện là bản **giả lập** — `outlook_send_email` trả "Email sent (Simulated)" mà KHÔNG gửi mail. Chờ thay bản thật. Tool per-user `office365_tool.py` đã gỡ |
+| 11  |                  | GitHub — repo/issue/PR/code  | Xem repo, đọc issue/PR, tìm code bằng token user  | Chưa test | `github_tool.py`; cần GITHUB_CLIENT_ID |
+| 12  |                  | Google Drive — tìm/đọc file  | Tìm file, đọc nội dung (tự export Google Docs)     | Chưa test | `google_drive_tool.py`; cần GOOGLE_CLIENT_ID |
+| 13  |                  | Kết nối tài khoản 1 chạm     | Tool trả link OAuth; user bấm 1 lần, tự gia hạn    | OK        | `state` ký HMAC, hạn 10 phút     |
+| 14  |                  | Duyệt hành động nhạy cảm     | Gửi mail/lịch/Teams phải bấm Duyệt mới thực hiện   | OK        | `filter_approval_handler.py`     |
 
 ---
 
@@ -221,7 +230,8 @@
 
 | STT | Nhóm tính năng    | Tính năng cụ thể               | Hướng dẫn sử dụng / Mô tả             | Trạng thái | Ghi chú                          |
 | --- | ----------------- | ------------------------------ | ------------------------------------- | ---------- | -------------------------------- |
-| 1   | Nhóm người dùng   | Tạo nhóm theo phòng ban        | Phân quyền và quota theo nhóm         | Chưa có    | Framework có sẵn (table `group`) |
+| 1   | Nhóm người dùng   | Đồng bộ thành viên group từ HR | Tự lấy danh sách nhân sự → gán group  | Chưa có    | Group đã có (mục I); còn gán tay  |
+| 11  | Tool thiết kế     | Tích hợp Canva / Figma         | Trợ lý tạo/sửa thiết kế cho Marketing | Chưa có    | Chờ công ty mua license           |
 | 2   | Backup tự động    | Scheduled backup database      | Cron job chạy pg_dump hàng ngày       | Chưa có    | Cần cài đặt                      |
 | 3   | Monitoring        | Uptime monitoring + alerting   | Prometheus + Grafana hoặc tương đương | Chưa có    |                                  |
 | 4   | SSO/LDAP          | Đăng nhập bằng AD nội bộ       | Tích hợp Active Directory             | Chưa có    | Open WebUI hỗ trợ sẵn            |

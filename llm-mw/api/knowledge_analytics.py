@@ -11,37 +11,20 @@ accept ``refresh=true`` to bypass the corpus cache. Read-only.
 """
 
 from typing import Optional
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from fastapi import Query, Request
 
-_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+from api.summary_v2 import _resolve_range
+
+# This tab's historical default when the caller sends no explicit window — 30 days,
+# where RAG Health uses 7. Two different silent defaults for the same missing
+# parameter is exactly why the parse itself must not also be silent.
+_DEFAULT_MINUTES = 60 * 24 * 30
 
 
-def _parse_range(start: Optional[str], end: Optional[str], default_hours: int = 24 * 30):
-    """Parse ISO start/end query params, defaulting to the last ``default_hours``."""
-    now = datetime.now(_TZ)
-    if start:
-        try:
-            cutoff = datetime.fromisoformat(start.replace("Z", "+00:00"))
-            if cutoff.tzinfo is None:
-                cutoff = cutoff.replace(tzinfo=_TZ)
-        except ValueError:
-            cutoff = now - timedelta(hours=default_hours)
-    else:
-        cutoff = now - timedelta(hours=default_hours)
-
-    if end:
-        try:
-            end_time = datetime.fromisoformat(end.replace("Z", "+00:00"))
-            if end_time.tzinfo is None:
-                end_time = end_time.replace(tzinfo=_TZ)
-        except ValueError:
-            end_time = now
-    else:
-        end_time = now
-
+def _parse_range(start: Optional[str], end: Optional[str]):
+    """Resolve the window through the single shared resolver (raises 400 on bad input)."""
+    cutoff, end_time, _ = _resolve_range(minutes=_DEFAULT_MINUTES, start=start, end=end)
     return cutoff, end_time
 
 

@@ -1,5 +1,57 @@
 import { mwFetch } from './utils.js';
-import { currentTimeRange } from './filters.js';
+import { currentTimeRange, buildRangeParams } from './filters.js';
+import { renderDelta } from './metrics_registry.js';
+import { loadCompare, side } from './compare_data.js';
+
+// ── Period-comparison badges ─────────────────────────────────
+// This endpoint names the same three metrics differently from /summary
+// (`requests` vs `requests_total`, and so on). Normalise here rather than declaring them
+// twice in the registry: one metric must have exactly one declaration, otherwise the two
+// tabs showing it can drift apart in format or colour — the thing the registry exists to
+// prevent.
+function _normaliseTotals(t) {
+    if (!t) return null;
+    return {
+        requests_total: t.requests,
+        tokens_total: t.tokens,
+        cost_total_usd: t.cost_usd,
+        chats: t.chats,
+        active_users: t.active_users,
+    };
+}
+
+const _pickChatTotals = (json) => {
+    const t = json && json.totals;
+    return t && t.requests > 0 ? _normaliseTotals(t) : null;
+};
+
+// `analyticsTotalChats` and `analyticsActiveUsers` are listed on purpose even though the
+// registry blocks them: their source is Open WebUI's `chat` table, which users can delete
+// from, so any past window is eroded and a comparison would report a confident, false
+// drop. Listing them here means the block is exercised rather than assumed.
+const _COMPARE_CARDS = [
+    ['analyticsTotalMessages', 'requests_total'],
+    ['analyticsTotalTokens', 'tokens_total'],
+    ['analyticsTotalCost', 'cost_total_usd'],
+    ['analyticsTotalChats', 'chats'],
+    ['analyticsActiveUsers', 'active_users'],
+];
+
+async function _renderCompare(rawTotals) {
+    try {
+        const current = _normaliseTotals(rawTotals);
+        const cmp = await loadCompare('/v1/_mw/admin/analytics/chat', _pickChatTotals);
+        for (const [elementId, key] of _COMPARE_CARDS) {
+            renderDelta(elementId, key, {
+                current: current[key],
+                kt: side(cmp.kt, key),
+                ck: side(cmp.ck, key),
+            });
+        }
+    } catch (err) {
+        console.error('Chat analytics compare badges failed:', err);
+    }
+}
 
 let analyticsDualChart = null;
 let analyticsHourlyChart = null;
@@ -15,7 +67,7 @@ export function initAnalyticsChart() {
                 labels: [],
                 datasets: [
                     {
-                        label: 'Requests',
+                        label: 'Lượt gọi',
                         data: [],
                         borderColor: '#3b82f6',
                         backgroundColor: 'rgba(59, 130, 246, 0.1)',
@@ -24,7 +76,7 @@ export function initAnalyticsChart() {
                         fill: true
                     },
                     {
-                        label: 'Cost (USD)',
+                        label: 'Chi phí (USD)',
                         data: [],
                         borderColor: '#10b981',
                         backgroundColor: 'rgba(16, 185, 129, 0.1)',
@@ -50,7 +102,7 @@ export function initAnalyticsChart() {
                         position: 'left',
                         ticks: { color: '#94a3b8' },
                         grid: { color: '#334155' },
-                        title: { display: true, text: 'Requests', color: '#3b82f6' },
+                        title: { display: true, text: 'Lượt gọi', color: '#3b82f6' },
                         beginAtZero: true
                     },
                     y1: {
@@ -59,7 +111,7 @@ export function initAnalyticsChart() {
                         position: 'right',
                         ticks: { color: '#94a3b8' },
                         grid: { drawOnChartArea: false },
-                        title: { display: true, text: 'Cost (USD)', color: '#10b981' },
+                        title: { display: true, text: 'Chi phí (USD)', color: '#10b981' },
                         beginAtZero: true
                     }
                 }
@@ -75,7 +127,9 @@ export function initAnalyticsChart() {
             data: {
                 labels: Array.from({ length: 24 }, (_, i) => `${i}h`),
                 datasets: [{
-                    label: 'Requests',
+                    // Each bar is one clock hour summed across every day in the window, so
+                    // the legend must not read as a per-day figure.
+                    label: 'Lượt gọi (cộng dồn mọi ngày)',
                     data: [],
                     backgroundColor: '#8b5cf6', // Purple
                     borderRadius: 4
@@ -143,17 +197,11 @@ export async function refreshAnalytics() {
     if (!tableBody) return;
 
     try {
-        tableBody.innerHTML = '<tr><td colspan="9" class="loading">Loading analytics...</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="9" class="loading">Đang tải...</td></tr>';
 
-        const params = new URLSearchParams();
-        if (currentTimeRange && currentTimeRange.minutes) {
-            params.append('minutes', currentTimeRange.minutes);
-        } else if (currentTimeRange && currentTimeRange.start && currentTimeRange.end) {
-            params.append('start', currentTimeRange.start);
-            params.append('end', currentTimeRange.end);
-        } else {
-            params.append('minutes', 43200); // 30d default
-        }
+        // buildRangeParams still carries `minutes` for presets — get_chat_analytics
+        // picks its bucket size from it, and the label formatting below reads it too.
+        const params = buildRangeParams();
 
         const res = await mwFetch(`/v1/_mw/admin/analytics/chat?${params}`);
 
@@ -173,6 +221,8 @@ export async function refreshAnalytics() {
         if (activeUsersEl) {
             activeUsersEl.textContent = (data.totals.active_users || 0).toLocaleString();
         }
+
+        _renderCompare(data.totals);
 
         // 2. Render Dual Axis Chart (Daily Trend)
         if (analyticsDualChart && data.timeseries) {
@@ -215,7 +265,7 @@ export async function refreshAnalytics() {
         if (modelsTable && data.model_breakdown) {
             modelsTable.innerHTML = '';
             if (data.model_breakdown.length === 0) {
-                modelsTable.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#64748b;">No data</td></tr>';
+                modelsTable.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#64748b;">Chưa có dữ liệu</td></tr>';
             } else {
                 data.model_breakdown.forEach(m => {
                     const tr = document.createElement('tr');
