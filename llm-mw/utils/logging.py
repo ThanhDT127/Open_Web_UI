@@ -10,6 +10,7 @@ from fastapi import Request
 
 from config import detail_logger, audit_logger
 from utils.helpers import env_truthy, redact
+from utils.client_ip import client_address
 
 
 def detail_log(
@@ -44,7 +45,7 @@ def detail_log(
                 {
                     "method": request.method,
                     "path": request.url.path,
-                    "client": getattr(request.client, "host", None),
+                    "client": client_address(request),
                 }
             )
         

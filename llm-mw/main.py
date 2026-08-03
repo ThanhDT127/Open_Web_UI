@@ -14,7 +14,7 @@ from utils.logging import detail_log, audit_log, audit_from_request
 from core.audit_state import set_error_state, should_skip_audit, has_audit_state
 
 # Import route handlers
-from api.health import health_check
+from api.health import health_check, health_report
 from api.models import list_models
 from api.chat import chat_completions
 from api.images import generate_images
@@ -27,6 +27,8 @@ from api.admin import get_usage, reset_quota, reconcile_usage, stream_active_use
 from api.analytics import get_chat_analytics, get_satisfaction_analytics
 from api.summary import get_summary
 from api.summary_v2 import get_summary_v2
+from api.adoption import get_adoption
+from api.providers import get_providers, topup_provider
 from api.stream import stream_audit
 from api.access_logs import get_access_summary, stream_access
 from api.audit_query import parse_audit_filters
@@ -173,7 +175,11 @@ async def log_requests(request: Request, call_next):
 
 # Register routes
 # Health & Models
+# Kept unguarded and unchanged: Docker HEALTHCHECK calls it on localhost inside the
+# container, never through nginx. nginx has no `location /health`, so a browser asking
+# for it lands on Open WebUI instead — which is why the dashboard uses the route below.
 app.add_api_route("/health", health_check, methods=["GET"])
+app.add_api_route("/v1/_mw/health", health_report, methods=["GET"])  # Phase 10: dashboard-reachable, admin-guarded
 app.add_api_route("/v1/models", list_models, methods=["GET"])
 
 # Chat, Images, Audio
@@ -208,6 +214,9 @@ app.add_api_route("/v1/_mw/admin/analytics/satisfaction", get_satisfaction_analy
 
 # Summary & Stream endpoints
 app.add_api_route("/v1/_mw/summary", get_summary_v2, methods=["GET"])  # Enhanced version with time range
+app.add_api_route("/v1/_mw/adoption", get_adoption, methods=["GET"])  # Phase 4: adoption metrics
+app.add_api_route("/v1/_mw/providers", get_providers, methods=["GET"])  # Phase 6: provider prepaid credit
+app.add_api_route("/v1/_mw/providers/topup", topup_provider, methods=["POST"])  # Phase 6: top-up credit
 app.add_api_route("/v1/_mw/stream", stream_audit, methods=["GET"])
 
 # Access log endpoints (separate from usage)

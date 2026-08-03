@@ -23,6 +23,7 @@ from threading import Lock
 import os
 from logging.handlers import RotatingFileHandler
 import logging
+from utils.client_ip import client_address
 
 # Thread lock for user operations
 _user_lock = Lock()
@@ -56,7 +57,7 @@ def _write_admin_audit(actor: str, action: str, target_user: str, changes: Dict,
         "target_user": target_user,
         "changes": changes,
         "status": status,
-        "ip": request.client.host if request.client else "unknown",
+        "ip": client_address(request) or "unknown",
         "user_agent": request.headers.get("user-agent", "unknown")
     }
     _get_admin_audit_logger().info(json.dumps(entry, ensure_ascii=False))
@@ -505,7 +506,10 @@ def get_users_sync_status(request: Request):
             cur = conn.cursor()
             # mw_users chỉ lưu subkey_hash — subkey thô không lấy lại được (một chiều),
             # nên cột subkey ở dashboard hiển thị n/a; chỉ báo user đã có key hay chưa.
-            cur.execute("SELECT user_id, active, subkey_hash IS NOT NULL FROM mw_users")
+            # Soft-deleted rows are excluded so a deleted-then-recreated account
+            # (same email, new Open WebUI uuid) surfaces as pending_sync, not a
+            # false "mismatch" against the stale identity we kept for history.
+            cur.execute("SELECT user_id, active, subkey_hash IS NOT NULL FROM mw_users WHERE deleted_at IS NULL")
             rows = cur.fetchall()
             for r in rows:
                 mw_users_list.append({

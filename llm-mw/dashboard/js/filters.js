@@ -2,14 +2,112 @@
 import { updateStatus } from './utils.js';
 import { escapeHtml } from './utils.js';
 
-// Time range state
+// Time range state — the admin's SELECTION, not the window used for fetching.
+// Kept in its original shape ({minutes} or {start,end}) because callers still read it
+// for display and for bucket-size hints (see buildRangeParams below).
 export let currentTimeRange = { minutes: 60 }; // Default: last 1h
+
+// The selection resolved into an absolute window, pinned once per refresh cycle.
+// Every tab in a cycle fetches the same window, so two tabs showing the same metric
+// cannot disagree just because they were loaded a few seconds apart.
+let resolvedWindow = null;
+
+function toIsoParam(date) {
+    // Backends parse with fromisoformat(); normalise the 'Z' suffix they choke on.
+    return date.toISOString().replace('Z', '+00:00');
+}
+
+// Recompute the absolute window from the current selection. Call at the start of a
+// refresh cycle and whenever the selection changes — presets keep rolling forward,
+// they are just pinned for the duration of one cycle.
+// Announce that the admin picked a different range. compare_data.js listens and drops
+// its cache. An event rather than a direct call, so filters.js and compare_data.js do
+// not import each other into a cycle.
+function announceRangeChange() {
+    try { document.dispatchEvent(new CustomEvent('range:changed')); } catch (e) { /* noop */ }
+}
+
+export function resolveTimeWindow() {
+    if (currentTimeRange.start && currentTimeRange.end) {
+        resolvedWindow = { start: currentTimeRange.start, end: currentTimeRange.end };
+    } else {
+        const minutes = currentTimeRange.minutes || 60;
+        const end = new Date();
+        const start = new Date(end.getTime() - minutes * 60 * 1000);
+        resolvedWindow = { start: toIsoParam(start), end: toIsoParam(end) };
+    }
+    return resolvedWindow;
+}
+
+export function getTimeWindow() {
+    return resolvedWindow || resolveTimeWindow();
+}
+
+// Single builder for every dashboard request's time parameters.
+// Replaces 10 hand-rolled copies that each evaluated their own Date.now().
+export function buildRangeParams(extra = {}) {
+    const win = getTimeWindow();
+    const params = new URLSearchParams();
+    params.append('start', win.start);
+    params.append('end', win.end);
+    // `minutes` still travels for preset selections. The window always comes from
+    // start/end — every backend resolver prefers those when present — but
+    // get_chat_analytics keys its bucket size off `minutes`, so dropping it would
+    // silently switch that tab's chart from hourly to daily buckets.
+    if (currentTimeRange.minutes) {
+        params.append('minutes', currentTimeRange.minutes);
+    }
+    for (const [k, v] of Object.entries(extra)) {
+        if (v) params.append(k, v);
+    }
+    return params;
+}
 
 // Recent audit event filters (client-side)
 export let auditEvents = [];
 export const auditUserOptions = new Set();
 export const auditModelOptions = new Set();
 export let auditFilters = { user_id: '', model: '' };
+
+// Everything that has to be re-fetched when the admin picks a different range.
+//
+// One function, called by both entry points. It used to be two near-identical copies —
+// one in setTimeRange, one in applyCustomRange — and a tab added to one copy but not the
+// other would refresh from the preset buttons yet stay stale after Apply. Keeping it in
+// one place is what stops the two paths drifting apart again.
+//
+// ⚠️ Every tab that calls buildRangeParams() must appear here. Four were missing until
+// 03/08/2026 (Users/adoption · Access · Logs · Overview): they only reloaded on tab
+// switch, so after Apply the admin had to leave the tab and come back to see the new
+// range. Overview was the worst of the four — its `summary:updated` listener refreshed
+// two cards while CSAT, Cost MTD and adoption kept the previous range's numbers, so the
+// screen mixed two periods with nothing to say so.
+//
+// This list is still something a new tab must remember to join. The structural fix is for
+// each module to subscribe to `range:changed` itself; not done here because a half-migrated
+// design (some tabs listed, some subscribing) is harder to reason about than either.
+function reloadForRangeChange() {
+    // Always reloaded, visible or not: other tabs read their cached results (Overview
+    // renders from the Usage summary, for one), so leaving them stale poisons those too.
+    if (window.dashboardAPI) {
+        window.dashboardAPI.loadSummary?.();
+        window.dashboardAPI.refreshAnalytics?.();
+        window.dashboardAPI.refreshSatisfaction?.();
+    }
+    window.groupAnalyticsAPI?.fetchData?.();
+
+    // Reloaded only when open — nobody else reads their data, so fetching for a hidden
+    // tab would just be traffic.
+    if (document.getElementById('raghealthTab')?.classList.contains('active')) {
+        window.ragHealthAPI?.apply?.();
+    }
+    if (document.getElementById('knowledgeTab')?.classList.contains('active')) {
+        window.knowledgeAPI?.apply?.();
+    }
+    for (const [tabId, reload] of Object.entries(window.rangeScopedTabs || {})) {
+        if (document.getElementById(tabId)?.classList.contains('active')) reload();
+    }
+}
 
 // FIX: Pass event explicitly instead of using global event
 export async function setTimeRange(e, minutes) {
@@ -19,22 +117,9 @@ export async function setTimeRange(e, minutes) {
 
     // Update state and reload
     currentTimeRange = { minutes };
-
-    // Reload data
-    if (window.dashboardAPI) {
-        if (window.dashboardAPI.loadSummary) {
-            window.dashboardAPI.loadSummary();
-        }
-        if (window.dashboardAPI.refreshAnalytics) {
-            window.dashboardAPI.refreshAnalytics();
-        }
-        if (window.dashboardAPI.refreshSatisfaction) {
-            window.dashboardAPI.refreshSatisfaction();
-        }
-    }
-    if (window.groupAnalyticsAPI && window.groupAnalyticsAPI.fetchData) {
-        window.groupAnalyticsAPI.fetchData();
-    }
+    resolveTimeWindow();
+    announceRangeChange();
+    reloadForRangeChange();
 }
 
 export async function applyCustomRange() {
@@ -67,22 +152,9 @@ export async function applyCustomRange() {
         start: new Date(start).toISOString().replace('Z', '+00:00'),
         end: new Date(end).toISOString().replace('Z', '+00:00')
     };
-
-    // Reload data
-    if (window.dashboardAPI) {
-        if (window.dashboardAPI.loadSummary) {
-            window.dashboardAPI.loadSummary();
-        }
-        if (window.dashboardAPI.refreshAnalytics) {
-            window.dashboardAPI.refreshAnalytics();
-        }
-        if (window.dashboardAPI.refreshSatisfaction) {
-            window.dashboardAPI.refreshSatisfaction();
-        }
-    }
-    if (window.groupAnalyticsAPI && window.groupAnalyticsAPI.fetchData) {
-        window.groupAnalyticsAPI.fetchData();
-    }
+    resolveTimeWindow();
+    announceRangeChange();
+    reloadForRangeChange();
 }
 
 // Initialize audit filters
