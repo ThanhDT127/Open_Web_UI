@@ -145,10 +145,20 @@ async function loadInventory() {
     if (!sectionOk('knInventoryError', data, ...INVENTORY_SLOTS)) return;
     const t = data.totals || {};
 
+    const kbStorage = fmtBytes(t.kb_storage_bytes ?? t.storage_bytes);
+    const totalStorage = fmtBytes(t.storage_bytes);
+    const adhocStorage = fmtBytes(t.adhoc_storage_bytes ?? 0);
+
     document.getElementById('knTotKB').textContent = t.knowledge_bases ?? 0;
     document.getElementById('knTotFiles').textContent = t.files ?? 0;
     document.getElementById('knTotChunks').textContent = t.chunks ?? 0;
-    document.getElementById('knTotStorage').textContent = fmtBytes(t.storage_bytes);
+    document.getElementById('knTotStorage').textContent = kbStorage;
+
+    const storageDetailEl = document.getElementById('knTotStorageDetail');
+    if (storageDetailEl) {
+        storageDetailEl.textContent = `${kbStorage} kho tri thức (${totalStorage} tổng cộng)`;
+        storageDetailEl.title = `Kho tri thức chính thức dùng ${kbStorage}. Có ${adhocStorage} từ các file kéo lẻ trực tiếp vào chat.`;
+    }
 
     // Says what the raw upload count is made of. Deliberately ONE figure: the deleted-KB
     // count used to sit here too, and two counts side by side read as a breakdown that
