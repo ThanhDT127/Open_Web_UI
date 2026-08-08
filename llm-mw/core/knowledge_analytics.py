@@ -231,32 +231,22 @@ def _in_range(epoch, start: datetime, end: datetime) -> bool:
 
 
 def query_inventory(start: datetime, end: datetime, force_refresh: bool = False) -> Dict[str, Any]:
-    """Corpus totals, KB/file growth timeseries, and type/size distributions."""
+    """Corpus totals, KB/file growth timeseries, and type/size distributions for Knowledge Base files."""
     corpus = _get_corpus(force_refresh)
     knowledge = corpus["knowledge"]
     files = corpus["files"]
     chunks = corpus["chunks_by_collection"]
 
-    kb_bytes = sum(f["size"] for f in files if f["knowledge_id"])
-    adhoc_bytes = sum(f["size"] for f in files if not f["knowledge_id"] and not f["dangling_kb_id"])
-    dangling_bytes = sum(f["size"] for f in files if f["dangling_kb_id"])
+    # Filter to ONLY files that belong to a Knowledge Base
+    kb_files = [f for f in files if f["knowledge_id"]]
+    target_files = kb_files if kb_files else files  # Fallback to all files if no KB files exist yet
+
+    kb_bytes = sum(f["size"] for f in kb_files)
     total_bytes = sum(f["size"] for f in files)
     total_chunks = sum(chunks.values())
 
-    # The file count is one row per *upload*, not per document: re-uploading the same
-    # file, and every retry after a failed embedding, each leave a row behind. On the
-    # dev corpus that is 21 rows for 3 documents, 16 of them attached to KBs that have
-    # since been deleted — a total nobody can read as "the corpus holds 21 documents".
-    # These two figures name what the total is made of; the card keeps the raw count.
-    #
-    # Dedup key is (filename, size) rather than `file.hash`. The hash column is null for
-    # the large majority of rows in practice, and grouping on a mostly-null key counts
-    # every copy as its own document while looking exact — query_governance below still
-    # has that flaw. (filename, size) errs the other way, merging two genuinely different
-    # documents that share a name and a byte count; that collision is rarer, and it
-    # under-states rather than silently inflating.
     unique_documents = len({
-        ((f["filename"] or "").strip().lower(), f["size"]) for f in files
+        ((f["filename"] or "").strip().lower(), f["size"]) for f in target_files
     })
     dangling_files = sum(1 for f in files if f["dangling_kb_id"])
 
@@ -266,7 +256,7 @@ def query_inventory(start: datetime, end: datetime, force_refresh: bool = False)
         if _in_range(kb["created_at"], start, end):
             day = _epoch_to_iso(kb["created_at"])[:10]
             day_buckets[day]["kbs"] += 1
-    for f in files:
+    for f in target_files:
         if _in_range(f["created_at"], start, end):
             day = _epoch_to_iso(f["created_at"])[:10]
             day_buckets[day]["files"] += 1
@@ -275,9 +265,9 @@ def query_inventory(start: datetime, end: datetime, force_refresh: bool = False)
         for day, v in sorted(day_buckets.items())
     ]
 
-    # Distributions across the whole corpus (not range-limited).
+    # Distributions across Knowledge Base files (not ad-hoc chat files).
     by_type: Dict[str, Dict[str, int]] = defaultdict(lambda: {"count": 0, "bytes": 0})
-    for f in files:
+    for f in target_files:
         t = by_type[f["content_type"]]
         t["count"] += 1
         t["bytes"] += f["size"]
@@ -287,7 +277,7 @@ def query_inventory(start: datetime, end: datetime, force_refresh: bool = False)
     )
 
     size_buckets = {"<100KB": 0, "100KB–1MB": 0, "1–10MB": 0, ">10MB": 0}
-    for f in files:
+    for f in target_files:
         s = f["size"]
         if s < 100_000:
             size_buckets["<100KB"] += 1
@@ -301,14 +291,15 @@ def query_inventory(start: datetime, end: datetime, force_refresh: bool = False)
     return {
         "totals": {
             "knowledge_bases": len(knowledge),
-            "files": len(files),
+            "files": len(target_files),
+            "all_corpus_files": len(files),
             "unique_documents": unique_documents,
             "dangling_files": dangling_files,
             "chunks": total_chunks,
-            "storage_bytes": total_bytes,
+            "storage_bytes": kb_bytes if kb_files else total_bytes,
+            "all_storage_bytes": total_bytes,
             "kb_storage_bytes": kb_bytes,
-            "adhoc_storage_bytes": adhoc_bytes,
-            "dangling_storage_bytes": dangling_bytes,
+            "adhoc_storage_bytes": total_bytes - kb_bytes,
         },
         "growth": growth,
         "type_distribution": type_distribution,
