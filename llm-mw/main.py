@@ -184,6 +184,7 @@ app.add_api_route("/v1/models", list_models, methods=["GET"])
 
 # Chat, Images, Audio
 app.add_api_route("/v1/chat/completions", chat_completions, methods=["POST"])
+app.add_api_route("/chat/completions", chat_completions, methods=["POST"])
 app.add_api_route("/v1/embeddings", create_embeddings, methods=["POST"])
 app.add_api_route("/v1/rerank", rerank, methods=["POST"])
 app.add_api_route("/v1/images/generations", generate_images, methods=["POST"])
