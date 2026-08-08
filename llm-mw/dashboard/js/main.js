@@ -24,7 +24,7 @@ import {
 } from './settings.js';
 import { applyRagFilters } from './raghealth.js';
 import { loadOverview } from './overview.js';
-import { applyKnowledgeFilters, resetKnowledgeFilters } from './knowledge.js';
+import { applyKnowledgeFilters, resetKnowledgeFilters } from './knowledge.js?v=011';
 import {
 	recalcComparison, resetSimulator, showAddPriceModal, showEditPriceModal,
 	closePriceModal, savePrice, deletePrice
