@@ -156,22 +156,13 @@ async function loadInventory() {
 
     const storageDetailEl = document.getElementById('knTotStorageDetail');
     if (storageDetailEl) {
-        storageDetailEl.textContent = `${kbStorage} kho tri thức (${totalStorage} tổng cộng)`;
+        storageDetailEl.textContent = `Dung lượng kho tri thức (${totalStorage} tổng cộng)`;
         storageDetailEl.title = `Kho tri thức chính thức dùng ${kbStorage}. Có ${adhocStorage} từ các file kéo lẻ trực tiếp vào chat.`;
     }
 
-    // Says what the raw upload count is made of. Deliberately ONE figure: the deleted-KB
-    // count used to sit here too, and two counts side by side read as a breakdown that
-    // should add up to the total when in fact they are independent cuts of the same rows
-    // (a row can be both a duplicate and attached to a deleted KB). That count has its own
-    // card — 🔗 Dangling Files under Governance — where it stands alone and cannot be
-    // mistaken for a part of this one.
-    //
-    // Omitted when it adds nothing: with every row already a distinct document the caption
-    // would just restate the value above it.
-    const detailParts = [FILES_DETAIL_BASE];
-    if (t.unique_documents != null && t.unique_documents !== t.files) {
-        detailParts.push(`${t.unique_documents} tài liệu khác nhau`);
+    const detailParts = [`Chỉ tính file trong kho tri thức`];
+    if (t.all_corpus_files && t.all_corpus_files > t.files) {
+        detailParts.push(`${t.all_corpus_files} tổng số file`);
     }
     document.getElementById('knTotFilesDetail').textContent = detailParts.join(' · ');
 
