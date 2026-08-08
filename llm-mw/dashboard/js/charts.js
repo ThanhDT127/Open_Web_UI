@@ -83,7 +83,7 @@ function renderCustomLegend(containerId, labels, colors, values = []) {
         let displayLabel = label;
         
         if (value !== undefined && total > 0) {
-            const pct = ((value / total) * 100).toFixed(0);
+            const pct = ((value / total) * 100).toFixed(1);
             displayLabel = `${label} (${pct}%)`;
         }
         

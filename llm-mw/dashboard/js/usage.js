@@ -229,8 +229,8 @@ function _renderUsersTable(users) {
         return `<tr>
             <td class="rank">${i + 1}</td>
             <td class="user-id">${u.user_id}</td>
-            <td>${(u.requests_total || 0).toLocaleString()}</td>
-            <td>${(u.tokens_total || 0).toLocaleString()}</td>
+            <td>${(u.requests_total || 0).toLocaleString('en-US')}</td>
+            <td>${(u.tokens_total || 0).toLocaleString('en-US')}</td>
             <td class="cost">$${(u.cost_usd || 0).toFixed(4)}</td>
             <td>${u.p95_latency_ms ? u.p95_latency_ms.toFixed(0) + 'ms' : '-'}</td>
             <td class="${errClass}">${(u.error_rate_percent || 0).toFixed(1)}%</td>
