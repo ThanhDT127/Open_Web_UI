@@ -148,6 +148,8 @@ async def log_requests(request: Request, call_next):
     try:
         response = await call_next(request)
         status_code = getattr(response, "status_code", 200)
+        if request.url.path.startswith("/dashboard"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
         return response
     except Exception as e:
         # Set error state if audit state was initialized
@@ -303,9 +305,12 @@ app.mount("/dashboard/vendor", StaticFiles(directory=os.path.join(dashboard_dir,
 @app.get("/dashboard")
 @app.get("/dashboard/")
 async def serve_dashboard():
-    """Serve dashboard HTML"""
+    """Serve dashboard HTML with no-cache headers"""
     dashboard_path = os.path.join(dashboard_dir, "index.html")
-    return FileResponse(dashboard_path)
+    return FileResponse(
+        dashboard_path,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate, max-age=0"}
+    )
 
 
 if __name__ == "__main__":
