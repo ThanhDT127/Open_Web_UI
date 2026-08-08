@@ -228,6 +228,9 @@ def query_inventory(start: datetime, end: datetime, force_refresh: bool = False)
     files = corpus["files"]
     chunks = corpus["chunks_by_collection"]
 
+    kb_bytes = sum(f["size"] for f in files if f["knowledge_id"])
+    adhoc_bytes = sum(f["size"] for f in files if not f["knowledge_id"] and not f["dangling_kb_id"])
+    dangling_bytes = sum(f["size"] for f in files if f["dangling_kb_id"])
     total_bytes = sum(f["size"] for f in files)
     total_chunks = sum(chunks.values())
 
@@ -294,6 +297,9 @@ def query_inventory(start: datetime, end: datetime, force_refresh: bool = False)
             "dangling_files": dangling_files,
             "chunks": total_chunks,
             "storage_bytes": total_bytes,
+            "kb_storage_bytes": kb_bytes,
+            "adhoc_storage_bytes": adhoc_bytes,
+            "dangling_storage_bytes": dangling_bytes,
         },
         "growth": growth,
         "type_distribution": type_distribution,
