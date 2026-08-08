@@ -50,18 +50,18 @@ function formatAge(sec) {
 }
 
 const FORMATTERS = {
-    int: (v) => Number(v || 0).toLocaleString(),
-    num1: (v) => (v == null ? '-' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 })),
+    int: (v) => Number(v || 0).toLocaleString('en-US'),
+    num1: (v) => (v == null ? '-' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 1 })),
     usd4: (v) => '$' + Number(v || 0).toFixed(4),
     usd2: (v) => '$' + Number(v || 0).toFixed(2),
     usd6: (v) => '$' + Number(v || 0).toFixed(6),
     ms: (v) => (v == null ? '-' : Number(v).toFixed(0) + 'ms'),
     pct1: (v) => Number(v || 0).toFixed(1) + '%',
     ratio: (v) => (v == null ? '—' : Number(v).toFixed(2) + ':1'),
-    rpm: (v) => (v == null ? '-' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 3 }) + '/ph'),
+    rpm: (v) => (v == null ? '-' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 3 }) + '/ph'),
     age: (v) => formatAge(v),
-    days: (v) => (v == null ? '—' : Number(v).toLocaleString() + ' ngày'),
-    gb: (v) => (v == null ? '—' : Number(v).toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' GB'),
+    days: (v) => (v == null ? '—' : Number(v).toLocaleString('en-US') + ' ngày'),
+    gb: (v) => (v == null ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 1 }) + ' GB'),
 };
 
 export function formatValue(metricKey, value) {
