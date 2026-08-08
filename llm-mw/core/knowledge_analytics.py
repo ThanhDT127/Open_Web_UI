@@ -132,6 +132,15 @@ def _compute_corpus() -> Dict[str, Any]:
         cur.execute("SELECT id, filename, user_id, meta, hash, created_at FROM file")
         file_rows = cur.fetchall()
 
+        kf_map = {}
+        try:
+            cur.execute("SELECT file_id, knowledge_id FROM knowledge_file")
+            for r in cur.fetchall():
+                if r[0] and r[1]:
+                    kf_map[r[0]] = r[1]
+        except Exception:
+            pass
+
         cur.execute("SELECT collection_name, count(*) FROM document_chunk GROUP BY collection_name")
         chunks_by_collection: Dict[str, int] = {r[0]: int(r[1]) for r in cur.fetchall()}
 
@@ -155,7 +164,7 @@ def _compute_corpus() -> Dict[str, Any]:
 
     files: List[Dict[str, Any]] = []
     for fid, filename, user_id, meta, file_hash, created_at in file_rows:
-        kid = _meta_knowledge_id(meta)
+        kid = kf_map.get(fid) or _meta_knowledge_id(meta)
         files.append({
             "id": fid,
             "filename": filename,
