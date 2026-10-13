@@ -4,7 +4,7 @@
 Middleware hệ thống MUST tự động kiểm tra chéo và khởi tạo người dùng trong cơ sở dữ liệu `middleware` (bảng `mw_users`) khi có yêu cầu xác thực hoặc truy vấn thông tin từ một tài khoản người dùng chưa tồn tại trong Middleware nhưng có tài khoản đang hoạt động (active) trong DB `openwebui` (bảng `"user"`).
 
 #### Scenario: Khởi tạo thành công cho người dùng hợp lệ
-- **WHEN** Người dùng hợp lệ có email `nhanvien@example.com` (đã đăng nhập SSO và hoạt động trên Open WebUI) gửi yêu cầu chat đầu tiên hoặc gọi endpoint truy vấn hạn mức
+- **WHEN** Người dùng hợp lệ có email `nhanvien@rangdong.com.vn` (đã đăng nhập SSO và hoạt động trên Open WebUI) gửi yêu cầu chat đầu tiên hoặc gọi endpoint truy vấn hạn mức
 - **THEN** Middleware SHALL kiểm tra chéo DB `openwebui`, tự động khởi tạo người dùng trong bảng `mw_users` với quota mặc định và sinh subkey mới, sau đó phản hồi thành công yêu cầu
 
 #### Scenario: Từ chối yêu cầu cho người dùng không tồn tại hoặc bị khóa
@@ -22,5 +22,5 @@ Hệ thống SHALL cung cấp một giao diện (Dashboard) dành cho Admin đ�
 Khi trạng thái của một tài khoản bị thay đổi thành không hoạt động (role = 'banned' hoặc 'pending') trong DB `openwebui` bởi Admin, hệ thống MUST lập tức vô hiệu hóa subkey tương ứng bên Middleware để chặn cuộc gọi API.
 
 #### Scenario: Vô hiệu hóa subkey tức thời
-- **WHEN** Admin chuyển trạng thái người dùng `nhanvien@example.com` thành Banned hoặc Pending trong trang quản trị Open WebUI
+- **WHEN** Admin chuyển trạng thái người dùng `nhanvien@rangdong.com.vn` thành Banned hoặc Pending trong trang quản trị Open WebUI
 - **THEN** Middleware SHALL cập nhật trạng thái `active = false` tương ứng bên bảng `mw_users` và chặn ngay lập tức các yêu cầu chat sử dụng subkey cũ của người dùng này
