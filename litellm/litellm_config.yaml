@@ -7,7 +7,7 @@ server_settings:
 general_settings:
   enable_spend_logging: true
   verbose: true
-  master_key: "super_admin_key_123"
+  master_key: os.environ/LITELLM_KEY
   log_level: "info"
 
 logging:
@@ -178,10 +178,11 @@ model_list:
     litellm_params:
       model: vertex_ai/gemini-embedding-2
 
-  # Gemini Embedding 001 via OpenRouter
+  # Gemini Embedding 001 via Gemini API (Middleware injects dimensions=1536)
   - model_name: gemini-embedding-001
     litellm_params:
-      model: openrouter/gemini-embedding-001
+      model: gemini/gemini-embedding-001
+      api_key: os.environ/GEMINI_API_KEY
 
 # ============================================================
 # RERANK MODELS
@@ -219,5 +220,5 @@ general_settings:
   max_parallel_requests: 50
 
 logging:
-  file: "litellm/litellm.log"
+  file: "/app/logs/litellm.log"
   level: INFO
