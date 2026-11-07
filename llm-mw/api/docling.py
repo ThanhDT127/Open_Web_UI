@@ -3,17 +3,69 @@ Docling Proxy — Intercepts document extraction and materializes images.
 This ensures Open WebUI stores clean Markdown with material URLs in its vector DB.
 """
 
+import asyncio
+import base64
+import io
 import os
 import re
+import zipfile
+from typing import Dict, Optional, Tuple
+
 import httpx
 from fastapi import Request, Response, HTTPException
 from fastapi.responses import JSONResponse
 
 from config import logger
-from utils.media import maybe_materialize_data_url, save_bytes_to_media, public_media_url
+import utils.media as _media_utils
+from utils.media import public_media_url
 
 # The actual docling-serve internal URL
 REAL_DOCLING_URL = os.getenv("REAL_DOCLING_URL", "http://docling:5001").rstrip("/")
+
+
+def _extract_and_convert_docling_zip(zip_bytes: bytes) -> Optional[Tuple[str, Dict[str, str]]]:
+    """
+    Synchronous worker helper (run via asyncio.to_thread):
+    Extracts Markdown and converts embedded images in a Docling ZIP archive to WebP on disk.
+    Returns (markdown_content, {archive_entry_name: saved_local_filename}) or None if no .md exists.
+    """
+    zip_buffer = io.BytesIO(zip_bytes)
+    saved_images: Dict[str, str] = {}
+
+    with zipfile.ZipFile(zip_buffer) as z:
+        md_filename = None
+        for name in z.namelist():
+            if name.lower().endswith(".md"):
+                md_filename = name
+                break
+
+        if not md_filename:
+            return None
+
+        markdown_content = z.read(md_filename).decode("utf-8")
+
+        for name in z.namelist():
+            if any(name.lower().endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".webp")):
+                img_bytes = z.read(name)
+                webp_bytes = _media_utils.convert_bytes_to_webp(img_bytes, quality=80)
+                try:
+                    local_name = _media_utils.save_bytes_to_media(webp_bytes, mime="image/webp")
+                    saved_images[name] = local_name
+                except Exception as le:
+                    logger.error("docling_proxy: failed to save local image: %s", le)
+
+    return markdown_content, saved_images
+
+
+def _save_data_url_bytes_sync(data_url: str, fallback_mime: str = "application/octet-stream") -> Optional[str]:
+    """Decode a data: URL and persist bytes to media storage on a worker thread."""
+    header, b64 = data_url.split(",", 1)
+    mime = fallback_mime
+    m = re.match(r"^data:([^;]+);base64$", header)
+    if m:
+        mime = m.group(1)
+    raw = base64.b64decode(b64)
+    return _media_utils.save_bytes_to_media(raw, mime=mime)
 
 
 async def docling_proxy(request: Request):
@@ -87,70 +139,38 @@ async def docling_proxy(request: Request):
 
     # --- Response Interception & Materialization ---
     
-    # 1. Intercept ZIP response (referenced mode)
+    # 1. Intercept ZIP response (referenced mode) — offload CPU/disk work to threadpool
     if resp.status_code == 200 and (
         "application/zip" in resp.headers.get("content-type", "") 
         or resp.content.startswith(b"PK\x03\x04")
     ):
         try:
-            import io
-            import zipfile
-            from utils.media import convert_bytes_to_webp
-            
-            zip_buffer = io.BytesIO(resp.content)
-            
-            markdown_content = ""
-            images = {}
-            
-            with zipfile.ZipFile(zip_buffer) as z:
-                # Find markdown file
-                md_filename = None
-                for name in z.namelist():
-                    if name.lower().endswith(".md"):
-                        md_filename = name
-                        break
-                
-                if md_filename:
-                    markdown_content = z.read(md_filename).decode("utf-8")
-                    
-                    # Extract and process image files
-                    for name in z.namelist():
-                        if any(name.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"]):
-                            img_bytes = z.read(name)
-                            
-                            # Convert to WebP (nén quality=80)
-                            webp_bytes = convert_bytes_to_webp(img_bytes, quality=80)
-                            
-                            # Save directly to local storage
-                            try:
-                                local_name = save_bytes_to_media(webp_bytes, mime="image/webp")
-                                public_url = public_media_url(request, local_name)
-                                images[name] = public_url
-                                logger.info("docling_proxy: successfully stored image locally: %s", public_url)
-                            except Exception as le:
-                                logger.error("docling_proxy: failed to save local image: %s", le)
-                    
-                    # Replace paths in markdown
-                    for local_path, local_url in images.items():
-                        # Replace direct local path
-                        markdown_content = markdown_content.replace(local_path, local_url)
-                        # Replace relative path basename
-                        base_name = os.path.basename(local_path)
-                        if base_name != local_path:
-                            markdown_content = markdown_content.replace(base_name, local_url)
-                        # Handing cases where relative path has ./ prefix
-                        dot_slash_name = f"./{base_name}"
-                        markdown_content = markdown_content.replace(dot_slash_name, local_url)
-                    
-                    # Return JSON to Open WebUI
-                    logger.info("docling_proxy: processed ZIP response. Extracted %d images -> Local Media.", len(images))
-                    return JSONResponse(content={
-                        "document": {
-                            "md_content": markdown_content
-                        }
-                    })
-                else:
-                    logger.warning("docling_proxy: no markdown file found in ZIP response")
+            extracted = await asyncio.to_thread(_extract_and_convert_docling_zip, resp.content)
+            if extracted is not None:
+                markdown_content, saved_images = extracted
+                images: Dict[str, str] = {}
+                for archive_name, local_name in saved_images.items():
+                    public_url = public_media_url(request, local_name)
+                    images[archive_name] = public_url
+                    logger.info("docling_proxy: successfully stored image locally: %s", public_url)
+
+                # Replace paths in markdown
+                for local_path, local_url in images.items():
+                    markdown_content = markdown_content.replace(local_path, local_url)
+                    base_name = os.path.basename(local_path)
+                    if base_name != local_path:
+                        markdown_content = markdown_content.replace(base_name, local_url)
+                    dot_slash_name = f"./{base_name}"
+                    markdown_content = markdown_content.replace(dot_slash_name, local_url)
+
+                logger.info("docling_proxy: processed ZIP response. Extracted %d images -> Local Media.", len(images))
+                return JSONResponse(content={
+                    "document": {
+                        "md_content": markdown_content
+                    }
+                })
+            else:
+                logger.warning("docling_proxy: no markdown file found in ZIP response")
         except Exception as e:
             logger.error("docling_proxy_zip_interception_fail: %s", e)
             raise HTTPException(502, f"Failed to process Docling ZIP response: {e}")
@@ -192,7 +212,8 @@ async def docling_proxy(request: Request):
                         
                         if ";base64," in data_url:
                             try:
-                                public_url = maybe_materialize_data_url(request, url=data_url)
+                                local_name = await asyncio.to_thread(_save_data_url_bytes_sync, data_url)
+                                public_url = public_media_url(request, local_name) if local_name else data_url
                                 if public_url != data_url:
                                     markdown_content = markdown_content[:idx] + public_url + markdown_content[end_idx:]
                                     logger.info("docling_proxy: materialized base64 -> %s", public_url)

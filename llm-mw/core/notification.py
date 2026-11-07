@@ -4,15 +4,22 @@ Notification service — central fan-out for all alert channels.
 After each quota check, send_notification() stores in DB (always)
 and optionally sends email (only for critical alerts).
 
-Daily digest is triggered by scheduler at 8:00 AM VN time.
+Daily digest is triggered by scheduler at 8:00 AM VN time with PostgreSQL
+advisory leader lock + daily idempotency state across multiple workers.
 """
 
+import asyncio
 import json
 import logging
+import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger("llm_mw")
+
+_DAILY_DIGEST_ADVISORY_LOCK_ID = 727708
+_DAILY_DIGEST_STATE_KEY = "daily_digest_state"
 
 
 # ─── Core: insert notification ──────────────────────────────
@@ -83,42 +90,37 @@ async def send_notification(
     1. Always insert into DB (dashboard notification)
     2. Send realtime email ONLY if send_email_realtime=True (critical only)
     3. All notifications will be included in daily digest regardless
-
-    Args:
-        user_id: Target user, or None for system-wide
-        type: 'quota_warning', 'quota_critical', 'quota_blocked', 'budget_warning', etc.
-        level: 'info', 'warning', 'critical'
-        title: Short title for notification
-        message: Full message body
-        metadata: Extra data (percent, used, limit, etc.)
-        send_email_realtime: If True, also send email immediately
     """
-    # 1. Always store in DB
-    notif_id = insert_notification(user_id, type, level, title, message, metadata)
+    notif_id = await asyncio.to_thread(
+        insert_notification, user_id, type, level, title, message, metadata
+    )
 
-    # 2. Send realtime email for critical alerts
     if send_email_realtime:
         try:
-            from core.alerting import load_alert_config, _smtp_send
-            config = load_alert_config()
+            import core.alerting as _alerting
+            config = await asyncio.to_thread(_alerting.load_alert_config)
             smtp_cfg = config.get("smtp", {})
             admin_emails = config.get("admin_alerts", {}).get("emails", [])
 
             if smtp_cfg.get("enabled") and admin_emails:
                 email_body = _format_email_body(type, level, title, message, metadata)
-                _smtp_send(smtp_cfg, admin_emails, f"🚨 {title}", email_body)
+                await asyncio.to_thread(
+                    _alerting._smtp_send, smtp_cfg, admin_emails, f"🚨 {title}", email_body
+                )
 
-                # Mark as emailed
                 if notif_id and _db_available():
-                    try:
-                        from core.db import db_conn
-                        with db_conn() as conn:
+                    def _mark_emailed() -> None:
+                        import core.db as _db
+                        with _db.db_conn() as conn:
                             cur = conn.cursor()
                             cur.execute(
                                 "UPDATE mw_notifications SET emailed = true WHERE id = %s",
-                                (notif_id,)
+                                (notif_id,),
                             )
                             cur.close()
+
+                    try:
+                        await asyncio.to_thread(_mark_emailed)
                     except Exception:
                         pass
 
@@ -156,24 +158,53 @@ def _format_email_body(type: str, level: str, title: str, message: str, metadata
     return "\n".join(lines)
 
 
-# ─── Daily digest ────────────────────────────────────────────
+# ─── Daily digest (multi-worker safe) ────────────────────────
 
-async def send_daily_digest():
+def _run_daily_digest_sync() -> None:
     """
-    Send daily digest email at 8:00 AM VN time.
-    Aggregates all notifications from the last 24 hours into one email.
-    Called by APScheduler.
+    Synchronous worker body for send_daily_digest.
+    Uses PostgreSQL session advisory lock + mw_config date claim so multiple
+    Uvicorn workers send at most one digest email per VN calendar day.
     """
-    if not _db_available():
-        logger.warning("daily_digest_skip: DB not available")
-        return
+    import core.db as _db
+    import core.alerting as _alerting
+    import core.auth as _auth
 
+    lock_conn = _db.get_conn()
+    lock_acquired = False
     try:
-        from core.db import db_conn
-        from core.alerting import load_alert_config, _smtp_send
-        from core.auth import load_users
+        lock_cur = lock_conn.cursor()
+        lock_cur.execute("SELECT pg_try_advisory_lock(%s)", (_DAILY_DIGEST_ADVISORY_LOCK_ID,))
+        lock_row = lock_cur.fetchone()
+        lock_cur.close()
+        lock_acquired = bool(lock_row and lock_row[0])
+        if not lock_acquired:
+            logger.info("daily_digest_skip: another worker holds leader advisory lock")
+            return
 
-        config = load_alert_config()
+        vn_now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh"))
+        today_vn = vn_now.strftime("%Y-%m-%d")
+
+        with _db.db_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT config_value FROM mw_config WHERE config_key = %s",
+                (_DAILY_DIGEST_STATE_KEY,),
+            )
+            state_row = cur.fetchone()
+            cur.close()
+            if state_row and state_row[0]:
+                state_val = state_row[0]
+                if isinstance(state_val, str):
+                    try:
+                        state_val = json.loads(state_val)
+                    except Exception:
+                        state_val = {}
+                if isinstance(state_val, dict) and state_val.get("last_sent_date") == today_vn:
+                    logger.info("daily_digest_skip: already processed for date=%s", today_vn)
+                    return
+
+        config = _alerting.load_alert_config()
         smtp_cfg = config.get("smtp", {})
         admin_emails = config.get("admin_alerts", {}).get("emails", [])
 
@@ -181,8 +212,7 @@ async def send_daily_digest():
             logger.info("daily_digest_skip: SMTP disabled or no admin emails")
             return
 
-        # Get notifications from last 24 hours
-        with db_conn() as conn:
+        with _db.db_conn() as conn:
             cur = conn.cursor()
             cur.execute("""
                 SELECT id, ts, user_id, type, level, title, message, metadata
@@ -197,8 +227,7 @@ async def send_daily_digest():
             logger.info("daily_digest_skip: no notifications in last 24h")
             return
 
-        # Get user quota summary
-        users = load_users()
+        users = _auth.load_users()
         user_summaries = []
         for u in sorted(users, key=lambda x: float(x.get("quota", {}).get("used_cost_usd", 0) or 0), reverse=True):
             uid = u.get("user_id", "?")
@@ -209,19 +238,17 @@ async def send_daily_digest():
                 pct = (used / limit * 100) if limit > 0 else 0
                 user_summaries.append(f"  • {uid}: ${used:.2f}/${limit:.2f} ({pct:.0f}%)")
 
-        # Count by level
         critical_count = sum(1 for r in rows if r[4] == "critical")
         warning_count = sum(1 for r in rows if r[4] == "warning")
         info_count = sum(1 for r in rows if r[4] == "info")
 
-        # Build email body
-        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        now_str = vn_now.strftime("%Y-%m-%d %H:%M")
         lines = [
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             "📊 LLM Gateway — Daily Digest",
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             "",
-            f"Thời gian: {now}",
+            f"Thời gian: {now_str}",
             f"Tổng cảnh báo 24h: {len(rows)} ({critical_count} critical, {warning_count} warning, {info_count} info)",
             "",
         ]
@@ -246,10 +273,8 @@ async def send_daily_digest():
             "",
         ])
 
-        # Per-provider API budget breakdown
         try:
-            from core.alerting import _get_provider_spend
-            provider_spend = _get_provider_spend()
+            provider_spend = _alerting._get_provider_spend()
             api_budgets = config.get("admin_alerts", {}).get("api_budgets", {})
             if provider_spend:
                 lines.append("💳 CREDIT THEO PROVIDER (từ lần nạp gần nhất):")
@@ -272,22 +297,59 @@ async def send_daily_digest():
         ])
 
         body = "\n".join(lines)
-        subject = f"📊 LLM Gateway Daily Digest — {critical_count} critical, {warning_count} warning ({now})"
+        subject = f"📊 LLM Gateway Daily Digest — {critical_count} critical, {warning_count} warning ({now_str})"
 
-        _smtp_send(smtp_cfg, admin_emails, subject, body)
+        _alerting._smtp_send(smtp_cfg, admin_emails, subject, body)
 
-        # Mark all as emailed
-        with db_conn() as conn:
+        state_payload = json.dumps({
+            "last_sent_date": today_vn,
+            "sent_at": vn_now.isoformat(),
+            "worker_pid": os.getpid(),
+            "notifications_count": len(rows),
+        })
+        with _db.db_conn() as conn:
             cur = conn.cursor()
             notif_ids = [r[0] for r in rows]
             cur.execute(
                 "UPDATE mw_notifications SET emailed = true WHERE id = ANY(%s)",
-                (notif_ids,)
+                (notif_ids,),
+            )
+            cur.execute(
+                """
+                INSERT INTO mw_config (config_key, config_value, updated_at)
+                VALUES (%s, %s, now())
+                ON CONFLICT (config_key) DO UPDATE
+                    SET config_value = EXCLUDED.config_value,
+                        updated_at = now()
+                """,
+                (_DAILY_DIGEST_STATE_KEY, state_payload),
             )
             cur.close()
 
         logger.info("daily_digest_sent notifications=%d to=%s", len(rows), admin_emails)
+    finally:
+        if lock_acquired:
+            try:
+                unlock_cur = lock_conn.cursor()
+                unlock_cur.execute("SELECT pg_advisory_unlock(%s)", (_DAILY_DIGEST_ADVISORY_LOCK_ID,))
+                unlock_cur.close()
+            except Exception:
+                pass
+        _db.put_conn(lock_conn)
 
+
+async def send_daily_digest():
+    """
+    Send daily digest email at 8:00 AM VN time.
+    Aggregates all notifications from the last 24 hours into one email.
+    Called by APScheduler across workers; guarded by PostgreSQL leader lock.
+    """
+    if not _db_available():
+        logger.warning("daily_digest_skip: DB not available")
+        return
+
+    try:
+        await asyncio.to_thread(_run_daily_digest_sync)
     except Exception as e:
         logger.error("daily_digest_failed: %s", str(e))
 

@@ -21,7 +21,7 @@ from core.auth import (
 )
 from threading import Lock
 import os
-from logging.handlers import RotatingFileHandler
+from utils.file_lock_handler import MultiProcessRotatingFileHandler
 import logging
 from utils.client_ip import client_address
 
@@ -40,7 +40,7 @@ def _get_admin_audit_logger():
         if not _admin_audit_logger.handlers:
             _admin_audit_logger.setLevel(logging.INFO)
             audit_file = os.path.join(BACKUP_LOG_DIR, "admin_audit.jsonl")
-            handler = RotatingFileHandler(
+            handler = MultiProcessRotatingFileHandler(
                 audit_file, maxBytes=20_000_000, backupCount=5, encoding="utf-8"
             )
             handler.setFormatter(logging.Formatter("%(message)s"))

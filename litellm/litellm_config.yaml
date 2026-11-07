@@ -4,16 +4,6 @@ server_settings:
   api_base: "/v1"
   telemetry: false
 
-general_settings:
-  enable_spend_logging: true
-  verbose: true
-  master_key: os.environ/LITELLM_KEY
-  log_level: "info"
-
-logging:
-  file: "/app/logs/litellm.log"
-  level: INFO
-
 model_list:
   # ============================================================
   # OPENAI CHAT MODELS (3)
@@ -53,7 +43,7 @@ model_list:
       model: gemini/gemini-3.1-flash-lite-preview
       api_key: os.environ/GEMINI_API_KEY
 
-  # Gemini 2.5 Flash via OpenRouter
+  # Gemini 2.5 Flash via Vertex AI
   - model_name: chat-gemini-2.5-flash
     litellm_params:
       model: vertex_ai/gemini-2.5-flash
@@ -66,7 +56,6 @@ model_list:
       model: openrouter/google/gemini-2.5-flash
       api_key: os.environ/OPENROUTER_API_KEY
       max_tokens: 4096
-
 
   # ============================================================
   # XAI GROK CHAT MODELS (3)
@@ -169,9 +158,9 @@ model_list:
       model: openrouter/deepseek/deepseek-v4-flash
       api_key: os.environ/OPENROUTER_API_KEY
 
-# ============================================================
-# EMBEDDING MODELS
-# ============================================================
+  # ============================================================
+  # EMBEDDING MODELS
+  # ============================================================
 
   # Gemini Embedding 2 via Vertex AI
   - model_name: gemini-embedding-2
@@ -184,9 +173,9 @@ model_list:
       model: gemini/gemini-embedding-001
       api_key: os.environ/GEMINI_API_KEY
 
-# ============================================================
-# RERANK MODELS
-# ============================================================
+  # ============================================================
+  # RERANK MODELS
+  # ============================================================
 
   # Cohere Rerank v3.5 via OpenRouter
   - model_name: cohere/rerank-v3.5
@@ -195,7 +184,7 @@ model_list:
       api_key: os.environ/OPENROUTER_API_KEY
 
 # ============================================================
-# LITELLM SETTINGS
+# LITELLM SETTINGS (Single canonical definitions)
 # ============================================================
 
 litellm_settings:
@@ -217,7 +206,7 @@ general_settings:
   verbose: false
   master_key: os.environ/LITELLM_KEY
   log_level: "warning"
-  max_parallel_requests: 50
+  max_parallel_requests: 100
 
 logging:
   file: "/app/logs/litellm.log"

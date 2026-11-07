@@ -1,16 +1,93 @@
 """
 Logging utilities for detailed and audit logging.
+Offloads blocking file and PostgreSQL dual-writes to a bounded worker pool
+when invoked from an active asyncio event loop.
 """
 
-import json
+import asyncio
+import atexit
+import concurrent.futures
 import datetime as dt
-from typing import Any, Dict, Optional
+import json
+import threading
+from typing import Any, Callable, Dict, Optional
 from zoneinfo import ZoneInfo
 from fastapi import Request
 
 from config import detail_logger, audit_logger
 from utils.helpers import env_truthy, redact
 from utils.client_ip import client_address
+
+
+_LOG_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="mw-log-io",
+)
+_PENDING_FUTURES_LOCK = threading.Lock()
+_PENDING_FUTURES: set[concurrent.futures.Future] = set()
+
+
+def _cleanup_future(fut: concurrent.futures.Future) -> None:
+    with _PENDING_FUTURES_LOCK:
+        _PENDING_FUTURES.discard(fut)
+
+
+def _dispatch_log_io(fn: Callable[..., None], *args: Any) -> None:
+    """Run blocking log/DB write on _LOG_EXECUTOR if an asyncio loop is running, else inline."""
+    try:
+        asyncio.get_running_loop()
+        loop_running = True
+    except RuntimeError:
+        loop_running = False
+
+    if loop_running:
+        try:
+            fut = _LOG_EXECUTOR.submit(fn, *args)
+            with _PENDING_FUTURES_LOCK:
+                _PENDING_FUTURES.add(fut)
+            fut.add_done_callback(_cleanup_future)
+            return
+        except RuntimeError:
+            # Executor shutting down at process exit — fall through to inline write
+            pass
+    fn(*args)
+
+
+def flush_log_executor(timeout: float = 5.0) -> None:
+    """Wait for all currently queued background log/DB writes to complete."""
+    with _PENDING_FUTURES_LOCK:
+        snapshot = list(_PENDING_FUTURES)
+    if snapshot:
+        concurrent.futures.wait(snapshot, timeout=timeout)
+
+
+atexit.register(_LOG_EXECUTOR.shutdown, wait=True)
+
+
+def _write_detail_io(payload: Dict[str, Any]) -> None:
+    try:
+        detail_logger.info(json.dumps(payload, ensure_ascii=False))
+        try:
+            import core.db as _db
+            if _db._pool is not None:
+                _db.insert_request_log(payload)
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+
+def _write_audit_io(data: dict) -> None:
+    try:
+        audit_logger.info(json.dumps(data, ensure_ascii=False))
+        try:
+            import core.db as _db
+            if _db._pool is not None:
+                _db.insert_audit_log(data)
+        except Exception:
+            pass
+    except Exception:
+        pass
 
 
 def detail_log(
@@ -60,15 +137,7 @@ def detail_log(
         for k, v in fields.items():
             payload[k] = redact(v)
 
-        detail_logger.info(json.dumps(payload, ensure_ascii=False))
-
-        # Dual-write to DB (best-effort, non-blocking)
-        try:
-            from core.db import insert_request_log, _pool
-            if _pool is not None:
-                insert_request_log(payload)
-        except Exception:
-            pass
+        _dispatch_log_io(_write_detail_io, payload)
     except Exception:
         # Never break API behavior due to logging failures.
         return
@@ -91,20 +160,6 @@ def audit_log(
     """
     Write structured audit log entry to audit.jsonl.
     One line per request for aggregation and analysis.
-    
-    Args:
-        user_id: User identifier
-        request_id: Unique request ID
-        endpoint: API endpoint path
-        model: Model name (if applicable)
-        tokens_in: Input tokens
-        tokens_out: Output tokens
-        cost_usd: Cost in USD
-        image_requests: Number of image requests
-        stt_requests: Speech-to-text requests
-        tts_chars: Text-to-speech characters
-        duration_ms: Request duration in milliseconds
-        status: Request status (success/error)
     """
     try:
         entry = {
@@ -122,55 +177,18 @@ def audit_log(
             "duration_ms": duration_ms,
             "status": status,
         }
-        audit_logger.info(json.dumps(entry, ensure_ascii=False))
+        _dispatch_log_io(lambda e: audit_logger.info(json.dumps(e, ensure_ascii=False)), entry)
     except Exception:
         return
 
 
 def write_audit_line(data: dict):
     """
-    Write a raw audit line to audit.jsonl.
-    
-    This is the low-level function used by both middleware and endpoints
-    to write structured audit data. Accepts a dict that will be serialized to JSON.
-    
-    Args:
-        data: Dictionary containing audit fields (ts, rid, user_id, etc.)
-    
-    Example:
-        ```python
-        write_audit_line({
-            "ts": datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).isoformat(),
-            "rid": "mw_abc123",
-            "user_id": "admin",
-            "endpoint": "/v1/chat/completions",
-            "model": "gpt-4o-mini",
-            "status": "pending",
-            "status_code": 200,
-            "latency_ms": None,
-            "tokens_in": 0,
-            "tokens_out": 0,
-            "tokens_total": 0,
-            "cost_usd": 0.0,
-            "image_count": None,
-            "tts_chars": None,
-            "stt_seconds": None,
-            "video_count": None,
-            "error_type": None,
-            "error_message": None
-        })
-        ```
+    Write a raw audit line to audit.jsonl and dual-write to PostgreSQL off the event loop.
     """
     try:
-        audit_logger.info(json.dumps(data, ensure_ascii=False))
-
-        # Dual-write to DB (best-effort)
-        try:
-            from core.db import insert_audit_log, _pool
-            if _pool is not None:
-                insert_audit_log(data)
-        except Exception:
-            pass
+        snapshot = dict(data)
+        _dispatch_log_io(_write_audit_io, snapshot)
     except Exception:
         # Never break application due to logging failure
         pass
@@ -184,35 +202,16 @@ def audit_from_request(
 ):
     """
     Extract audit data from request.state and write audit line.
-    
-    This function is called by the middleware at request completion
-    to collect all audit state set by endpoints and write a single audit line.
-    
-    Args:
-        request: FastAPI Request object with audit state
-        rid: Request ID
-        status_code: HTTP status code
-        duration_ms: Request duration in milliseconds
-    
-    The function reads these request.state fields:
-        - mw_user_id (required)
-        - mw_endpoint
-        - mw_model
-        - mw_status ("ok" or "error")
-        - mw_tokens_in, mw_tokens_out, mw_tokens_total
-        - mw_cost_usd
-        - mw_error_type, mw_error_message
-        - mw_image_count, mw_tts_chars, mw_stt_seconds, mw_video_count
     """
     try:
-        # Build audit line from request state
+        # Build audit line from request state synchronously before request lifecycle ends
         data = {
             "ts": dt.datetime.now(tz=dt.timezone.utc).isoformat(),
             "rid": rid,
             "user_id": getattr(request.state, "mw_user_id", "unknown"),
             "endpoint": getattr(request.state, "mw_endpoint", request.url.path),
             "model": getattr(request.state, "mw_model", None),
-            "purpose": getattr(request.state, "mw_purpose", None),  # NEW: Log request purpose
+            "purpose": getattr(request.state, "mw_purpose", None),
             "status": getattr(request.state, "mw_status", "ok"),
             "status_code": status_code,
             "latency_ms": round(duration_ms, 1) if duration_ms is not None else None,

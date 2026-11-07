@@ -5,7 +5,7 @@ Contains all constants, environment variables, and logging setup.
 
 import os
 import logging
-from logging.handlers import RotatingFileHandler
+from utils.file_lock_handler import MultiProcessRotatingFileHandler
 from dotenv import load_dotenv
 
 # ============================================================================
@@ -98,7 +98,7 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
     
     # 1. File Handler
-    _fh = RotatingFileHandler(MW_LOG_FILE, maxBytes=5_000_000, backupCount=5, encoding="utf-8")
+    _fh = MultiProcessRotatingFileHandler(MW_LOG_FILE, maxBytes=5_000_000, backupCount=5, encoding="utf-8")
     _fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logger.addHandler(_fh)
     
@@ -112,7 +112,7 @@ if not logger.handlers:
 detail_logger = logging.getLogger("llm_mw_detail")
 if not detail_logger.handlers:
     detail_logger.setLevel(logging.INFO)
-    _dh = RotatingFileHandler(MW_DETAIL_LOG_FILE, maxBytes=20_000_000, backupCount=5, encoding="utf-8")
+    _dh = MultiProcessRotatingFileHandler(MW_DETAIL_LOG_FILE, maxBytes=20_000_000, backupCount=5, encoding="utf-8")
     _dh.setFormatter(logging.Formatter("%(message)s"))
     detail_logger.addHandler(_dh)
 
@@ -120,7 +120,7 @@ if not detail_logger.handlers:
 audit_logger = logging.getLogger("llm_mw_audit")
 if not audit_logger.handlers:
     audit_logger.setLevel(logging.INFO)
-    _ah = RotatingFileHandler(AUDIT_LOG_FILE, maxBytes=50_000_000, backupCount=5, encoding="utf-8")
+    _ah = MultiProcessRotatingFileHandler(AUDIT_LOG_FILE, maxBytes=50_000_000, backupCount=5, encoding="utf-8")
     _ah.setFormatter(logging.Formatter("%(message)s"))
     audit_logger.addHandler(_ah)
 
@@ -138,7 +138,9 @@ if not ADMIN_KEY:
 
 try:
     from core.db import init_pool
-    init_pool(DATABASE_URL, minconn=5, maxconn=30)
+    DB_POOL_MIN = max(1, int(os.getenv("DB_POOL_MIN", "2") or "2"))
+    DB_POOL_MAX = max(DB_POOL_MIN, int(os.getenv("DB_POOL_MAX", "10") or "10"))
+    init_pool(DATABASE_URL, minconn=DB_POOL_MIN, maxconn=DB_POOL_MAX)
 except Exception as _db_err:
     logger.error("Failed to initialize database pool: %s", str(_db_err))
     logger.warning("Middleware will run in FILE-ONLY mode (no PostgreSQL)")
