@@ -18,4 +18,4 @@
 ## 4. Verification & VM Deployment
 
 - [x] 4.1 Run pytest suite (`tests/test_middleware_proxy_hardening.py` and `tests/test_sanitization_audit.py`) with 0 failures
-- [ ] 4.2 Commit & push to Git, pull & reload `middleware`, `litellm`, `nginx` on `VM_RAL_DBM_Open_WebUI`, blindly sync live AI keys from local project folders without exposing secrets, and verify live endpoints
+- [x] 4.2 Commit & push to Git, pull & reload `middleware`, `litellm`, `nginx` on `VM_RAL_DBM_Open_WebUI`, blindly sync live AI keys from local project folders without exposing secrets, and verify live endpoints

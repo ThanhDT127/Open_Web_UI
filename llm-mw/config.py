@@ -136,10 +136,11 @@ if not ADMIN_KEY:
 # DATABASE INITIALIZATION
 # ============================================================================
 
+DB_POOL_MIN = max(1, int(os.getenv("DB_POOL_MIN", "2") or "2"))
+DB_POOL_MAX = max(DB_POOL_MIN, int(os.getenv("DB_POOL_MAX", "10") or "10"))
+
 try:
     from core.db import init_pool
-    DB_POOL_MIN = max(1, int(os.getenv("DB_POOL_MIN", "2") or "2"))
-    DB_POOL_MAX = max(DB_POOL_MIN, int(os.getenv("DB_POOL_MAX", "10") or "10"))
     init_pool(DATABASE_URL, minconn=DB_POOL_MIN, maxconn=DB_POOL_MAX)
 except Exception as _db_err:
     logger.error("Failed to initialize database pool: %s", str(_db_err))
@@ -175,4 +176,3 @@ try:
     MW_RAG_IMAGE_MAX = int(os.getenv("MW_RAG_IMAGE_MAX", "3"))
 except ValueError:
     MW_RAG_IMAGE_MAX = 3
-

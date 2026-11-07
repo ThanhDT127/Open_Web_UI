@@ -6,16 +6,22 @@ All middleware data (users, prices, config, logs) lives in the 'middleware' data
 on the same PostgreSQL instance used by Open WebUI.
 """
 
+from __future__ import annotations
+
 import os
 import json
 import logging
 from contextlib import contextmanager
 from typing import Optional, List, Dict, Any
 
-import psycopg2
-import psycopg2.pool
-import psycopg2.extras
-from psycopg2 import sql
+try:
+    import psycopg2
+    import psycopg2.pool
+    import psycopg2.extras
+    from psycopg2 import sql
+except ImportError:
+    psycopg2 = None  # type: ignore[assignment]
+    sql = None  # type: ignore[assignment]
 
 logger = logging.getLogger("llm_mw")
 
