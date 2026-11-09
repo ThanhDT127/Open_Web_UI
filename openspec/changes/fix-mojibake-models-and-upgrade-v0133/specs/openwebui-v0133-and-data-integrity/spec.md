@@ -14,9 +14,9 @@ All active chat and smart-routing (`*-auto`) models in Open WebUI `public.model`
 - **WHEN** `litellm/litellm_config.yaml` and `public.model` are inspected and `chat-gemini-2.5-flash` is called through Middleware
 - **THEN** `chat-gemini-2.5-flash` uses `gemini/gemini-2.5-flash` with `os.environ/GEMINI_API_KEY` (`HTTP 200`) and all 14 seeded models have full `capabilities` and `toolIds`
 
-### Requirement: Open WebUI v0.13.3 Image Upgrade
-`Dockerfile.openwebui` MUST build from `ghcr.io/open-webui/open-webui:v0.13.3` while preserving DejaVu fonts, export dependencies (`fpdf2`, `openpyxl`, `python-docx`), NLTK data, and directory ownership (`1000:0`).
+### Requirement: Open WebUI v0.13.3 Image Upgrade and Multi-Worker Redis Tether Configuration
+`Dockerfile.openwebui` MUST build from `ghcr.io/open-webui/open-webui:v0.13.3` while preserving DejaVu fonts, export dependencies (`fpdf2`, `openpyxl`, `python-docx`), optional NLTK data, and directory ownership (`1000:0`), and `docker-compose.yml` MUST set `REDIS_URL=redis://redis:6379/1` on `open-webui` when `UVICORN_WORKERS > 1` so Open WebUI v0.13.3 Tether hub does not reject `/api/chat/completions` with `HTTP 503`.
 
-#### Scenario: Verifying Dockerfile.openwebui base image and runtime version
-- **WHEN** `Dockerfile.openwebui` is built and deployed to `openwebui-app`
-- **THEN** `Dockerfile.openwebui` specifies `FROM ghcr.io/open-webui/open-webui:v0.13.3` and `/api/version` reports `0.13.3`
+#### Scenario: Verifying Dockerfile.openwebui base image, REDIS_URL, and runtime version
+- **WHEN** `Dockerfile.openwebui` and `docker-compose.yml` are built and deployed to `openwebui-app`
+- **THEN** `Dockerfile.openwebui` specifies `FROM ghcr.io/open-webui/open-webui:v0.13.3`, `docker-compose.yml` sets `REDIS_URL=redis://redis:6379/1`, `/api/version` reports `0.13.3`, and `/api/chat/completions` succeeds (`HTTP 200`) across multiple workers

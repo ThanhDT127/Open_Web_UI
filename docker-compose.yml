@@ -272,6 +272,7 @@ services:
       - PORT=8080
 
       # WebSocket Manager — required for UVICORN_WORKERS > 1 (Socket.IO state sync via Redis)
+      - REDIS_URL=redis://redis:6379/1
       - ENABLE_WEBSOCKET_SUPPORT=true
       - WEBSOCKET_MANAGER=redis
       - WEBSOCKET_REDIS_URL=redis://redis:6379/1

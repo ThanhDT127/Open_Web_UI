@@ -115,3 +115,16 @@ def test_dockerfile_openwebui_uses_v0133():
     dockerfile = (REPO_ROOT / "Dockerfile.openwebui").read_text(encoding="utf-8")
     first_from = next(line.strip() for line in dockerfile.splitlines() if line.strip().startswith("FROM "))
     assert first_from == "FROM ghcr.io/open-webui/open-webui:v0.13.3"
+
+
+def test_docker_compose_openwebui_configures_redis_url_for_multiworker_tether():
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    env_list = compose["services"]["open-webui"]["environment"]
+    env_map = {}
+    for entry in env_list:
+        if isinstance(entry, str) and "=" in entry:
+            k, v = entry.split("=", 1)
+            env_map[k] = v
+    assert int(env_map.get("UVICORN_WORKERS", "1")) > 1
+    assert env_map.get("WEBSOCKET_REDIS_URL") == "redis://redis:6379/1"
+    assert env_map.get("REDIS_URL") == "redis://redis:6379/1"
