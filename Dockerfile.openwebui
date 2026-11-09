@@ -16,8 +16,8 @@ RUN pip install --no-cache-dir \
     "python-docx>=1.1" \
     "requests>=2.28"
 
-# 3. Pre-download NLTK data cho unstructured (tránh runtime PermissionError)
-RUN python3 -c "import nltk; nltk.download('averaged_perceptron_tagger_eng', download_dir='/usr/local/nltk_data'); nltk.download('punkt_tab', download_dir='/usr/local/nltk_data')"
+# 3. Pre-download NLTK data cho unstructured nếu base image có nltk (v0.13+ đã gỡ nltk khỏi base image)
+RUN python3 -c "import importlib.util; (lambda n: (n.download('averaged_perceptron_tagger_eng', download_dir='/usr/local/nltk_data'), n.download('punkt_tab', download_dir='/usr/local/nltk_data')))(__import__('nltk')) if importlib.util.find_spec('nltk') else print('nltk not present in base image, skipping')"
 
 # 4. Đảm bảo cache/functions directory có đúng quyền
 RUN mkdir -p /app/backend/data/cache/functions && \
