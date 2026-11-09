@@ -128,3 +128,14 @@ def test_docker_compose_openwebui_configures_redis_url_for_multiworker_tether():
     assert int(env_map.get("UVICORN_WORKERS", "1")) > 1
     assert env_map.get("WEBSOCKET_REDIS_URL") == "redis://redis:6379/1"
     assert env_map.get("REDIS_URL") == "redis://redis:6379/1"
+
+
+def test_dashboard_served_on_port_5000_and_redirected_from_3000():
+    compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    nginx_ports = compose["services"]["nginx"]["ports"]
+    assert "3000:3000" in nginx_ports
+    assert "5000:5000" in nginx_ports
+
+    nginx_conf = (REPO_ROOT / "nginx" / "nginx.conf").read_text(encoding="utf-8")
+    assert "listen 5000 ssl;" in nginx_conf
+    assert "return 302 https://$host:5000$request_uri;" in nginx_conf
