@@ -121,6 +121,8 @@ _MW_PUBLIC_URL = _os.getenv("MW_PUBLIC_URL", "https://openwebui.example.com:5112
 # 2. HTTP variant (in case of internal proxy without SSL)
 # 3. Server-to-server requests (no Origin header) bypass CORS automatically
 _cors_origins = [_MW_PUBLIC_URL]
+if _MW_PUBLIC_URL.endswith(":51122"):
+    _cors_origins.extend([_MW_PUBLIC_URL[:-6] + ":52122", _MW_PUBLIC_URL[:-6] + ":5000"])
 # Add http variant if public URL is https
 if _MW_PUBLIC_URL.startswith("https://"):
     _cors_origins.append(_MW_PUBLIC_URL.replace("https://", "http://"))

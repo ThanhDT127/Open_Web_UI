@@ -138,4 +138,6 @@ def test_dashboard_served_on_port_5000_and_redirected_from_3000():
 
     nginx_conf = (REPO_ROOT / "nginx" / "nginx.conf").read_text(encoding="utf-8")
     assert "listen 5000 ssl;" in nginx_conf
-    assert "return 302 https://$host:5000$request_uri;" in nginx_conf
+    assert "return 302 https://$dashboard_redirect_host$request_uri;" in nginx_conf
+    assert "return 302 https://$http_host/dashboard;" in nginx_conf
+    assert "~^(?<h>[^:]+):51122$" in nginx_conf
