@@ -6,7 +6,7 @@ server_settings:
 
 model_list:
   # ============================================================
-  # OPENAI CHAT MODELS (3)
+  # OPENAI CHAT MODELS
   # ============================================================
 
   # GPT-5.4 (Flagship — Mar 2026, 1M context)
@@ -27,8 +27,38 @@ model_list:
       model: openai/gpt-5
       api_key: os.environ/OPENAI_API_KEY
 
+  # GPT-5 Mini
+  - model_name: chat-gpt-5-mini
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  # GPT-4.1
+  - model_name: chat-gpt-4.1
+    litellm_params:
+      model: openai/gpt-4.1
+      api_key: os.environ/OPENAI_API_KEY
+
+  # GPT-4.1 Mini
+  - model_name: chat-gpt-4.1-mini
+    litellm_params:
+      model: openai/gpt-4.1-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  # GPT-4o
+  - model_name: chat-gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  # GPT-4o Mini
+  - model_name: chat-gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
   # ============================================================
-  # GOOGLE GEMINI CHAT MODELS (3) — API key + Vertex AI fallback
+  # GOOGLE GEMINI CHAT MODELS — Paid-Tier Gemini API + OpenRouter
   # ============================================================
 
   # Gemini 3.1 Pro (Flagship — Feb 2026, 1M context)
@@ -43,13 +73,23 @@ model_list:
       model: gemini/gemini-3.1-flash-lite-preview
       api_key: os.environ/GEMINI_API_KEY
 
-  # Gemini 2.5 Flash via Vertex AI
+  # Gemini 2.5 Pro via Gemini API
+  - model_name: chat-gemini-2.5-pro
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GEMINI_API_KEY
+
+  # Gemini 2.5 Flash via Gemini API
   - model_name: chat-gemini-2.5-flash
     litellm_params:
-      model: vertex_ai/gemini-2.5-flash
-      vertex_project: os.environ/VERTEX_PROJECT
-      vertex_location: os.environ/VERTEX_LOCATION
-      vertex_credentials: /app/vertex.json
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+  # Gemini 2.5 Flash-Lite via Gemini API
+  - model_name: chat-gemini-2.5-flash-lite
+    litellm_params:
+      model: gemini/gemini-2.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
 
   - model_name: chat-gemini-2.5-flash-openrouter
     litellm_params:
@@ -157,15 +197,17 @@ model_list:
     litellm_params:
       model: openrouter/deepseek/deepseek-v4-flash
       api_key: os.environ/OPENROUTER_API_KEY
+      max_tokens: 4096
 
   # ============================================================
   # EMBEDDING MODELS
   # ============================================================
 
-  # Gemini Embedding 2 via Vertex AI
+  # Gemini Embedding 2 alias routed via Gemini API
   - model_name: gemini-embedding-2
     litellm_params:
-      model: vertex_ai/gemini-embedding-2
+      model: gemini/gemini-embedding-001
+      api_key: os.environ/GEMINI_API_KEY
 
   # Gemini Embedding 001 via Gemini API (Middleware injects dimensions=1536)
   - model_name: gemini-embedding-001
